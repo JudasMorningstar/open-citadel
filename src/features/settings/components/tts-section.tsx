@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { AudioLines, ChevronUp, Volume2 } from '@/components/icons';
+import { AudioLines, ChevronUp, Download } from '@/components/icons';
 
 import {
   useVoicePicker,
@@ -12,33 +12,97 @@ import { SettingsSection } from '@/features/settings/components/settings-section
 import { ThemedText } from '@/components/themed-text';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { PageFade } from '@/components/scroll-fades';
+import { ActionButton } from '@/components/action-button';
 import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { useSettingsStore } from '@/stores/settings';
+import { useTtsStore } from '@/stores/tts';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 /**
- * Text-to-speech: reading speed and the voice. Owns the voice modal.
+ * Text-to-speech: reading speed, the voice, and the voice pack's download
+ * state. Owns the voice modal.
  */
 export function TtsSection() {
-  const [mutedForeground, primaryForeground] = useCSSVariable([
+  const [mutedForeground, primaryForeground, destructive] = useCSSVariable([
     '--color-muted-foreground',
     '--color-primary-foreground',
+    '--color-destructive',
   ]);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsRate = useSettingsStore((s) => s.ttsRate);
   const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
   const setTtsRate = useSettingsStore((s) => s.setTtsRate);
 
+  const isDownloaded = useTtsStore((s) => s.isDownloaded);
+  const downloadProgress = useTtsStore((s) => s.downloadProgress);
+  const loadError = useTtsStore((s) => s.loadError);
+  const downloadModel = useTtsStore((s) => s.downloadModel);
+  const cancelDownload = useTtsStore((s) => s.cancelDownload);
+
+  React.useEffect(() => {
+    void useTtsStore.getState().loadState();
+  }, []);
+
   const picker = useVoicePicker(ttsVoice);
 
   return (
     <SettingsSection label="TEXT TO SPEECH">
+      {!isDownloaded && (
+        <Card className="gap-3 p-4">
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1 gap-1">
+              <ThemedText type="bodyMd">Reading voice</ThemedText>
+              <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                Download the on-device voice to read books aloud.
+              </ThemedText>
+              {loadError && (
+                <ThemedText type="labelSm" color={asColor(destructive)}>
+                  {loadError}
+                </ThemedText>
+              )}
+            </View>
+            {downloadProgress === null && (
+              <ActionButton
+                icon={Download}
+                label="DOWNLOAD"
+                tint={asColor(mutedForeground)}
+                onPress={() => void downloadModel()}
+              />
+            )}
+          </View>
+          {downloadProgress !== null && (
+            <View className="gap-1">
+              <View className="h-1 overflow-hidden bg-surface-tertiary">
+                <View
+                  className="h-1 bg-primary"
+                  style={{ width: `${Math.round(downloadProgress * 100)}%` }}
+                />
+              </View>
+              <View className="flex-row items-center justify-between">
+                <ThemedText
+                  type="labelSm"
+                  color={asColor(mutedForeground)}
+                  style={{ fontVariant: ['tabular-nums'] }}
+                >
+                  {Math.round(downloadProgress * 100)}%
+                </ThemedText>
+                <Touchable onPress={cancelDownload}>
+                  <ThemedText type="labelSm" color={asColor(destructive)}>
+                    CANCEL
+                  </ThemedText>
+                </Touchable>
+              </View>
+            </View>
+          )}
+        </Card>
+      )}
+
       <ThemedText type="labelSm" color={asColor(mutedForeground)}>READING SPEED</ThemedText>
       <View className="flex-row flex-wrap gap-2">
         {TTS_RATES.map((r) => {
@@ -55,8 +119,8 @@ export function TtsSection() {
         })}
       </View>
 
-      <Touchable onPress={() => void picker.open()}>
-        <Card className="flex-row items-center justify-between p-4">
+      <Touchable onPress={picker.open} disabled={!isDownloaded}>
+        <Card className={cn('flex-row items-center justify-between p-4', !isDownloaded && 'opacity-50')}>
           <View className="flex-row items-center gap-3">
             <PrefixIcon icon={AudioLines} size={36} />
             <ThemedText type="bodyMd">Voice</ThemedText>
@@ -82,55 +146,31 @@ export function TtsSection() {
   );
 }
 
-/**
- * One voice row, memoized on primitives: a selection or preview flip
- * re-renders the affected rows, not every voice in the picker.
- */
+/** One voice row, memoized on primitives: a selection flip re-renders the affected rows only. */
 const VoiceRow = React.memo(function VoiceRow({
   voice,
   isSelected,
-  isPreviewing,
   primary,
   mutedForeground,
   onSelect,
-  onPreview,
 }: {
   voice: VoiceItem;
   isSelected: boolean;
-  isPreviewing: boolean;
   primary?: string;
   mutedForeground?: string;
   onSelect: (identifier: string | null, language: string | null) => void;
-  onPreview: (voice: VoiceItem) => void;
 }) {
   return (
     <Touchable
       className="flex-row items-center gap-4 border-b border-card px-6 py-4"
-      onPress={() => onSelect(voice.identifier || null, voice.language || null)}
+      onPress={() => onSelect(voice.identifier, voice.language)}
     >
       <View className="flex-1 gap-1">
         <ThemedText type="bodyMd">{voice.name}</ThemedText>
-        {voice.language ? (
-          <ThemedText type="labelSm" color={mutedForeground}>
-            {voice.language}
-          </ThemedText>
-        ) : null}
+        <ThemedText type="labelSm" color={mutedForeground}>
+          {voice.language}
+        </ThemedText>
       </View>
-      {voice.quality ? (
-        <View className="bg-muted px-2 py-[2px]">
-          <ThemedText type="labelSm" color={mutedForeground}>
-            {voice.quality}
-          </ThemedText>
-        </View>
-      ) : null}
-      {voice.identifier ? (
-        <Touchable onPress={(e) => { e.stopPropagation(); onPreview(voice); }} hitSlop={8}>
-          <Volume2
-            size={18}
-            color={isPreviewing ? primary : mutedForeground}
-          />
-        </Touchable>
-      ) : null}
       {isSelected && (
         <ThemedText type="bodyMd" color={primary}>✓</ThemedText>
       )}
@@ -168,69 +208,36 @@ function VoicePickerModal({
     [],
   );
 
-
   const renderRow = React.useCallback(
     ({ item }: { item: VoiceListRow }) => {
-      if (item.kind === 'header') {
-        return (
-          <View className="bg-popover px-6 py-2">
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-              {item.title}
-            </ThemedText>
-          </View>
-        );
-      }
       const { voice } = item;
-      const isSelected = voice.identifier
-        ? currentVoice === voice.identifier
-        : currentVoice === null;
       return (
         <VoiceRow
           voice={voice}
-          isSelected={isSelected}
-          isPreviewing={picker.previewing === voice.identifier}
+          isSelected={currentVoice === voice.identifier}
           primary={asColor(primary)}
           mutedForeground={asColor(mutedForeground)}
           onSelect={handleSelect}
-          onPreview={picker.preview}
         />
       );
     },
-    [currentVoice, picker.previewing, picker.preview, primary, mutedForeground, handleSelect],
+    [currentVoice, primary, mutedForeground, handleSelect],
   );
 
   return (
-    /*
-     * Two detents rather than a full-screen modal: the list is long enough to
-     * browse, so it opens at half height — the settings row you came from
-     * stays visible behind it — and grows to full only if you commit to
-     * hunting through it. The old `Modal` could only be all or nothing.
-     */
     <Sheet visible={picker.visible} onClose={picker.close} snapRatios={[0.5, 1]}>
       <View className="flex-row items-center justify-between px-6 pb-3">
         <ThemedText type="headlineSm">Select voice</ThemedText>
       </View>
 
-      {/* Two waits, one placeholder. `Sheet.Deferred` covers the frames while
-          the list mounts, and the same skeleton covers the device's voice
-          query — so the sheet goes skeleton to voices with nothing in
-          between, rather than a spinner that swaps for a list. */}
       <Sheet.Deferred skeleton={<VoiceListSkeleton />}>
-        {picker.loading ? (
-          <VoiceListSkeleton />
-        ) : (
-          <PageFade edges="both" surface="popover">
-            <Sheet.FlatList
-              data={picker.rows}
-              keyExtractor={(item: VoiceListRow) => item.key}
-              // Headings and voices recycle in separate pools; without this a
-              // heading cell would be re-bound to a voice and keep its styling.
-              getItemType={(item: VoiceListRow) => item.kind}
-              extraData={picker.previewing}
-              renderItem={renderRow}
-            />
-          </PageFade>
-        )}
+        <PageFade edges="both" surface="popover">
+          <Sheet.FlatList
+            data={picker.rows}
+            keyExtractor={(item: VoiceListRow) => item.key}
+            renderItem={renderRow}
+          />
+        </PageFade>
       </Sheet.Deferred>
     </Sheet>
   );

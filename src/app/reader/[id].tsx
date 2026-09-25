@@ -33,6 +33,7 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
@@ -133,6 +134,7 @@ export default function ReaderScreen() {
   const router = useRouter();
   const readerRef = useRef<ReadiumViewRef>(null);
   const insets = useSafeAreaInsets();
+  const { onSynthesisRequest, onSynthesisCancel } = useKokoroTtsBridge(readerRef);
 
   const {
     currentBook,
@@ -928,6 +930,8 @@ export default function ReaderScreen() {
             onTTSStateChange={handleTTSStateChange}
             onTTSUtterance={handleTTSUtterance}
             onTTSError={handleTTSError}
+            onTTSSynthesisRequest={onSynthesisRequest}
+            onTTSSynthesisCancel={onSynthesisCancel}
           />
         )}
 

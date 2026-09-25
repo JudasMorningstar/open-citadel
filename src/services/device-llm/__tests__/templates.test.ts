@@ -5,7 +5,17 @@ import gemma from './__fixtures__/gemma-4-e2b.tokenizer_config.json';
 import qwen3 from './__fixtures__/qwen-3.tokenizer_config.json';
 
 vi.mock('react-native-blob-util', () => ({ default: {} }));
-vi.mock('@/lib/executorch', () => ({ getExecuTorch: () => null }));
+vi.mock('@/lib/executorch', () => ({
+  getExecuTorch: () => null,
+  createExclusiveQueue: () => {
+    let queue: Promise<unknown> = Promise.resolve();
+    return <T>(fn: () => Promise<T>): Promise<T> => {
+      const run = queue.then(fn, fn);
+      queue = run.catch(() => undefined);
+      return run;
+    };
+  },
+}));
 
 const { specialTokensOf, withSpecialTokens } = await import('../engine');
 const { asThinkMarkers, GEMMA_THOUGHT_MARKERS, THINK_MARKERS, withoutReasoning } = await import('../reply-format');
