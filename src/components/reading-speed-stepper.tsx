@@ -36,11 +36,18 @@ export function ReadingSpeedStepper() {
         <ThemedText type="headlineSm">{formatRate(ttsRate)}</ThemedText>
       </View>
 
-      <View className="flex-row items-center">
+      <View className="flex-row items-center" accessibilityRole="radiogroup">
         {TTS_RATES.map((r, i) => (
           <React.Fragment key={r}>
             {i > 0 && <View className={cn('h-px flex-1', i <= rateIndex ? 'bg-primary' : 'bg-border')} />}
-            <Touchable onPress={() => setTtsRate(r)} hitSlop={8}>
+            <Touchable
+              onPress={() => setTtsRate(r)}
+              hitSlop={8}
+              haptic="select"
+              accessibilityRole="radio"
+              accessibilityState={{ selected: i === rateIndex }}
+              accessibilityLabel={formatRate(r)}
+            >
               <View
                 className={cn(
                   'rounded-[2px]',

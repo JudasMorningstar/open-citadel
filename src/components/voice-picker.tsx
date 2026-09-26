@@ -37,7 +37,7 @@ export function VoicePicker() {
   return (
     <View className={cn('gap-2', !isDownloaded && 'opacity-50')}>
       <ThemedText type="labelSm" color={asColor(mutedForeground)}>VOICE</ThemedText>
-      <View className="gap-2">
+      <View className="gap-2" accessibilityRole="radiogroup">
         {[0, 1].map((row) => (
           <View key={row} className="flex-row gap-2">
             {KOKORO_EN_US_VOICES.slice(row * 3, row * 3 + 3).map((voice) => {
@@ -49,6 +49,10 @@ export function VoicePicker() {
                   key={voice}
                   className="flex-1"
                   disabled={!isDownloaded}
+                  haptic="select"
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active, disabled: !isDownloaded }}
+                  accessibilityLabel={`${VOICE_LABELS[voice]}, ${VOICE_DESCRIPTIONS[voice]}`}
                   onPress={() => {
                     setTtsVoice(voice);
                     if (previewing) {
