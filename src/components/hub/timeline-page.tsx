@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useSettledFocusEffect } from "@/navigation/use-settled-focus-effect";
 
 import { PageFade } from '@/components/scroll-fades';
 import { DeferredBody } from '@/components/navigation/deferred-body';
@@ -24,7 +24,7 @@ import { Fab, fabClearance } from '@/components/ui/fab';
 import { Item } from '@/components/ui/item';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
-import { MaxContentWidth, iconSize, layout } from '@/constants/theme';
+import { contentColumn, iconSize, layout } from '@/constants/theme';
 import { db } from '@/db/client';
 import { highlights, thoughts } from '@/db/schema';
 import { fetchAllTags } from '@/stores/reader';
@@ -84,12 +84,13 @@ export function TimelinePage() {
   const [exportEntry, setExportEntry] = useState<TimelineItem | null>(null);
   const [showExportCard, setShowExportCard] = useState(false);
 
-  // Reload timeline when tab is focused
-  useFocusEffect(
-    useCallback(() => {
-      loadTimeline();
-    }, [loadTimeline])
-  );
+  // Load on mount, and again whenever the hub comes back to the front, once
+  // the screen that was on top has finished leaving: reloading on the frame
+  // focus returned re-rendered this page in the middle of the back slide.
+  useEffect(() => {
+    loadTimeline();
+  }, [loadTimeline]);
+  useSettledFocusEffect(loadTimeline, { skipFirst: true });
 
   // Load shared tags when opening the thought sheet
   useEffect(() => {
@@ -256,7 +257,7 @@ export function TimelinePage() {
           // The content column: centred and capped on wide screens, pixel-
           // identical on phones (the cap never bites below 800). The children
           // keep their own `px-6` gutters inside the column.
-          style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+          style={contentColumn}
           contentContainerStyle={{
             paddingBottom: layout.scrollBottom + fabClearance(insets.bottom),
           }}

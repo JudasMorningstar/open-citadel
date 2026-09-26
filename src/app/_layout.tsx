@@ -31,6 +31,7 @@ import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
@@ -41,6 +42,7 @@ import { ToastProvider } from "@/components/toast/toast-provider";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
+import { queryClient } from "@/lib/query-client";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
@@ -58,6 +60,9 @@ import {
     registerTTSBackgroundHandler,
     setupTTSMediaSession,
 } from "@/services/tts-media-session";
+import { usePodcastLifecycle } from "@/features/podcasts/hooks/use-podcast-lifecycle";
+import { registerPodcastBackgroundHandler } from "@/services/podcasts/player";
+import { usePodcastPrefs } from "@/stores/podcast-prefs";
 import { useAccountStore } from "@/stores/account";
 import { useGuestStore } from "@/stores/guest";
 import { useBooksStore } from "@/stores/books";
@@ -71,6 +76,9 @@ SplashScreen.preventAutoHideAsync();
 
 // Register Android background event handler at module level (before app renders)
 registerTTSBackgroundHandler();
+// Podcasts save positions and move through Up Next from the player's events,
+// which on Android arrive through the same headless task while backgrounded.
+registerPodcastBackgroundHandler();
 
 // Catches throws from route module evaluation / rendering that would otherwise
 // crash the app with an unhandled JS exception on startup.
@@ -122,6 +130,9 @@ export default function RootLayout() {
   // Over-the-air updates: checked on return as well as launch, and offered
   // with a toast once one is downloaded.
   useAppUpdates(fontsLoaded && dbReady);
+  // The mini player's episode back, interrupted downloads resumed, new
+  // episodes looked for on launch and on return.
+  usePodcastLifecycle(dbReady);
 
   // The app's own theme setting is the single source of truth; Uniwind (and
   // therefore every PanelUI token class in the app) follows the OS color
@@ -160,7 +171,14 @@ export default function RootLayout() {
       // each other — settings never touches book paths — so they overlap here
       // rather than chaining. `setDbReady` still waits for both, so nothing
       // reads a book/cover before the paths are repaired.
-      .then(() => Promise.all([reanchorLocalPaths(), loadSettings()]))
+      .then(() =>
+        Promise.all([
+          reanchorLocalPaths(),
+          loadSettings(),
+          // Before first paint, so the Library opens on the side it was left on.
+          usePodcastPrefs.getState().load(),
+        ]),
+      )
       .then(() => {
         setupTTSMediaSession();
         setDbReady(true);
@@ -265,106 +283,129 @@ export default function RootLayout() {
       fade,
     };
   }, [reduceMotion, scrimValue]);
+  // Every screen stays attached while covered: see the note on the stack.
+  // Memoized with the transitions, for the same reason they are.
+  const stackOptions = useMemo(
+    () => ({ ...screenTransitions.side, inactiveBehavior: "keep" as const }),
+    [screenTransitions],
+  );
 
   if (!fontsLoaded || !dbReady) return null;
 
   return (
-    // ThemeTokensProvider wraps everything, PanelUIProvider included, so the
-    // portal host that sheets present into resolves its tokens from the same
-    // single subscription as the rest of the tree.
-    <ThemeTokensProvider>
-      {/* PanelUIProvider owns the gesture handler root every gesture recognizer
-        in the app needs, plus PanelUI's own portal/toast host and the keyboard
-        controller provider. */}
-      <PanelUIProvider>
-        {/* Toasts portal into PanelUIProvider's host so they draw above every
-          sheet, so this has to sit inside it. */}
-        <ToastProvider>
-          {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
-          components/ui/sheet), and they present into this provider's own
-          portal host. It sits above the navigator rather than inside it, so a
-          sheet is drawn over whatever screen opened it and is never clipped by
-          that screen's transition. */}
-          <BottomSheetModalProvider>
-            <ThemeProvider value={navTheme}>
-              <StatusBar style={theme === "light" ? "dark" : "light"} />
-              {/* Hub and spokes. The hub is one route — Timeline, Library and
-              Samwell are pages of a pager inside it (`components/hub/hub-pager`),
-              because they are peers and a swipe between peers should track the
-              finger rather than push a route. Everything else here is a spoke
-              that rises or slides over whichever page is showing.
-              `navigation/transitions` holds the choreography; these options only
-              say where each screen belongs. */}
-              <TransitionStack screenOptions={screenTransitions.side}>
-                <TransitionStack.Screen
-                  name="index"
-                  options={screenTransitions.hub}
-                />
-                {/* The first run. A cross-fade rather than a slide: this is the
-                first thing anyone sees and there is nowhere for it to come in
-                from. It leaves by `router.replace`, so it is never on the
-                stack behind the hub and the system Back button cannot walk
-                into it. */}
-                <TransitionStack.Screen
-                  name="onboarding"
-                  options={screenTransitions.fade}
-                />
-                <TransitionStack.Screen
-                  name="settings"
-                  options={{
-                    ...screenTransitions.drawer,
-                    // `hide` (the default) detaches a hidden screen's view, and the
-                    // re-attach layout of this screen's large tree lands in the same
-                    // burst as the first frames of the rise — the open measured three
-                    // times the close's jank. `keep` leaves the view attached while
-                    // hidden, so both directions are a plain translate of a laid-out
-                    // layer. Its per-open work is settle-gated, so nothing hidden
-                    // actually runs.
-                    inactiveBehavior: "keep",
-                  }}
-                />
-                {/* Edge-only: the reader turns pages with the same horizontal
-                swipe, so a screen-wide back gesture would eat every page turn. */}
-                <TransitionStack.Screen
-                  name="reader/[id]"
-                  options={{
-                    ...screenTransitions.sideEdge,
-                    // Same reason `settings` above uses it, plus a worse failure of
-                    // its own. `hide` detaches a hidden screen's view; on re-attach
-                    // the reader's screen container stopped receiving its animated
-                    // style, so it stayed at whatever the hidden state last wrote —
-                    // the visibility-block offset, two viewports down. The screen
-                    // was then invisible while still laid out full-size and still
-                    // hit-testing, so it covered the Library and swallowed every
-                    // touch: the app looked frozen with every thread idle.
-                    //
-                    // Measured, not inferred: an un-animated probe painted from the
-                    // screen's outer wrapper while an identical probe one level in
-                    // (inside the animated container) did not, with the JS side
-                    // reporting the block clear the whole time.
-                    //
-                    // `keep` never detaches, so there is no re-attach to lose.
-                    inactiveBehavior: "keep",
-                  }}
-                />
-                <TransitionStack.Screen
-                  name="chat/[id]"
-                  options={screenTransitions.side}
-                />
-                <TransitionStack.Screen
-                  name="section/[type]"
-                  options={screenTransitions.drawer}
-                />
-                <TransitionStack.Screen
-                  name="collection/[id]"
-                  options={screenTransitions.drawer}
-                />
-              </TransitionStack>
-              <ApprovalSheet />
-            </ThemeProvider>
-          </BottomSheetModalProvider>
-        </ToastProvider>
-      </PanelUIProvider>
-    </ThemeTokensProvider>
+    // The query cache is outermost: it draws nothing, and anything below may
+    // read through it. ThemeTokensProvider wraps everything else, PanelUIProvider
+    // included, so the portal host that sheets present into resolves its tokens
+    // from the same single subscription as the rest of the tree.
+    <QueryClientProvider client={queryClient}>
+      <ThemeTokensProvider>
+        {/* PanelUIProvider owns the gesture handler root every gesture recognizer
+          in the app needs, plus PanelUI's own portal/toast host and the keyboard
+          controller provider. */}
+        <PanelUIProvider>
+          {/* Toasts portal into PanelUIProvider's host so they draw above every
+            sheet, so this has to sit inside it. */}
+          <ToastProvider>
+            {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
+            components/ui/sheet), and they present into this provider's own
+            portal host. It sits above the navigator rather than inside it, so a
+            sheet is drawn over whatever screen opened it and is never clipped by
+            that screen's transition. */}
+            <BottomSheetModalProvider>
+              <ThemeProvider value={navTheme}>
+                <StatusBar style={theme === "light" ? "dark" : "light"} />
+                {/* Hub and spokes. The hub is one route — Timeline, Library and
+                Samwell are pages of a pager inside it (`components/hub/hub-pager`),
+                because they are peers and a swipe between peers should track the
+                finger rather than push a route. Everything else here is a spoke
+                that rises or slides over whichever page is showing.
+                `navigation/transitions` holds the choreography; these options only
+                say where each screen belongs. */}
+                {/* `inactiveBehavior: "keep"` for every screen. The library's
+                default, `hide`, detaches and pauses a screen once it is two
+                below the top, and re-attaches it when the screen above closes:
+                that re-attach (layout plus every effect in the tree) landed in
+                the first frames of the back slide and froze it, wherever the
+                stack was three deep (Explore under a show under an episode, the
+                hub under anything opened from Explore). Settings and the reader
+                found it first: Settings' open measured three times its close's
+                jank, and the reader's container stopped receiving its animated
+                style on re-attach, sat invisible two viewports down and still
+                swallowed every touch. `keep` never detaches, so there is nothing
+                to re-attach. Work a covered screen would do is settle-gated
+                (`useSettledOnce`), so nothing hidden runs. */}
+                <TransitionStack screenOptions={stackOptions}>
+                  <TransitionStack.Screen
+                    name="index"
+                    options={screenTransitions.hub}
+                  />
+                  {/* The first run. A cross-fade rather than a slide: this is the
+                  first thing anyone sees and there is nowhere for it to come in
+                  from. It leaves by `router.replace`, so it is never on the
+                  stack behind the hub and the system Back button cannot walk
+                  into it. */}
+                  <TransitionStack.Screen
+                    name="onboarding"
+                    options={screenTransitions.fade}
+                  />
+                  <TransitionStack.Screen
+                    name="settings"
+                    options={screenTransitions.drawer}
+                  />
+                  {/* Edge-only: the reader turns pages with the same horizontal
+                  swipe, so a screen-wide back gesture would eat every page turn. */}
+                  <TransitionStack.Screen
+                    name="reader/[id]"
+                    options={screenTransitions.sideEdge}
+                  />
+                  <TransitionStack.Screen
+                    name="chat/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="section/[type]"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="collection/[id]"
+                    options={screenTransitions.drawer}
+                  />
+                  {/* Podcasts. A show and an episode are places you go into, so
+                  they come in from the side like a chat. The player, Explore and
+                  a "View all" list rise from the bottom: the player out of the
+                  mini player that sits there, the other two over whatever
+                  opened them, like the books side's lists. */}
+                  <TransitionStack.Screen
+                    name="podcasts/show/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/episode/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/player"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/section/[type]"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/genre/[id]"
+                    options={screenTransitions.side}
+                  />
+                </TransitionStack>
+                <ApprovalSheet />
+              </ThemeProvider>
+            </BottomSheetModalProvider>
+          </ToastProvider>
+        </PanelUIProvider>
+      </ThemeTokensProvider>
+    </QueryClientProvider>
   );
 }

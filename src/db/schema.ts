@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { GoalCategory, GoalPriority, LifecycleStatus } from "samwell-shared";
 
 export const books = sqliteTable("books", {
@@ -529,3 +529,191 @@ export const readingDays = sqliteTable("reading_days", {
   progressDelta: real("progress_delta").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 });
+
+// ── Podcasts ─────────────────────────────────────────────────────────────────
+//
+// Modelled on AntennaPod's database (`PodDBAdapter`), so a reader can bring
+// their AntennaPod backup over and carry on where they were: the same
+// subscriptions, the same play state, positions, favourites, queue order and
+// per-show settings. Its tables are flattened the way `books` already is:
+// AntennaPod splits an episode across `FeedItems` and `FeedMedia`, and keeps
+// the queue and favourites in tables of their own, but every podcast episode
+// here has exactly one enclosure, so one row carries all of it.
+//
+// Listening statistics are not drawn anywhere yet. The columns that feed them
+// (`played_duration_sec`, `last_played_at`, `completed_at`) and the per-day
+// table below are written from day one, and imported from AntennaPod, so the
+// screen can be built later over real history rather than starting empty.
+
+/**
+ * AntennaPod's `Feed.STATE_*`: a show you follow, one you are only looking at
+ * (opened from Explore), or one you stopped following but kept the history of
+ * (AntennaPod 3.5's archive; only arrives through an import for now).
+ */
+export type PodcastState = "subscribed" | "preview" | "archived";
+/** `FeedPreferences.NewEpisodesAction`: where a freshly published episode lands. */
+export type NewEpisodesAction = "global" | "inbox" | "queue" | "nothing";
+/** `FeedPreferences.AutoDownloadSetting` and `AutoDeleteAction`, as three-way switches. */
+export type ShowSwitch = "global" | "on" | "off";
+/** `FeedItem.NEW / UNPLAYED / PLAYED`. `new` is the inbox. */
+export type EpisodePlayState = "new" | "unplayed" | "played";
+export type EpisodeDownloadStatus =
+  | "none"
+  | "queued"
+  | "downloading"
+  | "downloaded"
+  | "failed";
+
+export const podcasts = sqliteTable(
+  "podcasts",
+  {
+    id: text("id").primaryKey(),
+    /** Where the feed is fetched from (AntennaPod `download_url`). Unique. */
+    feedUrl: text("feed_url").notNull(),
+    /** The feed's own id when it declares one (`feed_identifier`). */
+    feedIdentifier: text("feed_identifier"),
+    title: text("title").notNull(),
+    /** A name the reader gave the show; wins over `title` wherever it is drawn. */
+    customTitle: text("custom_title"),
+    author: text("author"),
+    description: text("description"),
+    link: text("link"),
+    imageUrl: text("image_url"),
+    language: text("language"),
+    feedType: text("feed_type").$type<"rss" | "atom">(),
+    /** Funding / donation link (`payment_link`). */
+    fundingUrl: text("funding_url"),
+    state: text("state").$type<PodcastState>().notNull().default("subscribed"),
+    subscribedAt: text("subscribed_at"),
+    lastRefreshAt: text("last_refresh_at"),
+    lastRefreshFailed: integer("last_refresh_failed").notNull().default(0),
+    lastRefreshError: text("last_refresh_error"),
+    /** `Last-Modified` or `ETag` from the last fetch, for a conditional GET (`last_update`). */
+    httpValidator: text("http_validator"),
+    /** Refreshed with everything else (`keep_updated`). */
+    keepUpdated: integer("keep_updated").notNull().default(1),
+    autoDownload: text("auto_download").$type<ShowSwitch>().notNull().default("global"),
+    autoDelete: text("auto_delete").$type<ShowSwitch>().notNull().default("global"),
+    newEpisodesAction: text("new_episodes_action")
+      .$type<NewEpisodesAction>()
+      .notNull()
+      .default("global"),
+    /** Null follows the global speed (AntennaPod stores -1 for that). */
+    playbackSpeed: real("playback_speed"),
+    skipIntroSec: integer("skip_intro_sec").notNull().default(0),
+    skipEndingSec: integer("skip_ending_sec").notNull().default(0),
+    /** Auto-download filters, kept verbatim from AntennaPod for a later settings screen. */
+    includeFilter: text("include_filter"),
+    excludeFilter: text("exclude_filter"),
+    minDurationFilterSec: integer("min_duration_filter_sec"),
+    /** JSON string array. AntennaPod's `#root` pseudo-tag is dropped on import. */
+    tags: text("tags"),
+    episodeSort: text("episode_sort").$type<"newest" | "oldest">().notNull().default("newest"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("podcasts_feed_url_idx").on(table.feedUrl),
+    index("podcasts_state_idx").on(table.state),
+  ],
+);
+
+export const podcastEpisodes = sqliteTable(
+  "podcast_episodes",
+  {
+    id: text("id").primaryKey(),
+    podcastId: text("podcast_id")
+      .notNull()
+      .references(() => podcasts.id, { onDelete: "cascade" }),
+    /** The item's `<guid>` (`item_identifier`). The first thing matched on refresh. */
+    guid: text("guid"),
+    title: text("title").notNull(),
+    /** Show notes, as the feed sent them (HTML, usually `content:encoded`). */
+    description: text("description"),
+    /**
+     * The first lines of the show notes as plain text, made once when the
+     * episode is written so a list row never strips HTML while scrolling.
+     */
+    summary: text("summary"),
+    link: text("link"),
+    pubDate: text("pub_date"),
+    imageUrl: text("image_url"),
+    /** The enclosure (`FeedMedia.download_url`). */
+    audioUrl: text("audio_url").notNull(),
+    mimeType: text("mime_type"),
+    durationSec: integer("duration_sec").notNull().default(0),
+    fileSize: integer("file_size"),
+    /** Podcasting 2.0 `podcast:chapters` / `podcast:transcript`, fetched lazily later. */
+    chaptersUrl: text("chapters_url"),
+    transcriptUrl: text("transcript_url"),
+    transcriptType: text("transcript_type"),
+    playState: text("play_state").$type<EpisodePlayState>().notNull().default("unplayed"),
+    positionSec: real("position_sec").notNull().default(0),
+    /** Total time actually listened, across every session (`played_duration`). */
+    playedDurationSec: real("played_duration_sec").notNull().default(0),
+    /** When it was last listened to (`last_played_time`). */
+    lastPlayedAt: text("last_played_at"),
+    /** When it was last finished (`playback_completion_date`): the history list. */
+    completedAt: text("completed_at"),
+    isFavorite: integer("is_favorite").notNull().default(0),
+    /** Place in Up Next, lower plays sooner. Null when it is not queued. */
+    queuePosition: integer("queue_position"),
+    downloadStatus: text("download_status")
+      .$type<EpisodeDownloadStatus>()
+      .notNull()
+      .default("none"),
+    /**
+     * The downloaded file's name inside the app's podcast folder — a name, not
+     * a path. iOS moves the app's container between launches, so an absolute
+     * path stored here would go stale; this is resolved on use instead.
+     */
+    downloadFile: text("download_file"),
+    downloadedAt: text("downloaded_at"),
+    downloadError: text("download_error"),
+    /** Cleared once a download is deleted, so auto-download does not fetch it again. */
+    autoDownloadEligible: integer("auto_download_eligible").notNull().default(1),
+    addedAt: text("added_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("podcast_episodes_podcast_pub_idx").on(table.podcastId, table.pubDate),
+    index("podcast_episodes_play_state_idx").on(table.playState),
+    index("podcast_episodes_queue_idx").on(table.queuePosition),
+    index("podcast_episodes_last_played_idx").on(table.lastPlayedAt),
+    index("podcast_episodes_download_idx").on(table.downloadStatus),
+  ],
+);
+
+/** Podlove Simple Chapters, from the feed or an AntennaPod import (`SimpleChapters`). */
+export const podcastChapters = sqliteTable(
+  "podcast_chapters",
+  {
+    id: text("id").primaryKey(),
+    episodeId: text("episode_id")
+      .notNull()
+      .references(() => podcastEpisodes.id, { onDelete: "cascade" }),
+    startSec: real("start_sec").notNull(),
+    title: text("title").notNull(),
+    link: text("link"),
+    imageUrl: text("image_url"),
+  },
+  (table) => [index("podcast_chapters_episode_idx").on(table.episodeId, table.startSec)],
+);
+
+/**
+ * How long was listened to, per local day and episode — the listening
+ * counterpart of `reading_days`, and the history the stats screen will read.
+ */
+export const podcastListeningDays = sqliteTable(
+  "podcast_listening_days",
+  {
+    /** `${day}:${episodeId}`, so the running total is a primary-key upsert. */
+    id: text("id").primaryKey(),
+    day: text("day").notNull(),
+    episodeId: text("episode_id").notNull(),
+    podcastId: text("podcast_id").notNull(),
+    seconds: real("seconds").notNull().default(0),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("podcast_listening_days_day_idx").on(table.day)],
+);

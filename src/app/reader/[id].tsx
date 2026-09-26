@@ -46,7 +46,7 @@ import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
-import { useScreenSettled } from "@/navigation/use-screen-settled";
+import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
 import { suggestTags } from "@/services/tag-suggest";
 import {
@@ -288,9 +288,9 @@ export default function ReaderScreen() {
   // Adjusted during render rather than in an effect (the same escape hatch
   // `components/ui/sheet` uses): the latch is derived from `settled`, and an
   // effect would cost an extra commit before the reader could mount.
-  const settled = useScreenSettled();
-  const [readerMounted, setReaderMounted] = useState(false);
-  if (settled && !readerMounted) setReaderMounted(true);
+  // Read from the transition's own end (see `useSettledOnce`), which also
+  // keeps this screen from re-rendering whenever focus comes back to it.
+  const readerMounted = useSettledOnce();
 
   // Show header on mount
   useEffect(() => {

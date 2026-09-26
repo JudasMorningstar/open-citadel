@@ -20,7 +20,10 @@ src/
   lib/          Cross-cutting infrastructure (cn, native wrappers, setup).
   utils/        Pure, dependency-free helpers (colors, dates, formatting).
   services/     I/O and domain work: inference, database, network, parsing.
-  stores/       Zustand stores. State and the actions that change it.
+  stores/       Zustand stores. Client state and the actions that change it.
+  query-manager/ TanStack Query keys and query options, a folder per domain
+                (keys.ts, options.ts, index.ts). Queries and mutations
+                themselves live in feature hooks.
   navigation/   Routing helpers and transitions.
   constants/    Theme, typography, spacing, motion.
 ```
@@ -31,13 +34,20 @@ consumer, not in anticipation of one.
 
 ## Components are presentational and small
 
+The `open-citadel-structure` skill has the working detail: the four layers
+(route, screen hook, component, pure util), size budgets per kind of file,
+how to split each, and the table of shared pieces to use instead of writing
+a second copy. Load it before writing or refactoring a screen.
+
 - **A component renders props.** Reaching into a store, a router or the
   database from inside one is what makes it impossible to reuse and
   impossible to look at in isolation. Take data and callbacks as props; let
   the route or a hook do the wiring.
-- **Roughly 150 lines is the point to stop and split.** Not a hard limit, but
-  past it you are almost always looking at two components, or one component
-  and a hook. Extract the sub-piece into its own file in the same folder.
+- **Roughly 150 lines is the point to stop and split**, for hooks as well as
+  components (routes ~120, services ~200). Not a hard limit, but past it you
+  are almost always looking at two components, or one component and a hook.
+  Extract the sub-piece into its own file in the same folder. A service that
+  outgrows its budget becomes a folder, with the old path kept as its entry.
 - **One component per file**, named after the file. A small private helper
   used only by that component may share the file; anything a second file
   wants gets its own.
