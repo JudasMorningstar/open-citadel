@@ -8,7 +8,7 @@ import { ReadingSpeedStepper } from '@/components/reading-speed-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { VoicePicker } from '@/components/voice-picker';
+import { VoiceCarousel } from '@/components/voice-carousel';
 import { useTtsStore } from '@/stores/tts';
 import { asColor } from '@/utils/colors';
 
@@ -38,7 +38,7 @@ export function TtsSettingsPanel() {
   }, []);
 
   return (
-    <View className="gap-5">
+    <View className="gap-4">
       {!isDownloaded && (
         <Card className="gap-3 p-4">
           <View className="flex-row items-start justify-between gap-3">
@@ -89,7 +89,7 @@ export function TtsSettingsPanel() {
         </Card>
       )}
 
-      <VoicePicker />
+      <VoiceCarousel />
       <ReadingSpeedStepper />
     </View>
   );

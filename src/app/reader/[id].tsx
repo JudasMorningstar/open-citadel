@@ -42,7 +42,6 @@ import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
 import { TtsSettingsPanel } from "@/components/tts-settings-panel";
-import { resolveVoice, VOICE_LABELS } from "@/services/device-tts/catalogue";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
@@ -1202,13 +1201,7 @@ export default function ReaderScreen() {
           without leaving the book. Same panel Settings uses, so the two
           never disagree about what "the voice" currently is. */}
       <Sheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} snapRatios={[0.5]}>
-        <View className="gap-1 px-6 pb-3">
-          <ThemedText type="headlineSm">Reading voice</ThemedText>
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            {VOICE_LABELS[resolveVoice(ttsVoice)]} at {ttsRate === 1 ? "1×" : `${ttsRate}×`}
-          </ThemedText>
-        </View>
-        <View className="px-6 pb-6">
+        <View className="px-6 pb-6 pt-3">
           <TtsSettingsPanel />
         </View>
       </Sheet>
