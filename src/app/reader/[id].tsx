@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 
+import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Touchable } from "@/components/ui/touchable";
 import type {
@@ -40,6 +41,7 @@ import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
+import { TtsSettingsPanel } from "@/components/tts-settings-panel";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
@@ -186,6 +188,7 @@ export default function ReaderScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [showToc, setShowToc] = useState(false);
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
 
@@ -584,13 +587,13 @@ export default function ReaderScreen() {
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
 
-    // Page-turn: only call goTo when the utterance crosses a virtual page boundary.
-    // Calling goTo on every utterance causes webview reflows that compete with audio.
-    const newPosition = event.locator.locations?.position;
-    const currentPosition = currentLocatorRef.current?.locations?.position;
-    if (newPosition === undefined || newPosition !== currentPosition) {
-      readerRef.current?.goTo(event.locator);
-    }
+    // No goTo here: the native side (HybridReadiumView.swift's
+    // `manager.onUtterance`) turns the page itself now, and waits for that
+    // to finish before Kokoro's audio starts. A JS round trip had no way to
+    // signal "the page actually turned" back to the native TTS engine, so
+    // calling goTo from here could only ever race the audio, not sequence
+    // before it. currentLocatorRef still updates from the native
+    // onLocationChange event this navigation fires either way.
   }, []);
 
   const handleTTSToggle = useCallback(() => {
@@ -1007,6 +1010,7 @@ export default function ReaderScreen() {
             setShowToc(true);
           }}
           onTTSToggle={handleTTSToggle}
+          onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
       </Animated.View>
@@ -1192,6 +1196,18 @@ export default function ReaderScreen() {
         onUpdateBookmarkNote={updateBookmarkNote}
         onClose={() => setShowToc(false)}
       />
+
+      {/* Long-press on the header's read-aloud button: voice/rate settings
+          without leaving the book. Same panel Settings uses, so the two
+          never disagree about what "the voice" currently is. */}
+      <Sheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} snapRatios={[0.5]}>
+        <View className="px-6 pb-3">
+          <ThemedText type="headlineSm">Reading voice</ThemedText>
+        </View>
+        <View className="px-6 pb-6">
+          <TtsSettingsPanel />
+        </View>
+      </Sheet>
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (

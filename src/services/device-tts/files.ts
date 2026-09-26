@@ -1,5 +1,5 @@
 /**
- * Kokoro's files on this device: fetching them, finding them, removing them.
+ * Kokoro's files on this device: fetching them, finding them.
  *
  * Same contract as `device-llm/files.ts` (see that file for the reasoning):
  * ExecuTorch's `download` owns the cache, so the app only ever asks the disk
@@ -62,9 +62,4 @@ export async function localModelFiles(): Promise<KokoroTtsModel<KokoroVoice> | n
   } catch {
     return null;
   }
-}
-
-/** Removes every one of Kokoro's files. There is only ever one entry, so nothing else shares them. */
-export async function deleteModelFiles(): Promise<void> {
-  await Promise.all(remoteUrls().map((url) => RNBlobUtil.fs.unlink(cachePath(url)).catch(() => {})));
 }

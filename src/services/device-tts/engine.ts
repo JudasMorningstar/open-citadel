@@ -1,7 +1,6 @@
 /**
- * The one loaded Kokoro pipeline, held for as long as anything might want a
- * voice: the settings preview and the reader's playback both need it without
- * either one paying to reload it twice.
+ * The one loaded Kokoro pipeline, held for as long as the reader might want
+ * a voice — a singleton so repeated reading sessions never pay to reload it.
  *
  * This is a much thinner singleton than `device-llm/engine.ts`'s: Kokoro has
  * no per-conversation cache to share, so the only hazard is calling
@@ -34,10 +33,6 @@ export function getEngine(): KokoroTextToSpeech<KokoroVoice> | null {
   return engine;
 }
 
-export function isEngineLoaded(): boolean {
-  return engine !== null;
-}
-
 /**
  * Loads Kokoro from local files, if it isn't already loaded.
  *
@@ -57,11 +52,6 @@ export function loadEngine(): Promise<void> {
     });
   }
   return loading;
-}
-
-export function unloadEngine(): void {
-  engine?.dispose();
-  engine = null;
 }
 
 /**

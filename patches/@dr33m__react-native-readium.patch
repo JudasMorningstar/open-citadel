@@ -86,10 +86,26 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..c7b23d977883266012604dd7d84d8dc2
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..450e34215c1aeb884f2128380337fb5a812e5b2a 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..4a703674e46ef1f8c779dca934c47c0bf0abca11 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -255,6 +255,16 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -247,6 +247,15 @@ abstract class BaseReaderFragment : Fragment() {
+         },
+         onUtterance = { locator, text ->
+           applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
++          // Turn the page for this utterance natively, right here — mirrors
++          // iOS's HybridReadiumView.onUtterance, and replaces the JS-side
++          // `goTo` call the reader screen used to make from its own
++          // `onTTSUtterance` handler. `go()` is fire-and-forget on this
++          // `Navigator` (no async completion signal to await, unlike iOS's
++          // `EPUBNavigatorViewController.go(to:)`), so this doesn't yet gate
++          // `KokoroTtsEngine`'s synthesis on it the way iOS's
++          // `pendingNavigation` does.
++          navigator.go(locator, animated = false)
+           viewScope.launch {
+             channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
+           }
+@@ -255,6 +264,16 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -106,7 +122,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..450e34215c1aeb884f2128380337fb5a
          }
        )
      }
-@@ -281,6 +291,12 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -281,6 +300,12 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -628,7 +644,7 @@ index 0000000000000000000000000000000000000000..fe004692d69081ee29bdba76f30d4640
 +    val speed: Double,
 +) : TtsEngine.Settings
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9b3e62144954f820e55c9c83510954b7c1f58f35 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..07b7b678794959b7239b4d9be3028c798863e01c 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
 @@ -55,6 +55,8 @@ class HybridReadiumView: HybridReadiumViewSpec {
@@ -640,7 +656,40 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9b3e62144954f820e55c9c83510954b7
  
    // MARK: - Private state
  
-@@ -339,6 +341,12 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -319,8 +321,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
+         ))
+       }
+       manager.onUtterance = { [weak self] locator, text in
++        guard let self else { return }
+         // Apply TTS decoration natively — bypass React prop round-trip
+-        if let nav = self?.readerViewController?.navigator as? DecorableNavigator {
++        if let nav = self.readerViewController?.navigator as? DecorableNavigator {
+           let tint = UIColor(red: 0.949, green: 0.792, blue: 0.314, alpha: 0.35) // #f2ca50 @ 35%
+           let decoration = RDecoration(
+             id: "tts-current",
+@@ -329,7 +332,20 @@ class HybridReadiumView: HybridReadiumViewSpec {
+           )
+           nav.apply(decorations: [decoration], in: "tts")
+         }
+-        self?.onTTSUtterance?(TTSUtteranceEvent(
++        // Turn the page for this utterance natively, right here, rather than
++        // round-tripping through JS's `goTo` — and hand the in-flight Task to
++        // the engine so it can await the turn before starting audio. A JS
++        // round trip has no way to signal "the page actually turned" back to
++        // `KokoroTTSEngine.speak`, which starts requesting synthesis (and
++        // therefore audio) the moment it's called; without this, a short
++        // utterance's audio could start before the page holding it was shown.
++        if let navigator = self.readerViewController?.navigator {
++          let navigation = Task { @MainActor in
++            _ = await navigator.go(to: locator, options: NavigatorGoOptions())
++          }
++          self.readerViewController?.ttsManager?.setPendingNavigation(navigation)
++        }
++        self.onTTSUtterance?(TTSUtteranceEvent(
+           locator: readiumLocatorToNitro(locator),
+           utterance: text,
+           rangeStart: nil,
+@@ -339,6 +355,12 @@ class HybridReadiumView: HybridReadiumViewSpec {
        manager.onError = { [weak self] message in
          self?.onTTSError?(message)
        }
@@ -653,7 +702,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9b3e62144954f820e55c9c83510954b7
        vc.ttsManager = manager
      }
      return vc.ttsManager
-@@ -410,6 +418,22 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -410,6 +432,22 @@ class HybridReadiumView: HybridReadiumViewSpec {
        self?.readerViewController?.ttsManager?.skipPrevious()
      }
    }
@@ -678,10 +727,10 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9b3e62144954f820e55c9c83510954b7
    func cleanup() {
 diff --git a/ios/Reader/TTS/KokoroTTSEngine.swift b/ios/Reader/TTS/KokoroTTSEngine.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..a8fa20eecc3e99babd37d2aac3f58339814b8d3e
+index 0000000000000000000000000000000000000000..74108b12e18d54ac5132b54470fc9deab13265b7
 --- /dev/null
 +++ b/ios/Reader/TTS/KokoroTTSEngine.swift
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,224 @@
 +import AVFoundation
 +import Foundation
 +import ReadiumNavigator
@@ -718,6 +767,19 @@ index 0000000000000000000000000000000000000000..a8fa20eecc3e99babd37d2aac3f58339
 +
 +    var onSynthesisRequest: ((TTSSynthesisRequest) -> Void)?
 +    var onSynthesisCancel: ((String) -> Void)?
++
++    /// A page turn `HybridReadiumView` already dispatched for the utterance
++    /// about to be spoken. Kokoro's audio starts as soon as
++    /// `onSynthesisRequest` fires, so without waiting for this first, a
++    /// short/fast utterance could become audible before the page it's on has
++    /// actually turned into view — the reader would visibly still show the
++    /// old page while a new sentence starts. Set right before `speak()` is
++    /// called for the matching utterance (see `TTSManager.setPendingNavigation`);
++    /// consumed and cleared at most once per call.
++    ///
++    /// `Swift.Task`, not the bare name: the nested `Task` class below shadows
++    /// it for the rest of this file.
++    var pendingNavigation: Swift.Task<Void, Never>?
 +
 +    // Named `Task` to match `AVTTSEngine`'s own nested-type convention in this
 +    // SDK; it shadows `Swift.Task` within this file, which is safe here since
@@ -781,7 +843,13 @@ index 0000000000000000000000000000000000000000..a8fa20eecc3e99babd37d2aac3f58339
 +        }
 +
 +        return await withTaskCancellationHandler {
-+            await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, TTSError>, Never>) in
++            if let navigation = pendingNavigation {
++                pendingNavigation = nil
++                await navigation.value
++            }
++            guard !task.isCancelled else { return .success(()) }
++
++            return await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, TTSError>, Never>) in
 +                task.continuation = continuation
 +                onSynthesisRequest?(TTSSynthesisRequest(
 +                    requestId: task.requestId,
@@ -869,6 +937,14 @@ index 0000000000000000000000000000000000000000..a8fa20eecc3e99babd37d2aac3f58339
 +    private func cancelTask(requestId: String) {
 +        guard let task = tasks[requestId], !task.isCancelled else { return }
 +        task.isCancelled = true
++        // Readium considers the utterance interrupted the moment this method
++        // returns, but nothing else here ever told the player to stop — buffers
++        // already scheduled for this task would keep playing to completion on
++        // their own, so a pause only took effect once the sentence finished.
++        // `stop()` halts playback immediately and drops every pending buffer
++        // and completion callback, which is safe since only one task is ever
++        // scheduling audio on this shared node at a time.
++        playerNode.stop()
 +        onSynthesisCancel?(requestId)
 +        finishTask(requestId: requestId, result: .success(()))
 +    }
@@ -880,7 +956,7 @@ index 0000000000000000000000000000000000000000..a8fa20eecc3e99babd37d2aac3f58339
 +    }
 +}
 diff --git a/ios/Reader/TTS/TTSManager.swift b/ios/Reader/TTS/TTSManager.swift
-index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..20dce02b57038f9987488be985365090dac9f905 100644
+index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..56dec0c971edda34a00970ea797fbb432af08211 100644
 --- a/ios/Reader/TTS/TTSManager.swift
 +++ b/ios/Reader/TTS/TTSManager.swift
 @@ -10,10 +10,16 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
@@ -957,10 +1033,17 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..20dce02b57038f9987488be985365090
      }
  
      func skipNext() {
-@@ -92,6 +118,16 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -92,6 +118,23 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          stop()
      }
  
++    /// Forwards a page-turn `HybridReadiumView` just dispatched for the
++    /// utterance about to be spoken, so `KokoroTTSEngine.speak` can wait for
++    /// it before starting synthesis. See `KokoroTTSEngine.pendingNavigation`.
++    func setPendingNavigation(_ task: Task<Void, Never>) {
++        kokoroEngine?.pendingNavigation = task
++    }
++
 +    /// Answers an `onSynthesisRequest` with one chunk of synthesized audio.
 +    func provideAudioChunk(requestId: String, samples: Data, sampleRate: Double, isLast: Bool) {
 +        kokoroEngine?.provideAudioChunk(requestId: requestId, samples: samples, sampleRate: sampleRate, isLast: isLast)
@@ -974,6 +1057,28 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..20dce02b57038f9987488be985365090
      // MARK: - PublicationSpeechSynthesizerDelegate
  
      func publicationSpeechSynthesizer(
+@@ -116,6 +159,20 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+         utterance: PublicationSpeechSynthesizer.Utterance,
+         didFailWithError error: PublicationSpeechSynthesizer.Error
+     ) {
+-        onError?("TTS error: \(error.localizedDescription)")
++        // `PublicationSpeechSynthesizer.Error` doesn't conform to
++        // `LocalizedError`, so its own `localizedDescription` discards
++        // whatever is actually inside it ("The operation couldn't be
++        // completed... error 0" for every failure alike). Unwrap it by hand
++        // so the real cause — e.g. an engine-specific message from
++        // `KokoroTTSEngine` — reaches the reader instead.
++        switch error {
++        case .engine(let ttsError):
++            switch ttsError {
++            case .languageNotSupported(let language, _):
++                onError?("TTS error: language not supported (\(language.code.bcp47))")
++            case .other(let underlying):
++                onError?("TTS error: \(underlying.localizedDescription)")
++            }
++        }
+     }
+ }
 diff --git a/lib/nitrogen/generated/.gitattributes b/lib/nitrogen/generated/.gitattributes
 new file mode 100644
 index 0000000000000000000000000000000000000000..fb7a0d5a3f6ce52605cdfee6a543ecc415f40798
