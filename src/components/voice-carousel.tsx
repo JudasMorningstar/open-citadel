@@ -4,6 +4,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Carousel } from '@/components/ui/carousel';
+import { Touchable } from '@/components/ui/touchable';
 import { useVoicePreview } from '@/components/use-voice-preview';
 import { VoiceCarouselDots } from '@/components/voice-carousel-dots';
 import { VoiceCarouselSlide } from '@/components/voice-carousel-slide';
@@ -25,11 +26,15 @@ const ITEM_SIZE = CARD_WIDTH + CARD_GAP;
  * `VoiceCarouselCard` for the per-card content and depth, and
  * `VoiceCarouselDots` for the page indicator.
  *
- * Self-contained and prop-free, like `TtsSettingsPanel` that hosts it — reads
- * and writes `useSettingsStore`/`useTtsStore` directly.
+ * Otherwise self-contained, like `TtsSettingsPanel` that hosts it — reads and
+ * writes `useSettingsStore`/`useTtsStore` directly. `onDone` is the one
+ * exception: this panel is shared between a full Settings screen (dismissed
+ * by navigating back, nothing to wire here) and the reader's own bottom
+ * sheet (which has no header of its own to put a close control on), so only
+ * the sheet passes it.
  */
-export function VoiceCarousel() {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
+export function VoiceCarousel({ onDone }: { onDone?: () => void }) {
+  const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
@@ -49,14 +54,18 @@ export function VoiceCarousel() {
   };
 
   return (
-    <View className={cn('gap-2', !isDownloaded && 'opacity-50')}>
+    <View className={cn('gap-4', !isDownloaded && 'opacity-50')}>
       <View className="flex-row items-baseline justify-between">
         <ThemedText type="labelSm" color={asColor(mutedForeground)}>
           READING VOICE
         </ThemedText>
-        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-          {active + 1} / {KOKORO_EN_US_VOICES.length}
-        </ThemedText>
+        {onDone ? (
+          <Touchable onPress={onDone} haptic="tap" hitSlop={8}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
+              DONE
+            </ThemedText>
+          </Touchable>
+        ) : null}
       </View>
 
       <Carousel

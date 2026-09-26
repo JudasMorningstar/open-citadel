@@ -1202,7 +1202,7 @@ export default function ReaderScreen() {
           never disagree about what "the voice" currently is. */}
       <Sheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} snapRatios={[0.5]}>
         <View className="px-6 pb-6 pt-3">
-          <TtsSettingsPanel />
+          <TtsSettingsPanel onDone={() => setShowTtsSettings(false)} />
         </View>
       </Sheet>
 

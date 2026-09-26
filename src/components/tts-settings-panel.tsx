@@ -12,16 +12,23 @@ import { VoiceCarousel } from '@/components/voice-carousel';
 import { useTtsStore } from '@/stores/tts';
 import { asColor } from '@/utils/colors';
 
+export interface TtsSettingsPanelProps {
+  /** Closes the sheet this panel is mounted in, shown as a "DONE" control
+   * next to the voice carousel's own header. Omitted on the Settings screen,
+   * which has its own back navigation and nothing to close here. */
+  onDone?: () => void;
+}
+
 /**
  * The reading voice's settings: download the voice pack if it isn't on the
  * device yet, then voice (with a one-line preview) and reading speed.
  *
- * Self-contained and prop-free on purpose — it and the components it hosts
- * read and write `useSettingsStore`/`useTtsStore` directly, so the Settings
- * screen and the reader's own long-press quick-settings sheet can both mount
- * it verbatim and always show the same state.
+ * Otherwise self-contained — it and the components it hosts read and write
+ * `useSettingsStore`/`useTtsStore` directly, so the Settings screen and the
+ * reader's own long-press quick-settings sheet can both mount it and always
+ * show the same state.
  */
-export function TtsSettingsPanel() {
+export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
   const [mutedForeground, destructive] = useCSSVariable([
     '--color-muted-foreground',
     '--color-destructive',
@@ -89,7 +96,7 @@ export function TtsSettingsPanel() {
         </Card>
       )}
 
-      <VoiceCarousel />
+      <VoiceCarousel onDone={onDone} />
       <ReadingSpeedStepper />
     </View>
   );
