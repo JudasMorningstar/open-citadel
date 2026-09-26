@@ -3,6 +3,7 @@ import "@/global.css";
 // would otherwise bury the dev console. See the module for why.
 import "@/lib/quiet-reanimated-deps-warning";
 
+import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
 import {
     Manrope_400Regular,
     Manrope_500Medium,
@@ -96,6 +97,7 @@ export default function RootLayout() {
     Manrope_500Medium,
     Manrope_600SemiBold,
     Manrope_700Bold,
+    JetBrainsMono_400Regular,
   });
 
   const [dbReady, setDbReady] = useState(false);
