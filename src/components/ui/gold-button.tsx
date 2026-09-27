@@ -62,6 +62,15 @@ type GoldButtonProps = {
    * exactly the moment a second tap is worst.
    */
   loading?: boolean;
+  /**
+   * Working on the press, with its own mark of progress drawn elsewhere (the
+   * free book page's outline running round the button).
+   *
+   * Keeps the label, since the label is what says what is happening, and
+   * stops the press. Dimmed less than `disabled`, so the label still reads,
+   * but not lit, so the button does not look as if it takes a second press.
+   */
+  busy?: boolean;
 };
 
 export function GoldButton({
@@ -72,6 +81,7 @@ export function GoldButton({
   size = "full",
   disabled = false,
   loading = false,
+  busy = false,
 }: GoldButtonProps) {
   const [primary, primaryDeep, primaryForeground] = useCSSVariable([
     "--color-primary",
@@ -122,6 +132,7 @@ export function GoldButton({
         },
         lit: { opacity: 1 },
         dimmed: { opacity: 0.35 },
+        working: { opacity: 0.6 },
       }),
     [],
   );
@@ -129,14 +140,14 @@ export function GoldButton({
   return (
     <Touchable
       onPress={onPress}
-      disabled={disabled || loading}
+      disabled={disabled || loading || busy}
       haptic="commit"
       accessibilityRole="button"
-      accessibilityState={{ disabled: disabled || loading, busy: loading }}
+      accessibilityState={{ disabled: disabled || loading || busy, busy: loading || busy }}
       accessibilityLabel={accessibilityLabel ?? label}
     >
       <Animated.View
-        style={[styles.dim, disabled ? styles.dimmed : styles.lit]}
+        style={[styles.dim, disabled ? styles.dimmed : busy ? styles.working : styles.lit]}
       >
         <LinearGradient
           colors={[asColor(primary)!, asColor(primaryDeep)!]}

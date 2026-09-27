@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { useOpenFromLists } from '@/features/free-books/hooks/use-open-catalog-book';
+import { backTo } from '@/navigation/navigate';
 import { createShelfQueryOptions } from '@/query-manager/gutenberg';
 import { findShelf } from '@/services/gutenberg/shelves';
 
@@ -32,6 +33,6 @@ export function useCatalogShelfScreen(param: string | undefined) {
     emptyText: query.isError ? 'Could not reach Project Gutenberg. Check your connection.' : 'Nothing on this shelf yet.',
     open,
     loadMore,
-    back: () => router.back(),
+    back: () => backTo(router, '/free-books/explore'),
   };
 }

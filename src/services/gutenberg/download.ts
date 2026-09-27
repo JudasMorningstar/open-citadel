@@ -13,8 +13,8 @@ import {
   EncodingType,
   StorageAccessFramework,
   cacheDirectory,
+  createDownloadResumable,
   deleteAsync,
-  downloadAsync,
   getInfoAsync,
   moveAsync,
   readAsStringAsync,
@@ -29,6 +29,9 @@ import { LIBRARY_FOLDER_NAME, MAX_BASE64_BYTES } from '@/services/library-setup'
 import { useBooksStore } from '@/stores/books';
 
 export type DownloadFailure = { id: number; error: string };
+
+/** How far a book's file has come down, 0..1. */
+export type DownloadProgress = (fraction: number) => void;
 
 /**
  * The app, its version, and where Project Gutenberg can reach whoever runs it:
@@ -94,13 +97,19 @@ async function alreadyInFolder(folderUri: string, fileName: string, id: number):
  * Two ways across, because the destination is two kinds of thing. A `file://`
  * folder takes a plain move. A SAF folder cannot be written to directly, so
  * the file is written across as base64.
+ *
+ * Progress is reported only when Gutenberg says how large the file is, which
+ * its EPUBs always do.
  */
-async function saveEpubTo(folderUri: string, fileName: string, sourceUrl: string): Promise<void> {
+async function saveEpubTo(folderUri: string, fileName: string, sourceUrl: string, onProgress?: DownloadProgress): Promise<void> {
   const staging = stagingPath(fileName);
   try {
-    const result = await downloadAsync(sourceUrl, staging, DOWNLOAD_OPTIONS);
-    if (result.status !== 200) {
-      throw new Error(`Project Gutenberg answered ${result.status}.`);
+    const task = createDownloadResumable(sourceUrl, staging, DOWNLOAD_OPTIONS, (p) => {
+      if (p.totalBytesExpectedToWrite > 0) onProgress?.(p.totalBytesWritten / p.totalBytesExpectedToWrite);
+    });
+    const result = await task.downloadAsync();
+    if (!result || result.status !== 200) {
+      throw new Error(result ? `Project Gutenberg answered ${result.status}.` : 'The download stopped.');
     }
 
     if (!folderUri.startsWith('content://')) {
@@ -148,6 +157,7 @@ async function downloadableEpub(id: number): Promise<string> {
  */
 export async function downloadBooksIntoLibrary(
   books: { id: number; title: string }[],
+  onProgress?: (id: number, fraction: number) => void,
 ): Promise<{ downloaded: string[]; failed: DownloadFailure[]; cancelled: boolean }> {
   const folderUri = await ensureLibraryFolder();
   if (!folderUri) return { downloaded: [], failed: [], cancelled: true };
@@ -159,7 +169,7 @@ export async function downloadBooksIntoLibrary(
     try {
       const fileName = epubFileName(book.title, book.id);
       if (!(await alreadyInFolder(folderUri, fileName, book.id))) {
-        await saveEpubTo(folderUri, fileName, await downloadableEpub(book.id));
+        await saveEpubTo(folderUri, fileName, await downloadableEpub(book.id), (fraction) => onProgress?.(book.id, fraction));
       }
       downloaded.push(book.title);
     } catch (error) {
@@ -182,8 +192,11 @@ export async function downloadBooksIntoLibrary(
  * Waits for the scan to have started, so the page can tell "the Library is
  * reading it in" from "the scan came and went without it".
  */
-export async function downloadCatalogBook(book: { id: number; title: string }): Promise<'added' | 'cancelled'> {
-  const { failed, cancelled } = await downloadBooksIntoLibrary([book]);
+export async function downloadCatalogBook(
+  book: { id: number; title: string },
+  onProgress?: DownloadProgress,
+): Promise<'added' | 'cancelled'> {
+  const { failed, cancelled } = await downloadBooksIntoLibrary([book], (_id, fraction) => onProgress?.(fraction));
   if (cancelled) return 'cancelled';
   if (failed.length > 0) throw new Error(failed[0].error);
   await useBooksStore.getState().syncBooks();

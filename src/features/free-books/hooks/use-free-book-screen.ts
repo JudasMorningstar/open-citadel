@@ -8,6 +8,7 @@ import type { FreeBookParams } from '@/features/free-books/hooks/use-open-catalo
 import { freeBookAction, freeBookActionHint, freeBookActionLabel, freeBookActionState } from '@/features/free-books/utils/book-action';
 import { bookFacts } from '@/features/free-books/utils/book-facts';
 import { useOpenReader } from '@/features/library/hooks/use-open-reader';
+import { backTo } from '@/navigation/navigate';
 import { createCatalogBookQueryOptions } from '@/query-manager/gutenberg';
 import { canDownload, landingUrl } from '@/services/gutenberg/records';
 import { useLibraryBookFromGutenberg } from '@/stores/books';
@@ -24,7 +25,7 @@ export function useFreeBookScreen(params: FreeBookParams) {
   const book = query.data;
   const libraryBookId = useLibraryBookFromGutenberg(id);
   const openReader = useOpenReader();
-  const { download, downloading, downloaded } = useFreeBookDownload(book, libraryBookId !== null);
+  const { download, downloading, downloaded, progress } = useFreeBookDownload(book, libraryBookId !== null);
 
   const detail = book ? 'ready' : query.isError ? 'failed' : 'loading';
   const action = freeBookAction({
@@ -53,6 +54,7 @@ export function useFreeBookScreen(params: FreeBookParams) {
       actionLabel: freeBookActionLabel(action),
       actionHint: freeBookActionHint(action, detail),
       ...freeBookActionState(action),
+      progress,
       onAction,
     },
     about: {
@@ -62,6 +64,6 @@ export function useFreeBookScreen(params: FreeBookParams) {
       onOpenGutenberg: openOnGutenberg,
     },
     loaded: detail !== 'loading',
-    back: () => router.back(),
+    back: () => backTo(router, '/free-books/explore'),
   };
 }

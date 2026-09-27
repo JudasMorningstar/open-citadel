@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import React from 'react';
+import { useSharedValue } from 'react-native-reanimated';
 
 import { showToast } from '@/components/toast/toast-provider';
 import { downloadCatalogBook } from '@/services/gutenberg/download';
@@ -25,15 +26,25 @@ const SCAN_SETTLE_MS = 2000;
  * started, so if the scans then settle without the book, it could not be read
  * in: the page offers the download again, and trying again does not fetch the
  * file twice (see `downloadBooksIntoLibrary`).
+ *
+ * `progress` is how far the file has come down, a shared value so the button's
+ * outline follows it without the page rendering on every tick. It stays full
+ * while the Library reads the book in.
  */
 export function useFreeBookDownload(book: CatalogBookDetail | undefined, inLibrary: boolean) {
   const syncRunning = useSyncRunning();
+  const progress = useSharedValue(0);
   const mutation = useMutation({
     mutationFn: () => {
       if (!book) throw new Error('The book has not loaded yet.');
-      return downloadCatalogBook({ id: book.id, title: book.title });
+      progress.set(0);
+      return downloadCatalogBook({ id: book.id, title: book.title }, (fraction) => progress.set(fraction));
     },
-    onError: () => showToast({ key: TOAST_KEY, message: 'The download did not finish. Try again in a moment.' }),
+    onSuccess: (result) => progress.set(result === 'added' ? 1 : 0),
+    onError: () => {
+      progress.set(0);
+      showToast({ key: TOAST_KEY, message: 'The download did not finish. Try again in a moment.' });
+    },
   });
 
   const added = mutation.data === 'added';
@@ -56,5 +67,6 @@ export function useFreeBookDownload(book: CatalogBookDetail | undefined, inLibra
     },
     downloading: mutation.isPending,
     downloaded: added,
+    progress,
   };
 }

@@ -48,6 +48,8 @@ export function freeBookActionHint(action: FreeBookAction, detail: 'loading' | '
   switch (action) {
     case 'download':
       return 'A free EPUB. It goes into your Open Citadel folder.';
+    case 'downloading':
+      return 'Downloading from Project Gutenberg.';
     case 'adding':
       return 'Downloaded. It will be on your shelves in a moment.';
     case 'read':
@@ -63,10 +65,13 @@ export function freeBookActionHint(action: FreeBookAction, detail: 'loading' | '
   }
 }
 
-/** Whether the button is busy, and whether it takes a press at all. */
-export function freeBookActionState(action: FreeBookAction): { loading: boolean; disabled: boolean } {
+/**
+ * Whether the button is busy with a download (the progress outline round it,
+ * no press), and whether it has nothing to offer yet.
+ */
+export function freeBookActionState(action: FreeBookAction): { busy: boolean; disabled: boolean } {
   return {
-    loading: action === 'downloading' || action === 'adding',
-    disabled: action === 'loading' || action === 'downloading' || action === 'adding',
+    busy: action === 'downloading' || action === 'adding',
+    disabled: action === 'loading',
   };
 }

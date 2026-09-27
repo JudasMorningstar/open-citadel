@@ -41,20 +41,24 @@ describe('freeBookActionHint', () => {
     expect(freeBookActionHint('download', 'ready')).toBe('A free EPUB. It goes into your Open Citadel folder.');
   });
 
+  it('keeps a line under the button while it downloads, so the page does not jump', () => {
+    expect(freeBookActionHint('downloading', 'ready')).toBe('Downloading from Project Gutenberg.');
+  });
+
   it('tells a failed load from a book with no EPUB', () => {
     expect(freeBookActionHint('unavailable', 'failed')).toContain('connection');
     expect(freeBookActionHint('unavailable', 'ready')).toContain('no EPUB');
   });
 
   it('has no copy with an em dash in it', () => {
-    const actions = ['download', 'adding', 'read', 'copyrighted', 'unavailable'] as const;
+    const actions = ['download', 'downloading', 'adding', 'read', 'copyrighted', 'unavailable'] as const;
     for (const action of actions) expect(freeBookActionHint(action, 'ready') ?? '').not.toContain('—');
   });
 });
 
 describe('freeBookActionState', () => {
   it('is busy and still while a download runs', () => {
-    expect(freeBookActionState('downloading')).toEqual({ loading: true, disabled: true });
-    expect(freeBookActionState('download')).toEqual({ loading: false, disabled: false });
+    expect(freeBookActionState('downloading')).toEqual({ busy: true, disabled: false });
+    expect(freeBookActionState('download')).toEqual({ busy: false, disabled: false });
   });
 });

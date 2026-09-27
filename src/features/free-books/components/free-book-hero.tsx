@@ -1,7 +1,9 @@
 import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
+import type { SharedValue } from 'react-native-reanimated';
 
+import { ProgressOutline } from '@/components/progress-outline';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { elevation, motion } from '@/constants/theme';
@@ -9,6 +11,8 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 const COVER = { width: 150, height: 225 } as const;
+/** The gap between the button and the progress outline around it. */
+const OUTLINE_GAP = 4;
 
 export type FreeBookHeroProps = {
   title: string;
@@ -17,16 +21,21 @@ export type FreeBookHeroProps = {
   actionLabel: string;
   /** What pressing the button will do, or why it cannot. */
   actionHint: string | null;
-  loading: boolean;
+  /** Downloading or being read in: the button wears the progress outline. */
+  busy: boolean;
   disabled: boolean;
+  /** How far the download has come, 0..1. */
+  progress: SharedValue<number>;
   onAction: () => void;
 };
 
 /**
  * The top of a free book's page: its cover large, its title in the library's
  * serif, and the one thing the page is for, in gold. Download, then Read.
+ * While it downloads, the podcasts' square progress outline runs around the
+ * button, so the wait shows how far along it is.
  */
-export function FreeBookHero({ title, author, coverUrl, actionLabel, actionHint, loading, disabled, onAction }: FreeBookHeroProps) {
+export function FreeBookHero({ title, author, coverUrl, actionLabel, actionHint, busy, disabled, progress, onAction }: FreeBookHeroProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
   return (
@@ -47,7 +56,10 @@ export function FreeBookHero({ title, author, coverUrl, actionLabel, actionHint,
         ) : null}
       </View>
       <View className="gap-2">
-        <GoldButton label={actionLabel} size="compact" onPress={onAction} loading={loading} disabled={disabled} />
+        <View>
+          <GoldButton label={actionLabel} size="compact" onPress={onAction} disabled={disabled} busy={busy} />
+          {busy ? <ProgressOutline progress={progress} outset={OUTLINE_GAP} /> : null}
+        </View>
         {actionHint ? (
           <ThemedText type="bodySm" color={muted} className="text-center">
             {actionHint}

@@ -1,15 +1,15 @@
 import React from 'react';
 import { View } from 'react-native';
-import Svg, { Rect } from 'react-native-svg';
+import { useSharedValue } from 'react-native-reanimated';
 
 import { CircleAlert, Download, Square, Trash2 } from '@/components/icons';
+import { ProgressOutline } from '@/components/progress-outline';
 import { Touchable } from '@/components/ui/touchable';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
 import { useDownloadProgress } from '@/stores/podcast-downloads';
 
 const BOX = 32;
-const STROKE = 2;
 
 type DownloadButtonProps = {
   episode: Pick<EpisodeItem, 'id' | 'downloadStatus'>;
@@ -24,9 +24,8 @@ type DownloadButtonProps = {
  * on the device (the bin the app deletes with everywhere, to remove it), or
  * failed (a warning, pressed to try again).
  *
- * The progress outline is square because every other mark in the app is; a
- * ring would be the one round thing on the row. It subscribes to its own
- * episode's progress only, so a download ticking never re-renders the list.
+ * It subscribes to its own episode's progress only, so a download ticking
+ * never re-renders the list.
  */
 function DownloadButtonBase({ episode, onDownload, onRemove }: DownloadButtonProps) {
   const tokens = useThemeTokens();
@@ -35,6 +34,8 @@ function DownloadButtonBase({ episode, onDownload, onRemove }: DownloadButtonPro
   const busy = status === 'queued' || status === 'downloading';
   const muted = tokens['--color-muted-foreground'];
   const gold = tokens['--color-primary'];
+  const fill = useSharedValue(0);
+  React.useEffect(() => fill.set(progress ?? 0), [fill, progress]);
 
   const label =
     status === 'downloaded'
@@ -46,8 +47,6 @@ function DownloadButtonBase({ episode, onDownload, onRemove }: DownloadButtonPro
           : 'Download';
 
   const press = () => (status === 'downloaded' || busy ? onRemove(episode.id) : onDownload(episode.id));
-  const perimeter = (BOX - STROKE) * 4;
-  const drawn = perimeter * (progress ?? 0);
 
   return (
     <Touchable
@@ -61,20 +60,7 @@ function DownloadButtonBase({ episode, onDownload, onRemove }: DownloadButtonPro
     >
       {busy ? (
         <View style={{ width: BOX, height: BOX }} className="items-center justify-center">
-          <Svg width={BOX} height={BOX} style={{ position: 'absolute' }}>
-            <Rect x={STROKE / 2} y={STROKE / 2} width={BOX - STROKE} height={BOX - STROKE} stroke={tokens['--color-surface-tertiary']} strokeWidth={STROKE} fill="none" />
-            <Rect
-              x={STROKE / 2}
-              y={STROKE / 2}
-              width={BOX - STROKE}
-              height={BOX - STROKE}
-              stroke={gold}
-              strokeWidth={STROKE}
-              fill="none"
-              strokeDasharray={`${drawn} ${perimeter}`}
-              strokeLinecap="butt"
-            />
-          </Svg>
+          <ProgressOutline progress={fill} />
           <Square size={10} color={gold} fill={gold} />
         </View>
       ) : status === 'downloaded' ? (

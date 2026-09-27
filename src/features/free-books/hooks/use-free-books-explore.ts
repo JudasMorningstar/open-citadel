@@ -4,6 +4,7 @@ import React from 'react';
 import { useCatalogSearch } from '@/features/free-books/hooks/use-catalog-search';
 import { useCatalogShelves } from '@/features/free-books/hooks/use-catalog-shelves';
 import { useOpenFromLists } from '@/features/free-books/hooks/use-open-catalog-book';
+import { backTo } from '@/navigation/navigate';
 import type { CatalogBook } from '@/services/gutenberg/records';
 import type { CatalogShelf } from '@/services/gutenberg/shelves';
 
@@ -54,6 +55,6 @@ export function useFreeBooksExplore(landed: boolean) {
     searchEmptyText,
     openBook,
     openShelf,
-    close: () => router.back(),
+    close: () => backTo(router, '/'),
   };
 }
