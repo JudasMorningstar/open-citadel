@@ -5,6 +5,7 @@ import { fabPosition } from '@/components/fab-placement';
 import { FolderPlus, LibraryBig, Plus, type LucideIcon } from '@/components/icons';
 import { ScreenFab } from '@/components/screen-fab';
 import { Fab } from '@/components/ui/fab';
+import { useFabBottom } from '@/hooks/use-fab-bottom';
 import type { AddBooksKey, AddBooksOption } from '@/features/library/utils/add-books-menu';
 import { asColor } from '@/utils/colors';
 
@@ -12,8 +13,6 @@ const ICONS: Record<AddBooksKey, LucideIcon> = { files: FolderPlus, free: Librar
 
 type AddBooksFabProps = {
   options: AddBooksOption[];
-  /** Extra room below it, for the home indicator and the mini player. */
-  bottomOffset: number;
   onSelect: (key: AddBooksKey) => void;
 };
 
@@ -21,14 +20,15 @@ type AddBooksFabProps = {
  * The books side's add button. With more than one way to add books it opens
  * a menu of them out of its corner; with one it is that way, pressed.
  */
-export function AddBooksFab({ options, bottomOffset, onSelect }: AddBooksFabProps) {
+export function AddBooksFab({ options, onSelect }: AddBooksFabProps) {
   const [primary, primaryForeground] = useCSSVariable(['--color-primary', '--color-primary-foreground']);
-  const style = React.useMemo(() => fabPosition(bottomOffset), [bottomOffset]);
+  const bottom = useFabBottom();
+  const style = React.useMemo(() => fabPosition(bottom), [bottom]);
   const gold = asColor(primary);
 
   if (options.length === 1) {
     const only = options[0];
-    return <ScreenFab icon={Plus} accessibilityLabel={only.label} bottomOffset={bottomOffset} onPress={() => onSelect(only.key)} />;
+    return <ScreenFab icon={Plus} accessibilityLabel={only.label} onPress={() => onSelect(only.key)} />;
   }
 
   return (

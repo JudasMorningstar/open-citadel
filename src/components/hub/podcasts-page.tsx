@@ -54,7 +54,7 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
       </Handover>
       {/* The side's one creative action, the same floating button the books
           side and the Timeline give theirs: find something new to follow. */}
-      <ScreenFab icon={Plus} accessibilityLabel="Add a podcast" bottomOffset={insets.bottom + bottomChrome} onPress={page.openExplore} />
+      <ScreenFab icon={Plus} accessibilityLabel="Add a podcast" onPress={page.openExplore} />
       <EpisodeActionSheet {...episodes.sheet} />
     </View>
   );

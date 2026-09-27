@@ -13,6 +13,7 @@ import { ScreenFab } from '@/components/screen-fab';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
+import { useFabBottom } from '@/hooks/use-fab-bottom';
 import { useToday } from '@/hooks/use-today';
 import { ExportImageCard } from '@/components/export/export-image-card';
 import { captureAndShare } from '@/utils/export-image';
@@ -36,6 +37,8 @@ import { asColor } from '@/utils/colors';
 
 export function TimelinePage() {
   const insets = useSafeAreaInsets();
+  // Where every screen's floating button sits, so the list clears it here too.
+  const fabBottom = useFabBottom();
   // The Library is a peer page, so returning to it is a swipe the button
   // makes on the user's behalf — never a pop, because there is no push.
   const goTo = useHubStore((s) => s.goTo);
@@ -260,7 +263,7 @@ export function TimelinePage() {
           // keep their own `px-6` gutters inside the column.
           style={contentColumn}
           contentContainerStyle={{
-            paddingBottom: layout.scrollBottom + fabClearance(insets.bottom),
+            paddingBottom: layout.scrollBottom + fabClearance(fabBottom),
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -300,7 +303,6 @@ export function TimelinePage() {
       <ScreenFab
         icon={PencilSparkles}
         accessibilityLabel="New thought"
-        bottomOffset={insets.bottom}
         onPress={() => { setEditingThought(null); setShowThoughtSheet(true); }}
       />
 

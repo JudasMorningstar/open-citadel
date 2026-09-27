@@ -80,7 +80,7 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
 
       {/* The page's one creative action, the same floating button the
           Timeline gives its own: adding books, from Files or for free. */}
-      <AddBooksFab options={library.addOptions} bottomOffset={insets.bottom + bottomChrome} onSelect={library.onAddBooks} />
+      <AddBooksFab options={library.addOptions} onSelect={library.onAddBooks} />
 
       <BookSheets sheets={sheets} />
       <NewCollectionPrompt {...newCollection.prompt} />
