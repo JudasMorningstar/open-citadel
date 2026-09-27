@@ -85,8 +85,9 @@ export async function clearQueue(): Promise<void> {
   await afterQueueChange();
 }
 
-export async function download(ids: string[]): Promise<void> {
-  await downloadEpisodes(ids);
+/** Returns the ids actually queued: anything already on its way is left alone. */
+export async function download(ids: string[]): Promise<string[]> {
+  return downloadEpisodes(ids);
 }
 
 export async function removeDownload(ids: string[]): Promise<void> {
