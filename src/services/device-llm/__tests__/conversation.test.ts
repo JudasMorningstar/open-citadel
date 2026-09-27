@@ -126,6 +126,14 @@ const TOKENIZER_CONFIG = JSON.stringify({
 });
 vi.mock('react-native-blob-util', () => ({ default: { fs: { readFile: async () => TOKENIZER_CONFIG } } }));
 vi.mock('@/lib/executorch', () => ({
+  createExclusiveQueue: () => {
+    let queue: Promise<unknown> = Promise.resolve();
+    return <T>(fn: () => Promise<T>): Promise<T> => {
+      const run = queue.then(fn, fn);
+      queue = run.catch(() => undefined);
+      return run;
+    };
+  },
   getExecuTorch: () => ({
     wrapAsync:
       <A extends unknown[], R>(fn: (...args: A) => R) =>

@@ -12,6 +12,7 @@
  */
 
 import { TurboModuleRegistry } from 'react-native';
+import RNBlobUtil from 'react-native-blob-util';
 
 type ExecuTorch = typeof import('react-native-executorch');
 
@@ -48,4 +49,43 @@ export function getExecuTorch(): ExecuTorch | null {
 export function isExecuTorchAvailable(): boolean {
   if (process.env.EXPO_OS === 'web') return false;
   return TurboModuleRegistry.get('RnExecutorch') != null;
+}
+
+/** The same hash ExecuTorch's fetcher names its cached files with. */
+function djb2(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+/**
+ * Where ExecuTorch's `download` keeps `url`, mirrored from its private
+ * `cachePathFor`. Shared by every catalogue (`device-llm`, `device-tts`) that
+ * needs to ask "is this already on disk" without triggering a fetch.
+ */
+export function cachePath(url: string): string {
+  const dirs = RNBlobUtil.fs.dirs;
+  const root = process.env.EXPO_OS === 'android' ? dirs.SDCardDir || dirs.DocumentDir : dirs.DocumentDir;
+  const bare = url.split('?')[0]!;
+  const basename = bare.split('/').pop() || 'model';
+  return `${root}/react-native-executorch/${djb2(bare)}_${basename}`;
+}
+
+/**
+ * A private FIFO queue: each call the returned function is given waits for
+ * every one queued before it to settle, success or failure, before it runs.
+ *
+ * Every native runner ExecuTorch hands back (an LLM, Kokoro) rejects a second
+ * concurrent caller outright rather than queueing it itself, so each one owns
+ * its own queue via a fresh call to this factory.
+ */
+export function createExclusiveQueue(): <T>(fn: () => Promise<T>) => Promise<T> {
+  let queue: Promise<unknown> = Promise.resolve();
+  return function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = queue.then(fn, fn);
+    queue = run.catch(() => undefined);
+    return run;
+  };
 }
