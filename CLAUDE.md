@@ -32,6 +32,17 @@ Put a thing in the narrowest place that fits. Something used by one feature
 belongs to that feature; promote it to the shared folders on the *second*
 consumer, not in anticipation of one.
 
+## Designing a screen
+
+**Load the `open-citadel-design` skill before designing or redesigning any
+UI or UX**: a screen, a flow, an empty state, a sheet, a toast. It is Apple's
+judgement (`apple-design`) spoken in Citadel Frame's language (`DESIGN.md`):
+a title and one line rather than paragraphs, instructions as steps one tap
+deeper, choices as cards, results as figures, actions pinned at the bottom,
+every state of work drawn, and a way out of every failure. The podcasts
+first-run and import (`src/features/podcasts/components/onboarding/`) is the
+reference build.
+
 ## Components are presentational and small
 
 The `open-citadel-structure` skill has the working detail: the four layers

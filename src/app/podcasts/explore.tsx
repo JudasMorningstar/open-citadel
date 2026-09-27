@@ -12,7 +12,8 @@ import { DiscoverRow } from "@/features/podcasts/components/discover-row";
 import { ExploreCharts } from "@/features/podcasts/components/explore-charts";
 import { ExploreResults } from "@/features/podcasts/components/explore-results";
 import { ExploreSkeleton } from "@/features/podcasts/components/explore-skeleton";
-import { ImportView } from "@/features/podcasts/components/import-view";
+import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/import-guide-sheet";
+import { ImportView } from "@/features/podcasts/components/onboarding/import-view";
 import { useExploreScreen } from "@/features/podcasts/hooks/use-explore-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
@@ -38,22 +39,32 @@ export default function ExploreScreen() {
         leftLabel="Close"
         onLeftPress={explore.close}
       />
-      <View className="px-6 pb-2" style={contentColumn}>
-        <SearchBar
-          variant="filled"
-          placeholder="Search shows, or paste a link"
-          debounce={350}
-          onDebouncedChange={explore.setQuery}
-          onClear={explore.clearQuery}
-          loading={explore.searching}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-      </View>
+      {/* An import has the page to itself: searching mid-import would only
+          hide what it is doing. */}
+      {importer.active ? null : (
+        <View className="px-6 pb-2" style={contentColumn}>
+          <SearchBar
+            variant="filled"
+            placeholder="Search shows, or paste a link"
+            debounce={350}
+            onDebouncedChange={explore.setQuery}
+            onClear={explore.clearQuery}
+            loading={explore.searching}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+        </View>
+      )}
       <View className="flex-1">
         {importer.active ? (
-          <ImportView state={importer.active} onDone={explore.close} onRetry={importer.start} />
+          <ImportView
+            state={importer.active}
+            bottomPadding={insets.bottom + layout.gutter}
+            onDone={explore.close}
+            onRetry={importer.start}
+            onCancel={importer.reset}
+          />
         ) : explore.view === "link" ? (
           <DiscoverRow id="link" title="Open this show" subtitle={explore.term} artworkUrl={null} following={false} onPress={explore.openLink} />
         ) : explore.view === "search" ? (
@@ -76,11 +87,12 @@ export default function ExploreScreen() {
               bottomPadding={bottomPadding}
               onOpen={explore.openShow}
               onViewAll={explore.openGenre}
-              onImport={importer.start}
+              onImport={importer.openGuide}
             />
           </Handover>
         )}
       </View>
+      {landed ? <ImportGuideSheet {...importer.guide} /> : null}
     </ThemedView>
   );
 }

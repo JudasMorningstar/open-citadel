@@ -4,14 +4,13 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import React from 'react';
 
 import { invalidatePodcastLibrary } from '@/query-manager/podcasts';
-import { importAntennaPodBackup, type ImportProgress, type ImportSummary } from '@/services/podcasts/antennapod-import';
+import type { ImportResult } from '@/features/podcasts/utils/import-summary';
+import { importAntennaPodBackup, type ImportProgress } from '@/services/podcasts/antennapod-import';
 import { importOpml, parseOpml } from '@/services/podcasts/opml';
 import { refreshAllShows } from '@/services/podcasts/refresh';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
+import { haptics } from '@/utils/haptics';
 
-export type ImportResult =
-  | { kind: 'database'; summary: ImportSummary }
-  | { kind: 'opml'; added: number; failed: number };
 
 export type ImportState =
   | { phase: 'idle' }
@@ -53,7 +52,8 @@ async function importFile(file: PickedFile, onProgress: (progress: ImportProgres
 
 /**
  * Choosing an AntennaPod export and bringing it in. The import is a mutation;
- * its progress, which the mutation has no slot for, is kept beside it.
+ * its progress, which the mutation has no slot for, is kept beside it. So is
+ * the guide to finding the export, which opens before the file picker does.
  *
  * Once it is in, every imported show is refreshed in the background, so
  * whatever was published since the backup was made turns up on its own.
@@ -63,11 +63,15 @@ export function useAntennaPodImport() {
   const importing = useMutation({
     mutationFn: (file: PickedFile) => importFile(file, setProgress),
     onSuccess: () => {
+      // Felt on the frame the summary lands, since that is what it confirms.
+      haptics.commit();
       usePodcastPrefs.getState().set('onboarding', 'imported');
       invalidatePodcastLibrary();
       void refreshAllShows(false);
     },
+    onError: () => haptics.warn(),
   });
+  const [guideOpen, setGuideOpen] = React.useState(false);
 
   const start = React.useCallback(async () => {
     if (importing.isPending) return;
@@ -86,7 +90,24 @@ export function useAntennaPodImport() {
         ? { phase: 'failed', message: importing.error.message || 'The import did not finish.' }
         : { phase: 'idle' };
 
+  const openGuide = React.useCallback(() => setGuideOpen(true), []);
+  const closeGuide = React.useCallback(() => setGuideOpen(false), []);
+  // The sheet steps aside first, so the picker is not opened over a sheet
+  // still on its way down.
+  const chooseFromGuide = React.useCallback(() => {
+    setGuideOpen(false);
+    void start();
+  }, [start]);
+
   /** The import once it has begun, and null while there is none: what `ImportView` draws. */
   const active: ActiveImport | null = state.phase === 'idle' ? null : state;
-  return { state, active, start, reset: importing.reset };
+  return {
+    state,
+    active,
+    start,
+    reset: importing.reset,
+    openGuide,
+    /** Spread onto `ImportGuideSheet`. */
+    guide: { visible: guideOpen, onClose: closeGuide, onChoose: chooseFromGuide },
+  };
 }

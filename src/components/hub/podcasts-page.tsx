@@ -5,12 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Plus } from "@/components/icons";
 import { Handover } from "@/components/navigation/handover";
 import { Fab, fabClearance } from "@/components/ui/fab";
+import { layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
-import { ImportView } from "@/features/podcasts/components/import-view";
 import { NoShowsYet } from "@/features/podcasts/components/no-shows-yet";
 import { PodcastsHomeSkeleton } from "@/features/podcasts/components/podcasts-home-skeleton";
 import { PodcastsHome } from "@/features/podcasts/components/podcasts-home";
-import { PodcastsWelcome } from "@/features/podcasts/components/podcasts-welcome";
+import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/import-guide-sheet";
+import { ImportView } from "@/features/podcasts/components/onboarding/import-view";
+import { PodcastsWelcome } from "@/features/podcasts/components/onboarding/podcasts-welcome";
 import { usePodcastsPage } from "@/features/podcasts/hooks/use-podcasts-page";
 import { useSettledAfter } from "@/navigation/use-settled-after";
 
@@ -30,8 +32,29 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
   const landed = useSettledAfter(SWITCH_SETTLE_MS);
   const { importer, episodes } = page;
 
-  if (importer.active) return <ImportView state={importer.active} onDone={importer.reset} onRetry={importer.start} />;
-  if (page.view === "welcome") return <PodcastsWelcome onStartFresh={page.startFresh} onImport={importer.start} />;
+  // Getting started keeps clear of whatever floats at the bottom, by the
+  // same gutter the rest of the page keeps from its edges.
+  const stagePadding = bottomChrome + insets.bottom + layout.gutter;
+
+  if (importer.active) {
+    return (
+      <ImportView
+        state={importer.active}
+        bottomPadding={stagePadding}
+        onDone={importer.reset}
+        onRetry={importer.start}
+        onCancel={importer.reset}
+      />
+    );
+  }
+  if (page.view === "welcome") {
+    return (
+      <>
+        <PodcastsWelcome bottomPadding={stagePadding} onStartFresh={page.startFresh} onImport={importer.openGuide} />
+        <ImportGuideSheet {...importer.guide} />
+      </>
+    );
+  }
 
   return (
     <View className="flex-1">
