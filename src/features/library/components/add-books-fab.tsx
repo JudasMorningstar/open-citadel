@@ -35,6 +35,8 @@ export function AddBooksFab({ options, bottomOffset, onSelect }: AddBooksFabProp
     <Fab.Group
       layout="menu"
       appearance="wells"
+      // Square, like everything else here; the panel's corner is a number, not a theme token.
+      menuRadius={0}
       placement="bottom-right"
       haptics
       style={style}

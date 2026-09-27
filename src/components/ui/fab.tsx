@@ -268,9 +268,13 @@ const GROUP_ALIGN: Record<FabPlacement, string> = {
 /** The diameter of each size, in points — the radius the material rounds itself to. */
 const SIZE_PX = { sm: 44, md: 56, lg: 64 } as const;
 
+// LOCAL EDIT: square, not round. Open Citadel draws nothing round, and its
+// theme zeroes every `--radius-*` token, but `rounded-full` is not one of
+// them. The same change below on the glass radius and the menu's icon wells.
+// Re-apply after `panelui-cli update`.
 const fabVariants = tv({
   slots: {
-    root: 'items-center justify-center rounded-full bg-primary shadow-lg',
+    root: 'items-center justify-center rounded-none bg-primary shadow-lg',
     content: 'flex-row items-center justify-center gap-2',
     label: 'font-medium text-primary-foreground',
   },
@@ -511,7 +515,8 @@ const FabRoot = forwardRef<View, FabProps>(
           <Glass
             interactive
             variant="regular"
-            radius={SIZE_PX[size ?? 'md'] / 2}
+            // LOCAL EDIT: square (see `fabVariants`).
+            radius={0}
             className={root({ className })}
             style={[placement ? anchor(placement, offset) : null, style]}
           >
@@ -1431,7 +1436,8 @@ const FabAction = forwardRef<View, FabActionProps>(
       const glyph = wells ? (
         <View
           className={cn(
-            'h-8 w-8 items-center justify-center rounded-full',
+            // LOCAL EDIT: square (see `fabVariants`).
+            'h-8 w-8 items-center justify-center rounded-none',
             destructive ? 'bg-destructive/15' : 'bg-foreground/10'
           )}
         >

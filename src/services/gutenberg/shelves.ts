@@ -6,8 +6,9 @@ import type { CatalogSort } from 'samwell-shared';
  * Each is its most-read books, its newest, or one of the "Category:"
  * bookshelves its catalogue groups books into, most-read first. The topic is
  * the bookshelf's name, matched as part of a name, exactly as the catalogue
- * holds it. Led by what a reader of this app is most likely to reach for (the
- * classics, philosophy, the mind, lives, history) and then the fiction.
+ * holds it. Led by what a reader of this app is most likely to reach for
+ * (lives first, then the classics, philosophy, the mind, history) and then the
+ * fiction.
  */
 export type CatalogShelf = {
   /** Stable, and what a route carries. */
@@ -25,10 +26,10 @@ const category = (id: string, label: string, name: string): CatalogShelf => ({
 
 export const CATALOG_SHELVES: CatalogShelf[] = [
   { id: 'popular', label: 'Most read', sort: 'popular' },
+  category('biographies', 'Biographies', 'Biographies'),
   category('classics', 'Classics', 'Classics of Literature'),
   category('philosophy', 'Philosophy', 'Philosophy & Ethics'),
   category('psychology', 'Psychology', 'Psychiatry/Psychology'),
-  category('biographies', 'Lives', 'Biographies'),
   category('essays', 'Essays and letters', 'Essays, Letters & Speeches'),
   category('history-ancient', 'The ancient world', 'History - Ancient'),
   category('history-modern', 'The modern world', 'History - Modern (1750+)'),
