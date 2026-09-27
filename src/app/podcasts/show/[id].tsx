@@ -1,20 +1,17 @@
-import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
-import { RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChevronLeft } from "@/components/icons";
 import { ListEmpty } from "@/components/list-empty";
 import { Handover } from "@/components/navigation/handover";
-import { PageFade } from "@/components/scroll-fades";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
-import { LIST_DRAW_DISTANCE, iconSize, layout } from "@/constants/theme";
+import { iconSize, layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { EpisodeListSkeleton } from "@/features/podcasts/components/episode-list-skeleton";
-import { EpisodeSeparator } from "@/features/podcasts/components/episode-separator";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
+import { ShowEpisodeList } from "@/features/podcasts/components/show-episode-list";
 import { ShowListHeader } from "@/features/podcasts/components/show-list-header";
 import { ShowPageSkeleton } from "@/features/podcasts/components/show-page-skeleton";
 import { ShowSettingsSheet } from "@/features/podcasts/components/show-settings-sheet";
@@ -24,12 +21,8 @@ import { useEpisodeRowRenderer } from "@/features/podcasts/hooks/use-episode-row
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { useShowScreen, type ShowParams } from "@/features/podcasts/hooks/use-show-screen";
 import { useShowSheets } from "@/features/podcasts/hooks/use-show-sheets";
-import { useRefreshTint } from "@/hooks/use-refresh-tint";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
-import type { EpisodeItem } from "@/services/podcasts/records";
-
-const keyExtractor = (item: EpisodeItem) => item.id;
 
 /**
  * A show: its hero, and every episode it has published.
@@ -43,7 +36,6 @@ export default function ShowScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
-  const tint = useRefreshTint();
   const landed = useSettledOnce();
   const episodeActions = useEpisodeActions();
   const miniPlayer = useMiniPlayer(insets.bottom);
@@ -53,10 +45,6 @@ export default function ShowScreen() {
 
   const empty = screen.resolving ? <EpisodeListSkeleton /> : <ListEmpty text={screen.emptyText} />;
   const header = <ShowListHeader screen={screen} onUnfollow={sheets.openUnfollow} onSettings={sheets.openSettings} />;
-  // Only a stored show can be refreshed; a preview is fetched as it opens.
-  const refreshControl = screen.showId ? (
-    <RefreshControl refreshing={screen.refreshing} onRefresh={screen.refresh} {...tint} />
-  ) : undefined;
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -69,20 +57,16 @@ export default function ShowScreen() {
       {/* The list mounts once the slide has landed: mounting it mid-slide is
           what froze the transition partway. The skeleton holds its shape. */}
       <Handover ready={landed} skeleton={<ShowPageSkeleton />}>
-        <PageFade>
-          <FlashList
-          data={screen.episodes}
-          keyExtractor={keyExtractor}
+        <ShowEpisodeList
+          episodes={screen.episodes}
           renderItem={renderItem}
-          ItemSeparatorComponent={EpisodeSeparator}
-          drawDistance={LIST_DRAW_DISTANCE}
-          ListHeaderComponent={header}
-          ListEmptyComponent={empty}
-          contentContainerStyle={{ paddingBottom: layout.scrollBottom + insets.bottom + miniPlayer.clearance }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={refreshControl}
-          />
-        </PageFade>
+          header={header}
+          empty={empty}
+          bottomPadding={layout.scrollBottom + insets.bottom + miniPlayer.clearance}
+          canRefresh={screen.showId !== null}
+          refreshing={screen.refreshing}
+          onRefresh={screen.refresh}
+        />
       </Handover>
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
       {landed ? (

@@ -52,6 +52,13 @@ export type ToastOptions = {
    */
   busy?: boolean;
   /**
+   * A live control drawn in place of the action and the close, for a toast
+   * that reports work the reader can watch and stop from where it is (a
+   * download's progress, with its stop in the middle). Implies `persistent`:
+   * the work ends the toast, by writing over it or closing it by `key`.
+   */
+  accessory?: React.ReactNode;
+  /**
    * Names a recurring notice, so a fresh one REPLACES the copy still on screen
    * rather than stacking a second behind it.
    *

@@ -21,12 +21,32 @@ const waiting: string[] = [];
 const running = new Map<string, DownloadResumable>();
 const cancelled = new Set<string>();
 
+/** How a download ended. */
+export type DownloadOutcome = "downloaded" | "failed" | "cancelled";
+type SettleListener = (id: string, outcome: DownloadOutcome) => void;
+const listeners = new Set<SettleListener>();
+
+/** Hears every download end, however it ended. Returns the unsubscribe. */
+export function onDownloadSettled(listener: SettleListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function settle(id: string, outcome: DownloadOutcome): void {
+  for (const listener of listeners) {
+    // One listener failing is its own problem, not the queue's or the next listener's.
+    try {
+      listener(id, outcome);
+    } catch {}
+  }
+}
+
 /** Whether an episode is waiting for, or in the middle of, a download. */
 export function isPending(id: string): boolean {
   return waiting.includes(id) || running.has(id);
 }
 
-async function runOne(id: string): Promise<void> {
+async function runOne(id: string): Promise<DownloadOutcome> {
   const rows = await db
     .select({
       id: podcastEpisodes.id,
@@ -37,7 +57,7 @@ async function runOne(id: string): Promise<void> {
     .where(eq(podcastEpisodes.id, id))
     .limit(1);
   const episode = rows[0];
-  if (!episode) return;
+  if (!episode) return "failed";
 
   const name = fileNameFor(episode);
   const target = `${folderUri()}${name}`;
@@ -57,7 +77,7 @@ async function runOne(id: string): Promise<void> {
   try {
     await ensureFolder();
     const result = await task.downloadAsync();
-    if (cancelled.has(id)) return;
+    if (cancelled.has(id)) return "cancelled";
     if (!result || result.status >= 400) {
       throw new Error(result ? `The server refused the download (error ${result.status}).` : "The download stopped.");
     }
@@ -68,14 +88,15 @@ async function runOne(id: string): Promise<void> {
       downloadedAt: nowIso(),
       ...(info.exists && info.size ? { fileSize: info.size } : {}),
     });
+    return "downloaded";
   } catch (err) {
-    if (!cancelled.has(id)) {
-      await deleteAsync(target, { idempotent: true }).catch(() => {});
-      await setStatus([id], {
-        downloadStatus: "failed",
-        downloadError: err instanceof Error ? err.message : "The download failed.",
-      });
-    }
+    if (cancelled.has(id)) return "cancelled";
+    await deleteAsync(target, { idempotent: true }).catch(() => {});
+    await setStatus([id], {
+      downloadStatus: "failed",
+      downloadError: err instanceof Error ? err.message : "The download failed.",
+    });
+    return "failed";
   } finally {
     running.delete(id);
     cancelled.delete(id);
@@ -87,7 +108,10 @@ async function runOne(id: string): Promise<void> {
 function pump(): void {
   while (running.size < CONCURRENCY && waiting.length > 0) {
     const id = waiting.shift()!;
-    void runOne(id).finally(pump);
+    void runOne(id)
+      .catch((): DownloadOutcome => "failed")
+      .then((outcome) => settle(id, outcome))
+      .finally(pump);
   }
 }
 
@@ -101,7 +125,10 @@ export function startDownloads(ids: string[]): void {
 export async function cancelDownloads(ids: string[]): Promise<void> {
   for (const id of ids) {
     const index = waiting.indexOf(id);
-    if (index >= 0) waiting.splice(index, 1);
+    if (index >= 0) {
+      waiting.splice(index, 1);
+      settle(id, "cancelled");
+    }
     const task = running.get(id);
     if (task) {
       cancelled.add(id);

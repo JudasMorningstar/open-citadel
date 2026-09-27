@@ -21,8 +21,11 @@ import { cancelDownloads, isPending, startDownloads } from "@/services/podcasts/
 import { podcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
-/** Queues episodes for download. Anything already downloaded or on its way is left alone. */
-export async function downloadEpisodes(ids: string[]): Promise<void> {
+/**
+ * Queues episodes for download. Anything already downloaded or on its way is
+ * left alone. Returns the ids actually queued.
+ */
+export async function downloadEpisodes(ids: string[]): Promise<string[]> {
   const rows = await db
     .select({ id: podcastEpisodes.id, status: podcastEpisodes.downloadStatus })
     .from(podcastEpisodes)
@@ -31,10 +34,11 @@ export async function downloadEpisodes(ids: string[]): Promise<void> {
     .filter((r) => r.status === "none" || r.status === "failed")
     .map((r) => r.id)
     .filter((id) => !isPending(id));
-  if (todo.length === 0) return;
+  if (todo.length === 0) return [];
   await setStatus(todo, { downloadStatus: "queued", downloadError: null, autoDownloadEligible: 1 });
   invalidatePodcastLibrary();
   startDownloads(todo);
+  return todo;
 }
 
 /**

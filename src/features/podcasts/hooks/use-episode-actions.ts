@@ -5,6 +5,7 @@ import React from 'react';
 import { Share } from 'react-native';
 
 import { showToast } from '@/components/toast/toast-provider';
+import { downloadWithToast } from '@/features/podcasts/hooks/download-with-toast';
 import type { EpisodeAction } from '@/features/podcasts/utils/episode-menu';
 import { createChaptersQueryOptions, createEpisodeQueryOptions, createShowQueryOptions } from '@/query-manager/podcasts';
 import * as actions from '@/services/podcasts/actions';
@@ -76,7 +77,7 @@ export function useEpisodeActions() {
           void actions.removeFromQueue(ids);
           return;
         case 'download':
-          void actions.download(ids);
+          downloadWithToast(episode);
           return;
         case 'remove-download':
           void actions.removeDownload(ids);

@@ -2,6 +2,7 @@ import React from "react";
 import {
     RefreshControl,
     ScrollView,
+    type RefreshControlProps,
     View,
     type ScrollViewProps,
 } from "react-native";
@@ -32,7 +33,20 @@ export type PullToSyncProps = Pick<
    * the indicator says what it is doing.
    */
   renderIndicator: (label: string | undefined) => React.ReactNode;
-  children: React.ReactNode;
+  /** Off, the page scrolls as any other and a pull opens nothing. */
+  enabled?: boolean;
+  /**
+   * For a page that is a list rather than a `ScrollView`: draws the scroller,
+   * which has to take both props. `children` is ignored when this is given.
+   */
+  renderScroller?: (scroll: PullScrollProps) => React.ReactNode;
+  children?: React.ReactNode;
+};
+
+/** What the scroller under a pull has to wear for the pull to see it. */
+export type PullScrollProps = {
+  onScroll: ScrollViewProps["onScroll"];
+  refreshControl: React.ReactElement<RefreshControlProps> | undefined;
 };
 
 const SYNC_LABELS: PullLabels = { idle: "PULL TO SYNC", armed: "RELEASE TO SYNC" };
@@ -55,10 +69,12 @@ export function PullToSync({
   renderIndicator,
   contentContainerStyle,
   contentContainerClassName,
+  enabled = true,
+  renderScroller,
   children,
 }: PullToSyncProps) {
-  const pull = usePullToSync(running, onSync, labels);
-  const refreshControl = pull.usesNativeRefresh ? (
+  const pull = usePullToSync(running, onSync, labels, enabled);
+  const refreshControl = pull.usesNativeRefresh && enabled ? (
     <RefreshControl
       refreshing={pull.refreshing}
       onRefresh={pull.onNativeRefresh}
@@ -69,16 +85,20 @@ export function PullToSync({
   const scrollable = (
     <Animated.View style={pull.contentStyle} className="flex-1">
       <PageFade>
-        <ScrollView
-          className="flex-1"
-          onScroll={pull.onScroll}
-          contentContainerClassName={contentContainerClassName}
-          contentContainerStyle={contentContainerStyle}
-          refreshControl={refreshControl}
-          showsVerticalScrollIndicator={false}
-        >
-          {children}
-        </ScrollView>
+        {renderScroller ? (
+          renderScroller({ onScroll: pull.onScroll, refreshControl })
+        ) : (
+          <ScrollView
+            className="flex-1"
+            onScroll={pull.onScroll}
+            contentContainerClassName={contentContainerClassName}
+            contentContainerStyle={contentContainerStyle}
+            refreshControl={refreshControl}
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        )}
       </PageFade>
     </Animated.View>
   );

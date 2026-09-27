@@ -49,7 +49,7 @@ export type PullLabels = {
   armed: string;
 };
 
-export function usePullToSync(running: boolean, onSync: () => void, labels: PullLabels) {
+export function usePullToSync(running: boolean, onSync: () => void, labels: PullLabels, enabled = true) {
   const reduced = useReducedMotion();
   const usesNativeRefresh = Platform.OS === "ios";
 
@@ -64,7 +64,8 @@ export function usePullToSync(running: boolean, onSync: () => void, labels: Pull
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.set(event.contentOffset.y);
-      if (usesNativeRefresh) {
+      // Off, a bounce past the top is only a bounce: nothing opens.
+      if (usesNativeRefresh && enabled) {
         drag.set(resist(Math.max(0, -event.contentOffset.y)));
       }
     },
@@ -96,7 +97,7 @@ export function usePullToSync(running: boolean, onSync: () => void, labels: Pull
     },
   );
 
-  const pan = usePullGesture({ scrollY, drag, hold, reduced, setWaiting, onSync });
+  const pan = usePullGesture({ scrollY, drag, hold, reduced, enabled, setWaiting, onSync });
 
   /*
    * How far open the gap is: whichever of the two is holding it wider.

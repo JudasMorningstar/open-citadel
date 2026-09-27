@@ -13,12 +13,14 @@ type PullGestureOptions = {
   /** What a scan is holding open. */
   hold: SharedValue<number>;
   reduced: boolean;
+  /** Off, the pan never claims a touch and the scroller keeps every drag. */
+  enabled: boolean;
   setWaiting: (waiting: boolean) => void;
   onSync: () => void;
 };
 
 /** The Android pull: a pan that only claims a downward drag from the very top of the shelf. */
-export function usePullGesture({ scrollY, drag, hold, reduced, setWaiting, onSync }: PullGestureOptions) {
+export function usePullGesture({ scrollY, drag, hold, reduced, enabled, setWaiting, onSync }: PullGestureOptions) {
   /*
    * Android is claimed by hand, rather than by declaring a truce with the
    * scroll view. iOS bypasses this gesture entirely; see the component note.
@@ -41,6 +43,7 @@ export function usePullGesture({ scrollY, drag, hold, reduced, setWaiting, onSyn
   const claimed = useSharedValue(false);
 
   const pan = Gesture.Pan()
+    .enabled(enabled)
     .manualActivation(true)
     .onBegin((event) => {
       startY.set(event.absoluteY);

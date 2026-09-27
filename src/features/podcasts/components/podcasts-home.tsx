@@ -1,12 +1,12 @@
 import React from 'react';
 
 import { PagedRow } from '@/components/paged-row';
-import { PullIndicator } from '@/components/pull-indicator';
 import { PullToSync } from '@/components/pull-to-sync';
 import { ShelfSection } from '@/components/shelf-section';
 import { layout, revealIn } from '@/constants/theme';
 import { ContinueCard } from '@/features/podcasts/components/continue-card';
 import { EpisodeShelf } from '@/features/podcasts/components/episode-shelf';
+import { NEW_EPISODES_PULL_LABELS, renderNewEpisodesIndicator } from '@/features/podcasts/components/new-episodes-indicator';
 import { ShowShelf } from '@/features/podcasts/components/show-shelf';
 import type { PodcastHome } from '@/features/podcasts/hooks/use-podcast-home';
 import { KEPT_SHELVES, LEAD_SHELVES, SECTION_TITLES, type ListedShelf, type PodcastSection } from '@/features/podcasts/utils/sections';
@@ -27,11 +27,6 @@ type PodcastsHomeProps = {
 };
 
 const episodeKey = (episode: EpisodeItem) => episode.id;
-
-const PULL_LABELS = { idle: 'PULL FOR NEW EPISODES', armed: 'RELEASE TO CHECK' };
-const renderIndicator = (label: string | undefined) => (
-  <PullIndicator caption={label ?? 'CHECKING FOR NEW EPISODES…'} accessibilityLabel="Checking for new episodes" />
-);
 
 /**
  * The podcasts side of the Library, laid out the way the books side is: a
@@ -78,8 +73,8 @@ export function PodcastsHome({
     <PullToSync
       running={refreshing}
       onSync={onRefresh}
-      labels={PULL_LABELS}
-      renderIndicator={renderIndicator}
+      labels={NEW_EPISODES_PULL_LABELS}
+      renderIndicator={renderNewEpisodesIndicator}
       contentContainerClassName="pt-6"
       contentContainerStyle={{ paddingBottom: layout.scrollBottom + bottomPadding }}
     >
