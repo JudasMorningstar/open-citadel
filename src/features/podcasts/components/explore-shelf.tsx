@@ -4,7 +4,7 @@ import { ShelfRow } from '@/components/shelf-row';
 import { ShelfSection } from '@/components/shelf-section';
 import { SkeletonGroup } from '@/components/skeletons/skeleton-group';
 import { ThemedText } from '@/components/themed-text';
-import { SHELF_TILE_WIDTH } from '@/features/podcasts/components/episode-shelf';
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { ShowTile } from '@/features/podcasts/components/show-tile';
 import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
 import type { ChartState, FollowedCheck } from '@/features/podcasts/hooks/use-explore';

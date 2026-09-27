@@ -3,6 +3,7 @@ import React from 'react';
 
 import { useLibraryBoot } from '@/features/library/hooks/use-library-boot';
 import { useOpenReader } from '@/features/library/hooks/use-open-reader';
+import { addBooksMenu, type AddBooksKey } from '@/features/library/utils/add-books-menu';
 import { pickBooksDirectory } from '@/services/book-sync';
 import {
   useAllBooks,
@@ -21,6 +22,8 @@ export type BookSection = 'reading' | 'queue' | 'favorites' | 'archived' | 'coll
 export type BooksLibraryView = 'booting' | 'setup' | 'library';
 
 const IS_IOS = process.env.EXPO_OS === 'ios';
+/** Module level: the same options every render, so the button's menu is not rebuilt. */
+const ADD_OPTIONS = addBooksMenu(process.env.EXPO_OS);
 /** All Books on the home page is a taste; its "View all" has the rest. */
 const ALL_BOOKS_PREVIEW = 20;
 
@@ -74,6 +77,11 @@ export function useBooksLibrary() {
   // iOS picks EPUBs with the document picker and copies them into the owned
   // folder; Android points the app at a folder once.
   const addBooks = React.useCallback(() => void useBooksStore.getState().importBooks(), []);
+  const openFreeBooks = React.useCallback(() => router.push('/free-books/explore'), [router]);
+  const onAddBooks = React.useCallback(
+    (key: AddBooksKey) => (key === 'files' ? addBooks() : openFreeBooks()),
+    [addBooks, openFreeBooks],
+  );
   const setUp = React.useCallback(async () => {
     if (IS_IOS) return addBooks();
     const uri = await pickBooksDirectory();
@@ -95,8 +103,7 @@ export function useBooksLibrary() {
 
   return {
     view,
-    /** Adding books is iOS only: on Android they arrive through the picked folder. */
-    canAddBooks: IS_IOS,
+    addOptions: ADD_OPTIONS,
     syncRunning,
     shelves: { reading, queued, favorites, archived, allPreview, hasBooks: all.length > 0 },
     collections,
@@ -104,7 +111,8 @@ export function useBooksLibrary() {
     openCollection,
     viewAll,
     pullSync,
-    addBooks,
+    onAddBooks,
+    openFreeBooks,
     setUp,
   };
 }

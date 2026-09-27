@@ -1,11 +1,10 @@
 import React from 'react';
 
 import { ShelfRow } from '@/components/shelf-row';
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { EpisodeTile } from '@/features/podcasts/components/episode-tile';
 import type { EpisodeItem } from '@/services/podcasts/records';
 
-/** The book shelves' tile width, so the two libraries' shelves line up. */
-export const SHELF_TILE_WIDTH = 170;
 
 type EpisodeShelfProps = {
   episodes: EpisodeItem[];

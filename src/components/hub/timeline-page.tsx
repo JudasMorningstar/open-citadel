@@ -1,13 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { Calendar, ChevronRight, MessageSquare, Pencil, Share, Trash2 } from '@/components/icons';
+import { Calendar, ChevronRight, MessageSquare, Pencil, PencilSparkles, Share, Trash2 } from '@/components/icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettledFocusEffect } from "@/navigation/use-settled-focus-effect";
 
+import { fabClearance } from '@/components/fab-placement';
 import { PageFade } from '@/components/scroll-fades';
+import { ScreenFab } from '@/components/screen-fab';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
@@ -20,7 +22,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimelineEntry } from '@/components/timeline/timeline-entry';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Fab, fabClearance } from '@/components/ui/fab';
 import { Item } from '@/components/ui/item';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
@@ -296,7 +297,8 @@ export function TimelinePage() {
         </ScrollView>
         </PageFade>
 
-      <Fab
+      <ScreenFab
+        icon={PencilSparkles}
         accessibilityLabel="New thought"
         bottomOffset={insets.bottom}
         onPress={() => { setEditingThought(null); setShowThoughtSheet(true); }}

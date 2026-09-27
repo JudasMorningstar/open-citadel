@@ -37,6 +37,7 @@ import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
+import { gutenbergCatalogRoutes } from './gutenberg-catalog.js';
 import { journalRoutes } from './journal.js';
 import { onboardingRoutes } from './onboarding.js';
 import { billingRoutes, insiderAdminRoutes } from './billing-routes.js';
@@ -753,6 +754,9 @@ app.route('/onboarding', onboardingRoutes);
 // Free books for an empty library. Under /library because it is about what
 // goes into one, not about who is asking.
 app.route('/library', gutenbergRoutes);
+// The free books catalogue the app browses. Open, read-only and capped per
+// caller: the books are free to everyone, so browsing them needs no sign-in.
+app.route('/library', gutenbergCatalogRoutes);
 // What a reader holds, what they spent it on, and insider codes. The store's
 // own word about subscriptions arrives on the second of these, from
 // RevenueCat, keyed to a secret only it and the deployment know.

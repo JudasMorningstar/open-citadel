@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { RowFade } from '@/components/scroll-fades';
 
 import { BookTile } from '@/features/library/components/book-tile';
@@ -14,10 +15,6 @@ type BookQueueProps = {
   onBookPress?: (bookId: string) => void;
   onBookLongPress?: (book: Book) => void;
 };
-
-/** Wider than the old bare cover: the tile is a panel with the cover
- *  inset in it, so the artwork keeps its size. */
-const SHELF_TILE_WIDTH = 170;
 
 /**
  * `memo`'d: the library page re-renders on every sync tick, and without

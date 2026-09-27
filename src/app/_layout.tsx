@@ -399,6 +399,18 @@ export default function RootLayout() {
                     name="podcasts/genre/[id]"
                     options={screenTransitions.side}
                   />
+                  <TransitionStack.Screen
+                    name="free-books/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="free-books/shelf/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="free-books/book/[id]"
+                    options={screenTransitions.side}
+                  />
                 </TransitionStack>
                 <ApprovalSheet />
               </ThemeProvider>

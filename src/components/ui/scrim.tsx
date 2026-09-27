@@ -20,7 +20,9 @@ import { AccessibilityInfo, StyleSheet, View, type ViewProps } from 'react-nativ
 import Animated, {
   FadeIn,
   FadeOut,
-  type EntryOrExitLayoutType,
+  useAnimatedProps,
+  useAnimatedStyle,
+  type DerivedValue,
 } from 'react-native-reanimated';
 
 type BlurTint = 'light' | 'dark' | 'default' | 'systemMaterial';
@@ -49,6 +51,15 @@ const BlurView: ComponentType<BlurViewProps> | null = (() => {
 
 /** True when a real blur can be drawn — for a caller that wants to know. */
 export const hasBlur = BlurView !== null;
+
+/**
+ * The same view, able to take its `intensity` from the UI thread. The package
+ * names the native view as the one to animate, so the radius itself moves
+ * rather than a finished blur being faded in over the page.
+ */
+const AnimatedBlurView = BlurView
+  ? Animated.createAnimatedComponent(BlurView as ComponentType<BlurViewProps>)
+  : null;
 
 type ReduceTransparencySource = {
   isReduceTransparencyEnabled?: () => Promise<boolean>;
@@ -165,84 +176,80 @@ export interface ScrimProps extends Omit<ViewProps, 'children'> {
    */
   dimClassName?: string;
   /**
-   * Whether the scrim fades itself in and out.
+   * How far the backdrop is in, from `0` to `1`, read on the UI thread.
    *
-   * On by default, for an overlay whose backdrop has no animation of its own
-   * — a popover, say, where this fade *is* the backdrop's fade.
-   *
-   * Off when the caller already animates the layer this sits in, which is the
-   * case for both a dialog (a `FadeIn`/`FadeOut` on the whole overlay) and a
-   * bottom sheet (an opacity derived from how far the sheet has been dragged).
-   * Two fades on one backdrop is wrong twice over. Opening, they multiply, so
-   * the dim ramps as the square of the travel and arrives late. Closing is the
-   * visible half: an exiting animation keeps this view alive for its own
-   * duration *after* the parent carrying the real opacity has been unmounted,
-   * so the backdrop snaps back to full strength for a beat before fading — a
-   * flash of the screen going dark again just as the sheet finishes leaving.
+   * For an overlay the finger can pull partway out — a viewer dragged towards
+   * dismissal — where the backdrop has to follow the finger instead of running
+   * its own fade. The blur's radius tracks it, and the dim and the opaque
+   * fallback track it as opacity. Left out, the scrim fades itself in and out.
    */
-  animate?: boolean;
+  progress?: DerivedValue<number>;
 }
-
-/** The prop surface `Scrim` drives its layer through — `View`'s own props
- * plus the two entrance/exit slots only the animated branch receives. */
-type LayerProps = ViewProps & {
-  entering?: EntryOrExitLayoutType;
-  exiting?: EntryOrExitLayoutType;
-};
 
 export function Scrim({
   blur = false,
   intensity = 24,
   tint = 'default',
   dimClassName = 'bg-black/50',
-  animate = true,
+  progress,
   style,
   ...props
 }: ScrimProps) {
   const reduceTransparency = useReduceTransparency();
   const mode = scrimMode(blur, BlurView !== null, reduceTransparency);
-  // A plain View when the caller owns the fade — not `Animated.View` with the
-  // animations left off. An exiting animation is what strands this view on
-  // screen after its parent has gone (see `animate`), and only a component
-  // that never declares one cannot do that.
-  // Reanimated 4.6 types `Animated.View` so that a bare union with `View`
-  // has no call signature; the cast picks the one prop surface both
-  // branches are actually used through.
-  const Layer = (animate ? Animated.View : View) as ComponentType<LayerProps>;
-  const fade = animate
-    ? { entering: FadeIn.duration(180), exiting: FadeOut.duration(150) }
-    : {};
-  const quickFade = animate
-    ? { entering: FadeIn.duration(150), exiting: FadeOut.duration(150) }
-    : {};
+
+  if (progress) {
+    return (
+      <ProgressScrim
+        mode={mode}
+        progress={progress}
+        intensity={intensity}
+        tint={tint}
+        dimClassName={dimClassName}
+        style={style}
+        {...props}
+      />
+    );
+  }
 
   if (mode === 'blur' && BlurView) {
     return (
-      <Layer {...fade} style={[StyleSheet.absoluteFill, style]} {...props}>
+      <Animated.View
+        entering={FadeIn.duration(180)}
+        exiting={FadeOut.duration(150)}
+        style={[StyleSheet.absoluteFill, style]}
+        {...props}
+      >
         {/* A faint dim under the blur so the frost has something to sit on —
             a pure blur over a dark scene is nearly invisible. */}
         <BlurView intensity={intensity} tint={tint} style={StyleSheet.absoluteFill} />
         <View className="absolute inset-0 bg-black/10" />
-      </Layer>
+      </Animated.View>
     );
   }
 
   if (mode === 'opaque') {
     return (
-      <Layer {...fade} style={[StyleSheet.absoluteFill, style]} {...props}>
+      <Animated.View
+        entering={FadeIn.duration(180)}
+        exiting={FadeOut.duration(150)}
+        style={[StyleSheet.absoluteFill, style]}
+        {...props}
+      >
         <View
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
           className={opaqueClassName(tint)}
         />
         <View pointerEvents="none" style={StyleSheet.absoluteFill} className={dimClassName} />
-      </Layer>
+      </Animated.View>
     );
   }
 
   return (
-    <Layer
-      {...quickFade}
+    <Animated.View
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(150)}
       style={[StyleSheet.absoluteFill, style]}
       className={dimClassName}
       {...props}
@@ -251,3 +258,59 @@ export function Scrim({
 }
 
 Scrim.displayName = 'Scrim';
+
+interface ProgressScrimProps extends Omit<ViewProps, 'children'> {
+  mode: ScrimMode;
+  progress: DerivedValue<number>;
+  intensity: number;
+  tint: BlurTint;
+  dimClassName: string;
+}
+
+/** The scrim with its three layers driven by a shared value instead of a fade. */
+function ProgressScrim({
+  mode,
+  progress,
+  intensity,
+  tint,
+  dimClassName,
+  style,
+  ...props
+}: ProgressScrimProps) {
+  const blurProps = useAnimatedProps(() => ({
+    intensity: Math.min(Math.max(progress.value, 0), 1) * intensity,
+  }));
+  const fade = useAnimatedStyle(() => ({
+    opacity: Math.min(Math.max(progress.value, 0), 1),
+  }));
+
+  if (mode === 'blur' && AnimatedBlurView) {
+    return (
+      <View style={[StyleSheet.absoluteFill, style]} {...props}>
+        <AnimatedBlurView
+          tint={tint}
+          animatedProps={blurProps}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, fade]}
+          className="bg-black/10"
+        />
+      </View>
+    );
+  }
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, fade, style]} {...props}>
+      {mode === 'opaque' ? (
+        <View
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          className={opaqueClassName(tint)}
+        />
+      ) : null}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill} className={dimClassName} />
+    </Animated.View>
+  );
+}

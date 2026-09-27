@@ -6,7 +6,7 @@ import { TransitionFlashList } from "@/components/navigation/transition-scroll";
 import { PageFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
-import type { Book } from "@/stores/books";
+import type { TileBook } from "@/features/library/utils/tile-book";
 
 
 /** Two columns of books, the "View All" screens' grid. */
@@ -28,7 +28,7 @@ const CELL: ViewStyle = {
   paddingBottom: BOOK_GRID_GAP,
 };
 
-const keyExtractor = (item: Book) => item.id;
+const keyExtractor = (item: TileBook) => String(item.id);
 
 /**
  * The books on a "View All" screen: a section, or a collection.
@@ -42,7 +42,7 @@ const keyExtractor = (item: Book) => item.id;
  * instead of mounting a fresh one per book, and only draws what is near the
  * viewport, which a library of a few hundred covers needs.
  */
-export function BookMasonryGrid({
+export function BookMasonryGrid<B extends TileBook>({
   books,
   itemWidth,
   mutedForeground,
@@ -52,8 +52,10 @@ export function BookMasonryGrid({
   style,
   onPress,
   onLongPress,
+  onEndReached,
+  footer,
 }: {
-  books: Book[];
+  books: B[];
   itemWidth: number;
   mutedForeground: string | undefined;
   surfaceTertiary: string | undefined;
@@ -61,15 +63,19 @@ export function BookMasonryGrid({
   bottomInset: number;
   emptyText: string;
   style?: ViewStyle;
-  onPress: (bookId: string) => void;
-  onLongPress: (book: Book) => void;
+  onPress: (bookId: B['id']) => void;
+  onLongPress?: (book: B) => void;
+  /** The last row is near: a paged list asks for its next page here. */
+  onEndReached?: () => void;
+  /** Under the last row: a paged list's "loading more". */
+  footer?: React.ReactElement | null;
 }) {
   // Stable `renderItem` (Expensify pattern): a search keystroke re-renders the
   // screen, and an inline renderer would treat every visible cell as new.
   // `extraData` re-runs the list when the resolved colours change (a theme
   // flip with the screen already open).
   const renderBook = useCallback(
-    ({ item }: { item: Book }) => (
+    ({ item }: { item: B }) => (
       <View style={CELL}>
         <BookGridCard
           book={item}
@@ -116,6 +122,9 @@ export function BookMasonryGrid({
           </View>
         }
         renderItem={renderBook}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={footer}
       />
     </PageFade>
   );

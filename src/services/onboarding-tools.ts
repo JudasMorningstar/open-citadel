@@ -16,11 +16,8 @@ import { type FreeBookSchema } from 'samwell-shared';
 import type { z } from 'zod';
 
 import { cloudHeaders } from '@/services/cloud-identity';
-import {
-  downloadBooksIntoLibrary,
-  setUpLibrary,
-  type LibrarySetupResult,
-} from '@/services/library-setup';
+import { downloadBooksIntoLibrary } from '@/services/gutenberg/download';
+import { setUpLibrary, type LibrarySetupResult } from '@/services/library-setup';
 // Imported for the store's actions only, never read at module scope. The
 // chat store reaches back here through `cloud-chat`, so this is a cycle, and
 // touching it during evaluation rather than at call time is what would break
