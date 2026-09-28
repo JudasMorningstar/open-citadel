@@ -9,7 +9,8 @@ type ShelfSectionProps = {
   title: string;
   /** Beside the title, `12`. */
   count?: string;
-  onViewAll: () => void;
+  /** Left off for a shelf that shows everything it has (a short directory section). */
+  onViewAll?: () => void;
   /** The reveal it arrives with, when the page staggers its sections in. */
   entering?: AnimatedProps<ViewProps>['entering'];
   /**
@@ -26,7 +27,7 @@ type ShelfSectionProps = {
  * place with two collections in it.
  */
 export function ShelfSection({ title, count, onViewAll, entering, capped = true, children }: ShelfSectionProps) {
-  const viewAll = { text: 'VIEW ALL', onPress: onViewAll };
+  const viewAll = onViewAll ? { text: 'VIEW ALL', onPress: onViewAll } : undefined;
   return (
     <Animated.View entering={entering} className="mb-8 gap-4" style={capped ? contentColumn : undefined}>
       <SectionHeader title={title} count={count} rightAction={viewAll} />

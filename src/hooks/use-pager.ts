@@ -2,8 +2,9 @@ import React from 'react';
 import { useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
 
 /**
- * A full-width horizontal pager's state: which page is showing, and the one
- * correction the native pager needs when its list shrinks.
+ * A full-width horizontal pager's state: which page is showing, and the two
+ * corrections the native pager needs: when its list shrinks, and when a new
+ * item leads it (`leadKey`).
  *
  * The page width, the scrollTo math and the index math all derive from the
  * one reactive window width; a stale snapshot desyncs scrollTo.
@@ -13,11 +14,27 @@ import { useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent,
  * settled, and `onScroll` would render the host screen sixty times a second on
  * a screen that is also hosting the hub's own gesture.
  */
-export function usePager(count: number) {
+export function usePager(count: number, leadKey: string | null = null) {
   const { width } = useWindowDimensions();
   const ref = React.useRef<ScrollView>(null);
   // Ground truth about the pager: the last page it reported settling on.
   const [reported, setReported] = React.useState(0);
+
+  /*
+   * Back to the first page when a different item leads the list. These lists
+   * put what was read or played last first, so coming back from the second
+   * book moves that book to the front; staying on page two would then show a
+   * book nobody chose. Reset while rendering (React's pattern for state that
+   * follows a prop), so no frame is drawn on the wrong page.
+   */
+  const [lead, setLead] = React.useState(leadKey);
+  if (lead !== leadKey) {
+    setLead(leadKey);
+    setReported(0);
+  }
+  React.useEffect(() => {
+    ref.current?.scrollTo({ x: 0, animated: false });
+  }, [lead]);
 
   /*
    * The page actually shown, clamped where it is READ. The list shrinks on

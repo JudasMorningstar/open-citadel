@@ -24,7 +24,7 @@ type ContinueCardProps = {
 
 /**
  * An episode part-way through, as the hero of the Podcasts page, in the same
- * card as a book in Currently Reading. The gold square plays it: a book is
+ * card as a book in Continue Reading. The gold square plays it: a book is
  * opened, an episode is picked up where it was left.
  */
 export function ContinueCard({ episode, onPress, onLongPress, onPlay }: ContinueCardProps) {

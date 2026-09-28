@@ -12,7 +12,7 @@ describe('bookMenu', () => {
     expect(keys(book({}))).toEqual(['open', 'favorite', 'collection', 'queue', 'finish', 'rename', 'delete']);
   });
 
-  it('offers leaving Currently Reading to a book being read', () => {
+  it('offers leaving Continue Reading to a book being read', () => {
     expect(keys(book({ status: 'reading' }))).toContain('stop-reading');
   });
 

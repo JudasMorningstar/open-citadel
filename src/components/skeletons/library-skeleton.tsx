@@ -14,7 +14,7 @@ function Shelf({ tall }: { tall?: boolean }) {
         <SkeletonBar className="h-7 w-20" />
       </View>
       {tall ? (
-        // Currently Reading is one wide card rather than a row of covers.
+        // Continue Reading is one wide card rather than a row of covers.
         <HeroCardSkeleton mediaAspect={2 / 3} />
       ) : (
         <View className="flex-row gap-4 pl-6">
@@ -43,7 +43,7 @@ function Shelf({ tall }: { tall?: boolean }) {
  * one that did not, and it is the first screen anyone sees.
  *
  * Three shelves, because that is what the Library opens with: the wide
- * Currently Reading card, then two rows of covers. The heights are the real
+ * Continue Reading card, then two rows of covers. The heights are the real
  * ones so the content does not shift underneath when the swap happens.
  */
 export function LibrarySkeleton() {

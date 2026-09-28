@@ -16,8 +16,6 @@ type PodcastsHomeProps = {
   home: PodcastHome;
   refreshing: boolean;
   bottomPadding: number;
-  /** Shown above the shelves when nothing is followed yet. */
-  emptyState: React.ReactNode | null;
   onRefresh: () => void;
   onViewAll: (section: PodcastSection) => void;
   onOpenEpisode: (episodeId: string) => void;
@@ -39,7 +37,6 @@ export function PodcastsHome({
   home,
   refreshing,
   bottomPadding,
-  emptyState,
   onRefresh,
   onViewAll,
   onOpenEpisode,
@@ -78,7 +75,6 @@ export function PodcastsHome({
       contentContainerClassName="pt-6"
       contentContainerStyle={{ paddingBottom: layout.scrollBottom + bottomPadding }}
     >
-        {emptyState}
         {shelves.continue.length > 0 ? (
           <ShelfSection
             title={SECTION_TITLES.continue}

@@ -4,7 +4,6 @@ import {
   FeedParseError,
   parseDuration,
   parseFeed,
-  parseFeedDate,
 } from "@/services/podcasts/feed-parser";
 
 const RSS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -135,14 +134,5 @@ describe("parseDuration", () => {
     ["abc", 0],
   ])("%s → %d", (raw, expected) => {
     expect(parseDuration(raw)).toBe(expected);
-  });
-});
-
-describe("parseFeedDate", () => {
-  it("reads ISO dates too", () => {
-    expect(parseFeedDate("2024-05-06T07:08:09Z")).toBe("2024-05-06T07:08:09.000Z");
-  });
-  it("returns null for nonsense", () => {
-    expect(parseFeedDate("soon")).toBeNull();
   });
 });

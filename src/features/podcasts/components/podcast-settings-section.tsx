@@ -6,7 +6,7 @@ import { MicSignal, Share } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { ChoiceChips } from '@/features/podcasts/components/choice-chips';
+import { ChoiceChips } from '@/components/choice-chips';
 import { ToggleRow } from '@/features/podcasts/components/toggle-row';
 import { usePodcastSettings } from '@/features/podcasts/hooks/use-podcast-settings';
 import { NEW_EPISODES, REFRESH_INTERVALS, SKIP_BACK, SKIP_FORWARD } from '@/features/podcasts/utils/setting-choices';

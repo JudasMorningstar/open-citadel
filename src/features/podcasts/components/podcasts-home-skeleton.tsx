@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { HeroCardSkeleton } from '@/components/skeletons/hero-card-skeleton';
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
 import { SHELF_TILE_WIDTH } from '@/constants/theme';
-import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
+import { FeedTileSkeleton } from '@/components/skeletons/feed-tile-skeleton';
 
 /** A shelf's title and its VIEW ALL card. */
 function ShelfHeading() {
@@ -35,7 +35,7 @@ export function PodcastsHomeSkeleton() {
           <ShelfHeading />
           <View className="flex-row gap-4 pl-6">
             {TILES.map((i) => (
-              <ShowTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
+              <FeedTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
             ))}
           </View>
         </View>

@@ -3,9 +3,9 @@ import React from 'react';
 import { ActionButton } from '@/components/action-button';
 import { CircleAlert, Import } from '@/components/icons';
 import { GoldButton } from '@/components/ui/gold-button';
-import { OnboardingStage } from '@/features/podcasts/components/onboarding/onboarding-stage';
-import { StageGlyph } from '@/features/podcasts/components/onboarding/stage-glyph';
-import { StageHeading } from '@/features/podcasts/components/onboarding/stage-heading';
+import { OnboardingStage } from '@/components/stage/onboarding-stage';
+import { StageGlyph } from '@/components/stage/stage-glyph';
+import { StageHeading } from '@/components/stage/stage-heading';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type ImportFailedProps = {

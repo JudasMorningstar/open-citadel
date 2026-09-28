@@ -1,0 +1,112 @@
+import type { UseQueryOptions } from '@tanstack/react-query';
+
+import { blogKeys, type BlogSection } from '@/query-manager/blogs/keys';
+import { openDiscoveredBlog } from '@/services/blogs/actions';
+import { listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
+import { followedFeedUrls, getBlog, listFollowedBlogs } from '@/services/blogs/blogs';
+import type { ArticleItem, Blog, BlogItem } from '@/services/blogs/records';
+
+type Options<T, TData = T> = Omit<UseQueryOptions<T, Error, TData>, 'queryKey' | 'queryFn'>;
+
+/**
+ * The library lives on the device and only changes when the app writes to it,
+ * and every write invalidates `blogKeys.library()`. So its reads never go
+ * stale on a timer, and never wait for a network.
+ */
+const LIBRARY = { staleTime: Infinity, gcTime: 5 * 60_000, networkMode: 'always', retry: false } as const;
+
+/** How many of each list a home shelf draws; "View all" has the rest. */
+export const HOME_SHELF_LIMIT = 15;
+/** The newest posts listed on the Blogs page itself. */
+export const HOME_LATEST_LIMIT = 8;
+/** A long list's cap: nobody scrolls further, and the rows are held in memory. */
+const LONG_LIST_LIMIT = 500;
+
+const HOME_SHELVES: ArticleShelf[] = ['continue', 'latest', 'saved'];
+
+export type BlogsHomeData = {
+  blogs: BlogItem[];
+  shelves: Record<ArticleShelf, ArticleItem[]>;
+};
+
+/** Everything the Blogs page draws. The reads overlap: none needs another's answer. */
+export function createBlogsHomeQueryOptions<TData = BlogsHomeData>(options?: Options<BlogsHomeData, TData>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.home(),
+    queryFn: async (): Promise<BlogsHomeData> => {
+      const [blogs, ...lists] = await Promise.all([
+        listFollowedBlogs(),
+        ...HOME_SHELVES.map((shelf) => listShelf(shelf, shelf === 'latest' ? HOME_LATEST_LIMIT : HOME_SHELF_LIMIT)),
+      ]);
+      const shelves = Object.fromEntries(HOME_SHELVES.map((key, i) => [key, lists[i]])) as BlogsHomeData['shelves'];
+      return { blogs, shelves };
+    },
+  } satisfies UseQueryOptions<BlogsHomeData, Error, TData>;
+}
+
+export type BlogSectionData = { articles: ArticleItem[]; blogs: BlogItem[] };
+
+/** A whole shelf, for its "View all". */
+export function createBlogSectionQueryOptions<TData = BlogSectionData>(
+  section: BlogSection,
+  options?: Options<BlogSectionData, TData>,
+) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.section(section),
+    queryFn: async (): Promise<BlogSectionData> =>
+      section === 'blogs'
+        ? { articles: [], blogs: await listFollowedBlogs() }
+        : { articles: await listShelf(section, LONG_LIST_LIMIT), blogs: [] },
+  } satisfies UseQueryOptions<BlogSectionData, Error, TData>;
+}
+
+export function createBlogQueryOptions(id: string, options?: Options<Blog | null>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.blog(id),
+    queryFn: () => getBlog(id),
+  } satisfies UseQueryOptions<Blog | null>;
+}
+
+export function createBlogArticlesQueryOptions(id: string, filter: BlogArticleFilter, options?: Options<ArticleItem[]>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.blogArticles(id, filter),
+    queryFn: () => listBlogArticles(id, filter, LONG_LIST_LIMIT),
+  } satisfies UseQueryOptions<ArticleItem[]>;
+}
+
+/** The feeds already followed, so Explore can mark them. */
+export function createFollowedFeedsQueryOptions(options?: Options<Set<string>>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.followedFeeds(),
+    queryFn: followedFeedUrls,
+  } satisfies UseQueryOptions<Set<string>>;
+}
+
+/**
+ * A blog found in Explore, fetched and stored as a preview: resolves to its
+ * id. Outside the library key on purpose: it writes, and must not run again
+ * because the library changed. Checked again whenever a blog page opens
+ * (`staleTime: 0`), which is cheap, since a stored blog returns from the
+ * database without a fetch: the same reasoning as a podcast from Explore.
+ */
+export function createDiscoveredBlogQueryOptions(feedUrl: string, options?: Options<string>) {
+  return {
+    staleTime: 0,
+    gcTime: 60 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    ...options,
+    queryKey: blogKeys.discovered(feedUrl),
+    queryFn: ({ signal }) => openDiscoveredBlog(feedUrl, signal),
+  } satisfies UseQueryOptions<string>;
+}

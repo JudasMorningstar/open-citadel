@@ -2,6 +2,7 @@ import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { BlogsPage } from "@/components/hub/blogs-page";
 import { BooksPage } from "@/components/hub/books-page";
 import { PodcastsPage } from "@/components/hub/podcasts-page";
 import { ChartNoAxesGantt, ZodiacPisces } from "@/components/icons";
@@ -9,14 +10,14 @@ import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize } from "@/constants/theme";
 import { useLibraryPage } from "@/features/library/hooks/use-library-page";
-import { LibrarySwitcher } from "@/features/podcasts/components/library-switcher";
-import { LibraryTabs } from "@/features/podcasts/components/library-tabs";
+import { LibrarySwitcher } from "@/features/library/components/library-switcher";
+import { LibraryTabs } from "@/features/library/components/library-tabs";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { asColor } from "@/utils/colors";
 
 /**
- * The Library: books and podcasts, one header, one switch between them.
+ * The Library: books, podcasts and blogs, one header, one switch between them.
  *
  * The header is the hub's map, as it always was: the Timeline to one side,
  * Samwell to the other, drawn with their own icons. Its middle, which used to
@@ -29,6 +30,12 @@ export function LibraryPage() {
   const [foreground, primary] = useCSSVariable(["--color-foreground", "--color-primary"]);
   const page = useLibraryPage();
   const miniPlayer = useMiniPlayer(insets.bottom);
+  const chrome = miniPlayer.clearance;
+  const sides = {
+    books: <BooksPage bottomChrome={chrome} />,
+    podcasts: page.mounted.podcasts ? <PodcastsPage bottomChrome={chrome} /> : null,
+    blogs: page.mounted.blogs ? <BlogsPage bottomChrome={chrome} /> : null,
+  };
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -44,11 +51,7 @@ export function LibraryPage() {
         rightLabel="Samwell"
         onRightPress={page.openSamwell}
       />
-      <LibrarySwitcher
-        tab={page.tab}
-        books={<BooksPage bottomChrome={miniPlayer.clearance} />}
-        podcasts={page.podcastsMounted ? <PodcastsPage bottomChrome={miniPlayer.clearance} /> : null}
-      />
+      <LibrarySwitcher tab={page.tab} sides={sides} />
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
     </ThemedView>
   );

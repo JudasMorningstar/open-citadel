@@ -8,7 +8,7 @@ import { layout } from '@/constants/theme';
 import { AddBooksFab } from '@/features/library/components/add-books-fab';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { BookShelves } from '@/features/library/components/book-shelves';
-import { DirectoryPrompt } from '@/features/library/components/directory-prompt';
+import { BooksWelcome } from '@/features/library/components/books-welcome';
 import { NewCollectionPrompt } from '@/features/library/components/new-collection-prompt';
 import { PullToSync } from '@/components/pull-to-sync';
 import { SyncIndicator } from '@/features/library/components/sync-indicator';
@@ -28,7 +28,7 @@ type BooksLibraryProps = {
 };
 
 /**
- * The books side of the Library: the boot skeleton, the setup prompt, or the
+ * The books side of the Library: the boot skeleton, the getting-started page, or the
  * shelves with their sheets. The header above it and the switch to podcasts
  * belong to `LibraryPage`, and `BooksPage` wires the state in.
  */
@@ -50,7 +50,11 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
   if (library.view === 'setup') {
     return (
       <ThemedView className="flex-1">
-        <DirectoryPrompt onPress={library.setUp} onFreeBooks={library.openFreeBooks} />
+        <BooksWelcome
+          bottomPadding={bottomChrome + insets.bottom + layout.gutter}
+          onAddBooks={library.setUp}
+          onFreeBooks={library.openFreeBooks}
+        />
       </ThemedView>
     );
   }

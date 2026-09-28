@@ -28,3 +28,55 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..31e2b3c4fa55dea92727b77de47921a0
        }
      }
    }
+diff --git a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
+index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894cfc5dd53d 100644
+--- a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
++++ b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
+@@ -6,6 +6,8 @@
+ 
+ package com.reactnativereadium.reader
+ 
++import android.content.Intent
++import android.net.Uri
+ import android.os.Bundle
+ import android.view.*
+ import android.view.accessibility.AccessibilityManager
+@@ -26,6 +28,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
+ import org.readium.r2.navigator.epub.EpubNavigatorFactory
+ import org.readium.r2.shared.publication.Locator
+ import org.readium.r2.shared.publication.Publication
++import org.readium.r2.shared.util.AbsoluteUrl
+ import org.readium.r2.navigator.preferences.Theme
+ 
+ data class SelectionAction(
+@@ -35,6 +38,22 @@ data class SelectionAction(
+ 
+ class EpubReaderFragment : VisualReaderFragment() {
+ 
++    /*
++     * Open Citadel: links out of the book (a blog post's "Read the original",
++     * a footnote's source) go to the phone's browser. Readium drops an
++     * external link when no listener is given, which left them doing nothing.
++     */
++    private val externalLinkListener = object : EpubNavigatorFragment.Listener {
++        override fun onExternalLinkActivated(url: AbsoluteUrl) {
++            val context = context ?: return
++            runCatching {
++                context.startActivity(
++                    Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++                )
++            }
++        }
++    }
++
+     override lateinit var model: ReaderViewModel
+     override lateinit var navigator: Navigator
+     private lateinit var publication: Publication
+@@ -128,6 +147,7 @@ class EpubReaderFragment : VisualReaderFragment() {
+             navigatorFactory.createFragmentFactory(
+               initialLocator = model.initialLocation,
+               initialPreferences = userPreferences,
++              listener = externalLinkListener,
+               configuration = EpubNavigatorFragment.Configuration {
+                 when {
+                   suppressNativeSelectionMenu -> selectionActionModeCallback = object : ActionMode.Callback {

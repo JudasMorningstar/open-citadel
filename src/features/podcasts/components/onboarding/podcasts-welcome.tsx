@@ -1,13 +1,13 @@
 import React from 'react';
 import Animated from 'react-native-reanimated';
 
-import { Compass, Import, MicSignal } from '@/components/icons';
+import { Import, MicSignal, Telescope } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { revealIn } from '@/constants/theme';
-import { OnboardingStage } from '@/features/podcasts/components/onboarding/onboarding-stage';
-import { StageGlyph } from '@/features/podcasts/components/onboarding/stage-glyph';
-import { StageHeading } from '@/features/podcasts/components/onboarding/stage-heading';
-import { WelcomeChoice } from '@/features/podcasts/components/onboarding/welcome-choice';
+import { OnboardingStage } from '@/components/stage/onboarding-stage';
+import { StageGlyph } from '@/components/stage/stage-glyph';
+import { StageHeading } from '@/components/stage/stage-heading';
+import { WelcomeChoice } from '@/components/stage/welcome-choice';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type PodcastsWelcomeProps = {
@@ -36,9 +36,9 @@ export function PodcastsWelcome({ bottomPadding, onStartFresh, onImport }: Podca
   return (
     <OnboardingStage bottomPadding={bottomPadding} footer={footer}>
       <StageGlyph icon={MicSignal} color={tokens['--color-primary']} />
-      <StageHeading title="Your podcasts" subtitle="Start new, or bring your library from AntennaPod." />
+      <StageHeading title="Your podcasts" subtitle="Find new shows, or bring yours from AntennaPod." />
       <Animated.View entering={revealIn(2)} className="gap-4 self-stretch">
-        <WelcomeChoice icon={Compass} title="Start fresh" detail="Find shows worth your time in Explore." onPress={onStartFresh} />
+        <WelcomeChoice icon={Telescope} title="Explore podcasts" detail="Shows worth your time, by topic and by chart." onPress={onStartFresh} />
         <WelcomeChoice
           icon={Import}
           title="Import from AntennaPod"

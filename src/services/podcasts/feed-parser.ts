@@ -15,10 +15,10 @@ import { XMLParser } from "fast-xml-parser";
 import { parseAtom } from "@/services/podcasts/feed/atom";
 import { parseRss } from "@/services/podcasts/feed/rss";
 import type { ParsedFeed } from "@/services/podcasts/feed/types";
-import { isNode, type Node } from "@/services/podcasts/feed/xml";
+import { isNode, type Node } from "@/services/feeds/xml";
 
 export type { ParsedChapter, ParsedEpisode, ParsedFeed } from "@/services/podcasts/feed/types";
-export { parseChapterStart, parseDuration, parseFeedDate } from "@/services/podcasts/feed/values";
+export { parseChapterStart, parseDuration } from "@/services/podcasts/feed/values";
 
 export class FeedParseError extends Error {}
 

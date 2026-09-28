@@ -6,7 +6,7 @@ import { useExploreCharts, useExploreSearch, useFollowedCheck } from '@/features
 import { looksLikeLink } from '@/features/podcasts/utils/links';
 import { discoveredKey } from '@/features/podcasts/utils/show-tiles';
 import { appleIdFromLink, type DiscoveredShow, type ExploreGenre } from '@/services/podcasts/discovery';
-import { normalizeFeedUrl } from '@/services/podcasts/feed-fetch';
+import { normalizeFeedUrl } from '@/services/feeds/fetch';
 
 /** A genre in a route: its Apple id, or `all` for the overall chart. */
 export const genreParam = (id: number | null) => (id == null ? 'all' : String(id));
