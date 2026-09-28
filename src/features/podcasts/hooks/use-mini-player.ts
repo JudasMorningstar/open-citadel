@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
-import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, type MiniPlayerProps } from '@/features/podcasts/components/mini-player';
+import { MINI_PLAYER_CLEARANCE, type MiniPlayerProps } from '@/features/podcasts/components/mini-player';
 import { skipBy, stopPlayback, togglePlayback } from '@/services/podcasts/player';
 import { selectPlaying, usePlayerLoader, usePodcastPlayer } from '@/stores/podcast-player';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
@@ -37,6 +37,15 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
       onSkipForward,
       onClose,
     },
-    clearance: MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP,
+    clearance: MINI_PLAYER_CLEARANCE,
   };
+}
+
+/**
+ * The mini player's room, whether or not this screen draws it: the full
+ * clearance while anything is in the player, nothing otherwise. For what has
+ * to sit in the same place on every screen, like the floating buttons.
+ */
+export function useMiniPlayerClearance(): number {
+  return usePodcastPlayer((s) => (s.current ? MINI_PLAYER_CLEARANCE : 0));
 }

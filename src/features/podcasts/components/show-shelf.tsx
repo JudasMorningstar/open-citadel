@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { ShelfRow } from '@/components/shelf-row';
-import { SHELF_TILE_WIDTH } from '@/features/podcasts/components/episode-shelf';
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { ShowTile } from '@/features/podcasts/components/show-tile';
 import { showName, type ShowItem } from '@/services/podcasts/records';
 

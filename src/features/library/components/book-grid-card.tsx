@@ -1,11 +1,11 @@
 import React from "react";
 
 import { BookTile } from "@/features/library/components/book-tile";
-import type { Book } from "@/stores/books";
+import type { TileBook } from "@/features/library/utils/tile-book";
 
 
-type BookGridCardProps = {
-  book: Book;
+type BookGridCardProps<B extends TileBook> = {
+  book: B;
   /** Column width in dp, derived once by the screen from the live window. */
   width: number;
   /** Resolved `--color-muted-foreground`, passed down so a grid of these
@@ -13,8 +13,8 @@ type BookGridCardProps = {
   mutedForeground: string | undefined;
   /** Resolved `--color-surface-tertiary`. */
   surfaceTertiary: string | undefined;
-  onPress: (bookId: string) => void;
-  onLongPress: (book: Book) => void;
+  onPress: (bookId: B['id']) => void;
+  onLongPress?: (book: B) => void;
 };
 
 /**
@@ -25,6 +25,6 @@ type BookGridCardProps = {
  * looks like. Kept as its own export because the grid screens and the skeleton
  * that stands in for them are written in terms of it.
  */
-export function BookGridCard(props: BookGridCardProps) {
+export function BookGridCard<B extends TileBook>(props: BookGridCardProps<B>) {
   return <BookTile {...props} titleLines={2} />;
 }

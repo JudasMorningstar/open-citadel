@@ -1,11 +1,11 @@
 import React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Plus } from '@/components/icons';
 import { LibrarySkeleton } from '@/components/skeletons/library-skeleton';
 import { ThemedView } from '@/components/themed-view';
-import { Fab, fabClearance } from '@/components/ui/fab';
+import { fabClearance } from '@/components/fab-placement';
 import { layout } from '@/constants/theme';
+import { AddBooksFab } from '@/features/library/components/add-books-fab';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { BookShelves } from '@/features/library/components/book-shelves';
 import { DirectoryPrompt } from '@/features/library/components/directory-prompt';
@@ -34,8 +34,7 @@ type BooksLibraryProps = {
  */
 export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: BooksLibraryProps) {
   const insets = useSafeAreaInsets();
-  const scrollBottom =
-    layout.scrollBottom + bottomChrome + (library.canAddBooks ? fabClearance(insets.bottom) : insets.bottom);
+  const scrollBottom = layout.scrollBottom + bottomChrome + fabClearance(insets.bottom);
 
   // Boot in progress: the shape of the Library rather than either branch, so
   // neither the setup prompt nor an empty scaffold can flash. A skeleton and
@@ -51,7 +50,7 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
   if (library.view === 'setup') {
     return (
       <ThemedView className="flex-1">
-        <DirectoryPrompt onPress={library.setUp} />
+        <DirectoryPrompt onPress={library.setUp} onFreeBooks={library.openFreeBooks} />
       </ThemedView>
     );
   }
@@ -80,15 +79,8 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
       </PullToSync>
 
       {/* The page's one creative action, the same floating button the
-          Timeline gives its own. */}
-      {library.canAddBooks ? (
-        <Fab
-          icon={Plus}
-          accessibilityLabel="Add books"
-          bottomOffset={insets.bottom + bottomChrome}
-          onPress={library.addBooks}
-        />
-      ) : null}
+          Timeline gives its own: adding books, from Files or for free. */}
+      <AddBooksFab options={library.addOptions} onSelect={library.onAddBooks} />
 
       <BookSheets sheets={sheets} />
       <NewCollectionPrompt {...newCollection.prompt} />

@@ -297,6 +297,12 @@ export const MaxContentWidth = 800;
  */
 export const LIST_DRAW_DISTANCE = 800;
 
+/**
+ * A tile's width on every horizontal shelf, books, shows and episodes alike,
+ * so the two libraries' shelves line up.
+ */
+export const SHELF_TILE_WIDTH = 170;
+
 export const contentColumn = {
   maxWidth: MaxContentWidth,
   width: '100%',

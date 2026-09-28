@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Plus } from "@/components/icons";
 import { Handover } from "@/components/navigation/handover";
-import { Fab, fabClearance } from "@/components/ui/fab";
+import { fabClearance } from "@/components/fab-placement";
+import { ScreenFab } from "@/components/screen-fab";
 import { layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { NoShowsYet } from "@/features/podcasts/components/no-shows-yet";
@@ -76,7 +77,7 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
       </Handover>
       {/* The side's one creative action, the same floating button the books
           side and the Timeline give theirs: find something new to follow. */}
-      <Fab icon={Plus} accessibilityLabel="Add a podcast" bottomOffset={insets.bottom + bottomChrome} onPress={page.openExplore} />
+      <ScreenFab icon={Plus} accessibilityLabel="Add a podcast" onPress={page.openExplore} />
       <EpisodeActionSheet {...episodes.sheet} />
     </View>
   );

@@ -6,11 +6,14 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
+import { Touchable } from '@/components/ui/touchable';
 import { easing, motion, popIn } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
 
 type DirectoryPromptProps = {
   onPress: () => void;
+  /** The other way to start: free books from Project Gutenberg. */
+  onFreeBooks: () => void;
 };
 
 // iOS brings books into an app-owned folder via the picker; Android references
@@ -28,7 +31,7 @@ const COPY =
         button: 'SELECT FOLDER',
       };
 
-export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
+export function DirectoryPrompt({ onPress, onFreeBooks }: DirectoryPromptProps) {
   const [primary, mutedForeground] = useCSSVariable([
     '--color-primary',
     '--color-muted-foreground',
@@ -64,6 +67,11 @@ export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
         style={{ marginTop: 24, alignSelf: 'stretch' }}
       >
         <GoldButton label={COPY.button} onPress={onPress} />
+        <Touchable onPress={onFreeBooks} accessibilityRole="button" className="items-center py-4">
+          <ThemedText type="labelSm" color={asColor(primary)}>
+            OR FIND FREE BOOKS
+          </ThemedText>
+        </Touchable>
       </Animated.View>
     </View>
   );

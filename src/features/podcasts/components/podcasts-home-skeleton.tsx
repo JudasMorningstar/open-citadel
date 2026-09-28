@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import { HeroCardSkeleton } from '@/components/skeletons/hero-card-skeleton';
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
-import { SHELF_TILE_WIDTH } from '@/features/podcasts/components/episode-shelf';
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
 
 /** A shelf's title and its VIEW ALL card. */

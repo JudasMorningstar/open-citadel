@@ -7,6 +7,7 @@ import type { ToastOptions } from "@/components/toast/types";
 import { db } from "@/db/client";
 import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import { gutenbergIdFromUri } from "@/services/gutenberg/records";
 import {
     OWNED_DIR,
     ensureOwnedDir,
@@ -225,6 +226,13 @@ interface BooksState {
 /** How often to do a full loadBooks() during the preparing phase */
 const LOAD_BOOKS_EVERY_N = 50;
 let _preparedSinceLastLoad = 0;
+/**
+ * A scan was asked for while one was running. The running one may already be
+ * past the folder listing, so a book that landed in the folder since (a free
+ * book downloaded mid-scan) would wait for the next launch. Instead one more
+ * scan runs as soon as this one ends. However many asked, it is one.
+ */
+let _scanAgain = false;
 
 /**
  * What the UI does with one report of a scan's progress.
@@ -295,7 +303,14 @@ function applySyncProgress(
     if (notify || rootGone) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
     if (rootGone) void get().forgetDirectory();
     if (job.status === "completed") {
-      setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
+      // Only this job's leftovers: a follow-up scan may be running by now.
+      setTimeout(() => {
+        if (get().sync.jobId === job.id) set({ sync: IDLE_SYNC });
+      }, 2000);
+    }
+    if (_scanAgain && !rootGone) {
+      _scanAgain = false;
+      void get().syncBooks();
     }
   }
 }
@@ -465,16 +480,29 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     const { booksDirectoryUri } = get();
     if (!booksDirectoryUri) return;
 
-    // Don't start a second sync if one is already running
-    if (get().sync.status === "running") return;
+    // Never two at once: one more follows this one instead (see `_scanAgain`).
+    if (get().sync.status === "running") {
+      _scanAgain = true;
+      return;
+    }
 
     _preparedSinceLastLoad = 0;
 
     const notify = options?.notify ?? false;
 
-    await startOrResumeSync(booksDirectoryUri, (job) => {
+    const jobId = await startOrResumeSync(booksDirectoryUri, (job) => {
       applySyncProgress(job, set, get, notify);
     });
+    /*
+     * Running from the moment the job exists, not from its first progress
+     * report a beat later, so anything waiting on "is a scan going" (a free
+     * book's page, waiting for its book) never reads the gap as "it ended".
+     * Only if that job has not reported yet: a scan fast enough to have
+     * finished already must not be marked running again.
+     */
+    if (get().sync.jobId !== jobId) {
+      set({ sync: { ...IDLE_SYNC, jobId, status: "running", phase: "scanning" } });
+    }
   },
 
   updateBookStatus: async (bookId: string, status: BookStatus | null) => {
@@ -623,6 +651,33 @@ export const useArchivedBooks = () =>
 export const useFavoriteBooks = () =>
   useBooksStore(useShallow((s) => s.books.filter((b) => b.isFavorite === 1)));
 export const useAllBooks = () => useBooksStore(useShallow((s) => s.books));
+let _gutenbergIndex: { books: Book[]; ids: Map<number, string> } | null = null;
+
+/**
+ * The library's books by their Project Gutenberg eBook number, recognised by
+ * the number their file is named with (`epubFileName`), so it holds across
+ * rescans and renames.
+ *
+ * Rebuilt only when the list of books itself changes. A scan writes the store
+ * several times a second and leaves `books` alone, and decoding every file
+ * name on each of those writes would be the whole library's worth of work per
+ * tick on the JS thread.
+ */
+export function gutenbergBookIds(books: Book[]): Map<number, string> {
+  if (_gutenbergIndex?.books !== books) {
+    const ids = new Map<number, string>();
+    for (const book of books) {
+      const gutenbergId = gutenbergIdFromUri(book.sourceUri ?? book.filePath);
+      if (gutenbergId != null && !ids.has(gutenbergId)) ids.set(gutenbergId, book.id);
+    }
+    _gutenbergIndex = { books, ids };
+  }
+  return _gutenbergIndex.ids;
+}
+
+/** The library's copy of a Project Gutenberg book: its id, or null while it is not here. */
+export const useLibraryBookFromGutenberg = (gutenbergId: number) =>
+  useBooksStore((s) => gutenbergBookIds(s.books).get(gutenbergId) ?? null);
 export const useSyncState = () => useBooksStore((s) => s.sync);
 /**
  * Whether a scan is going on, and nothing else about it.

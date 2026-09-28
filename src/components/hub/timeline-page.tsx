@@ -1,16 +1,19 @@
 import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { Calendar, ChevronRight, MessageSquare, Pencil, Share, Trash2 } from '@/components/icons';
+import { Calendar, ChevronRight, MessageSquare, Pencil, PencilSparkles, Share, Trash2 } from '@/components/icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettledFocusEffect } from "@/navigation/use-settled-focus-effect";
 
+import { fabClearance } from '@/components/fab-placement';
 import { PageFade } from '@/components/scroll-fades';
+import { ScreenFab } from '@/components/screen-fab';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
+import { useFabBottom } from '@/hooks/use-fab-bottom';
 import { useToday } from '@/hooks/use-today';
 import { ExportImageCard } from '@/components/export/export-image-card';
 import { captureAndShare } from '@/utils/export-image';
@@ -20,7 +23,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimelineEntry } from '@/components/timeline/timeline-entry';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Fab, fabClearance } from '@/components/ui/fab';
 import { Item } from '@/components/ui/item';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
@@ -35,6 +37,8 @@ import { asColor } from '@/utils/colors';
 
 export function TimelinePage() {
   const insets = useSafeAreaInsets();
+  // Where every screen's floating button sits, so the list clears it here too.
+  const fabBottom = useFabBottom();
   // The Library is a peer page, so returning to it is a swipe the button
   // makes on the user's behalf — never a pop, because there is no push.
   const goTo = useHubStore((s) => s.goTo);
@@ -259,7 +263,7 @@ export function TimelinePage() {
           // keep their own `px-6` gutters inside the column.
           style={contentColumn}
           contentContainerStyle={{
-            paddingBottom: layout.scrollBottom + fabClearance(insets.bottom),
+            paddingBottom: layout.scrollBottom + fabClearance(fabBottom),
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -296,9 +300,9 @@ export function TimelinePage() {
         </ScrollView>
         </PageFade>
 
-      <Fab
+      <ScreenFab
+        icon={PencilSparkles}
         accessibilityLabel="New thought"
-        bottomOffset={insets.bottom}
         onPress={() => { setEditingThought(null); setShowThoughtSheet(true); }}
       />
 

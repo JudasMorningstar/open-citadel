@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
-import { SHELF_TILE_WIDTH } from '@/features/podcasts/components/episode-shelf';
+import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
 
 const SHELVES = [0, 1, 2];

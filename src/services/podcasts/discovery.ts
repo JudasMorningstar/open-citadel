@@ -10,6 +10,7 @@
  * by the genres a reader of this app is most likely to want: books, ideas,
  * history, self-improvement.
  */
+import { createRequestGate } from "@/utils/request-gate";
 
 export type DiscoveredShow = {
   /** Apple's id, when the show came from Apple. */
@@ -54,18 +55,7 @@ function countryCode(): string {
 }
 
 /** Apple requests in flight at once, so twelve charts on a slow connection arrive top first. */
-const MAX_IN_FLIGHT = 3;
-let inFlight = 0;
-const waiters: (() => void)[] = [];
-
-async function turn(): Promise<() => void> {
-  if (inFlight >= MAX_IN_FLIGHT) await new Promise<void>((resolve) => waiters.push(resolve));
-  inFlight += 1;
-  return () => {
-    inFlight -= 1;
-    waiters.shift()?.();
-  };
-}
+const turn = createRequestGate(3);
 
 async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
   const done = await turn();

@@ -7,7 +7,7 @@ import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, motion } from '@/constants/theme';
 import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
-import type { Book } from '@/stores/books';
+import type { TileBook } from '@/features/library/utils/tile-book';
 
 
 const COVER_FILL = { width: '100%' as const, height: '100%' as const };
@@ -26,8 +26,8 @@ const COVER_RATIO = 0.62;
 /** `p-4` on the panel, both sides. */
 const TILE_PADDING = 16;
 
-type BookTileProps = {
-  book: Book;
+type BookTileProps<B extends TileBook> = {
+  book: B;
   /** Full tile width in dp — the column width, or the shelf's item width. */
   width: number;
   /** Resolved `--color-muted-foreground`. */
@@ -47,8 +47,8 @@ type BookTileProps = {
   badgeColor?: string;
   /** A grid wraps to two lines; a shelf usually wants one. */
   titleLines?: number;
-  onPress?: (bookId: string) => void;
-  onLongPress?: (book: Book) => void;
+  onPress?: (bookId: B['id']) => void;
+  onLongPress?: (book: B) => void;
 };
 
 /**
@@ -67,7 +67,7 @@ type BookTileProps = {
  * a grid or shelf of these shares one subscription instead of taking one per
  * tile.
  */
-function BookTileBase({
+function BookTileBase<B extends TileBook>({
   book,
   width,
   mutedForeground,
@@ -77,7 +77,7 @@ function BookTileBase({
   titleLines = 2,
   onPress,
   onLongPress,
-}: BookTileProps) {
+}: BookTileProps<B>) {
   const coverWidth = Math.round((width - TILE_PADDING * 2) * COVER_RATIO);
 
   return (
@@ -98,7 +98,7 @@ function BookTileBase({
                   style={COVER_FILL}
                   placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
                   transition={motion.slow}
-                  recyclingKey={book.id}
+                  recyclingKey={String(book.id)}
                 />
               ) : (
                 // A cover-shaped hole otherwise: `bg-card` and the panel
@@ -123,8 +123,8 @@ function BookTileBase({
                   </ThemedText>
                 </View>
               )}
-              {!book.filePath && <SyncBadge />}
-              {BadgeIcon && book.filePath ? (
+              {book.filePath === null && <SyncBadge />}
+              {BadgeIcon && book.filePath !== null ? (
                 <View className="absolute left-2 top-2 rounded-full bg-background">
                   <BadgeIcon size={22} color={badgeColor} />
                 </View>
@@ -153,4 +153,4 @@ function BookTileBase({
  * `memo`'d so a keystroke in a screen's search field reflows only the tiles
  * whose `book` actually changed, not every visible cover.
  */
-export const BookTile = React.memo(BookTileBase);
+export const BookTile = React.memo(BookTileBase) as typeof BookTileBase;

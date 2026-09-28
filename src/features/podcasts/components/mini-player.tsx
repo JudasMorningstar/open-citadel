@@ -18,6 +18,8 @@ import { asColor } from '@/utils/colors';
 export const MINI_PLAYER_HEIGHT = 64;
 /** Distance from the safe area's bottom edge to the card. */
 export const MINI_PLAYER_GAP = spacing[3];
+/** The room the card takes above the safe area: its height and the gap under it. */
+export const MINI_PLAYER_CLEARANCE = MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP;
 
 const ART = 44;
 
@@ -85,7 +87,7 @@ export function MiniPlayer({
     '--color-muted-foreground',
     '--color-surface-tertiary',
   ]);
-  const swipe = useDismissSwipe(onClose, MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP + bottomInset);
+  const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset);
 
   return (
     <Animated.View
