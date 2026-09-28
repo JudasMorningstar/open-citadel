@@ -16,7 +16,7 @@ import RNBlobUtil from 'react-native-blob-util';
 import type { KokoroTtsModel } from 'react-native-executorch';
 
 import { cachePath, getExecuTorch } from '@/lib/executorch';
-import { kokoroModel, type KokoroVoice } from '@/services/device-tts/catalogue';
+import { kokoroModels, type KokoroAccent } from '@/services/device-tts/catalogue';
 
 /** Every remote URL nested inside a Kokoro model config, in no particular order. */
 function collectUrls(value: unknown): string[] {
@@ -26,10 +26,14 @@ function collectUrls(value: unknown): string[] {
   return [];
 }
 
-/** Every URL the Kokoro model needs. */
+/**
+ * Every URL Kokoro needs, across both accents. The two share their weights, so
+ * the list is deduplicated: the second accent only adds a phonemizer and its
+ * voices.
+ */
 export function remoteUrls(): string[] {
-  const model = kokoroModel();
-  return model ? collectUrls(model) : [];
+  const models = kokoroModels();
+  return models ? [...new Set(collectUrls(models))] : [];
 }
 
 /** Fetches every file Kokoro needs. Rejects with `DOWNLOAD_ABORTED` when `signal` fires. */
@@ -38,27 +42,31 @@ export async function downloadModelFiles(options: {
   signal: AbortSignal;
 }): Promise<void> {
   const et = getExecuTorch();
-  const model = kokoroModel();
-  if (!et || !model) throw new Error("On-device voices aren't supported on this device.");
-  await et.download(model, options);
+  const models = kokoroModels();
+  if (!et || !models) throw new Error("On-device voices aren't supported on this device.");
+  // One call for both accents, so progress is weighted across every file
+  // and the shared weights are fetched once.
+  await et.download(models, options);
 }
 
 /**
- * Kokoro's files on this device, or null when any of them is missing.
+ * One accent's Kokoro files on this device, or null when any file of either
+ * accent is missing.
  *
- * Never touches the network — see `device-llm/files.ts`'s identical note.
+ * Checks both accents so a half-finished or older, US-only download reads as
+ * not downloaded rather than failing later on the first British voice. Never
+ * touches the network — see `device-llm/files.ts`'s identical note.
  */
-export async function localModelFiles(): Promise<KokoroTtsModel<KokoroVoice> | null> {
+export async function localModelFiles(accent: KokoroAccent): Promise<KokoroTtsModel<string> | null> {
   const et = getExecuTorch();
-  const model = kokoroModel();
-  if (!et || !model) return null;
+  const models = kokoroModels();
+  if (!et || !models) return null;
 
-  const urls = collectUrls(model);
-  const present = await Promise.all(urls.map((url) => RNBlobUtil.fs.exists(cachePath(url)).catch(() => false)));
+  const present = await Promise.all(remoteUrls().map((url) => RNBlobUtil.fs.exists(cachePath(url)).catch(() => false)));
   if (!present.every(Boolean)) return null;
 
   try {
-    return await et.download(model);
+    return await et.download(models[accent]);
   } catch {
     return null;
   }

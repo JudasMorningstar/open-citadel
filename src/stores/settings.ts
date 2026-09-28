@@ -207,7 +207,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
     } else {
       await saveSetting('ttsVoice', voice);
+      // A voice with no language must not keep the previous voice's, or it
+      // comes back after a restart paired with the wrong one.
       if (language) await saveSetting('ttsVoiceLanguage', language);
+      else await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
     }
     set({ ttsVoice: voice, ttsVoiceLanguage: language });
   },

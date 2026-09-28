@@ -20,7 +20,7 @@ export type VoiceCarouselSlideProps = Omit<VoiceCarouselCardProps, 'onSelect'>;
  * One slide of the voice run, with depth — mirrors `PlanSlide`: the
  * carousel's `default` variant is a plain track, so scale and opacity here
  * are what makes the centred card read as the one being chosen rather than
- * one of six equal photographs.
+ * one of several equal photographs.
  *
  * Also where "tap a side card to select it" lives, since `scrollTo` only
  * exists inside the `<Carousel>` tree this renders into — the host component

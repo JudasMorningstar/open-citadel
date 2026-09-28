@@ -7,7 +7,13 @@ import { ThemedText } from '@/components/themed-text';
 import { elevation } from '@/constants/theme';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { VOICE_DESCRIPTIONS, VOICE_LABELS, type KokoroVoice } from '@/services/device-tts/catalogue';
+import {
+  ACCENT_LABELS,
+  VOICE_ACCENTS,
+  VOICE_DESCRIPTIONS,
+  VOICE_LABELS,
+  type KokoroVoice,
+} from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
@@ -16,7 +22,6 @@ export interface VoiceCarouselCardProps {
   index: number;
   selected: boolean;
   previewing: boolean;
-  isDownloaded: boolean;
   onSelect: () => void;
   onPreviewToggle: () => void;
 }
@@ -40,14 +45,13 @@ export function VoiceCarouselCard({
   index,
   selected,
   previewing,
-  isDownloaded,
   onSelect,
   onPreviewToggle,
 }: VoiceCarouselCardProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
   const name = VOICE_LABELS[voice];
-  const descriptor = VOICE_DESCRIPTIONS[voice];
+  const descriptor = `${ACCENT_LABELS[VOICE_ACCENTS[voice]]} · ${VOICE_DESCRIPTIONS[voice]}`;
   const sampleLabel = selected && previewing ? 'STOP' : 'SAMPLE';
 
   return (
@@ -59,10 +63,9 @@ export function VoiceCarouselCard({
       style={selected ? elevation.card : undefined}
     >
       <Touchable
-        disabled={!isDownloaded}
         onPress={onSelect}
         accessibilityRole="radio"
-        accessibilityState={{ selected, disabled: !isDownloaded }}
+        accessibilityState={{ selected }}
         accessibilityLabel={`${name}, ${descriptor}${selected ? ', selected' : ''}`}
       >
         <View className="flex-row items-start justify-between">
@@ -90,7 +93,6 @@ export function VoiceCarouselCard({
           selected ? 'border-primary' : 'border-border',
         )}
         hitSlop={6}
-        disabled={!isDownloaded}
         onPress={selected ? onPreviewToggle : onSelect}
         accessibilityRole="button"
         accessibilityLabel={selected && previewing ? `Stop ${name} preview` : `Play ${name} preview`}

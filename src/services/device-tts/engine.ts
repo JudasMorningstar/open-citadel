@@ -2,6 +2,12 @@
  * The one loaded Kokoro pipeline, held for as long as the reader might want
  * a voice — a singleton so repeated reading sessions never pay to reload it.
  *
+ * "One" is deliberate: each accent needs its own phonemizer, hence its own
+ * pipeline, but two FP32 pipelines would double the memory that already
+ * exhausts a 2 GB phone. So the loaded pipeline is swapped when a voice of the
+ * other accent is asked for. That swap happens inside the synthesis queue, so
+ * it can never dispose a pipeline that is mid-utterance.
+ *
  * This is a much thinner singleton than `device-llm/engine.ts`'s: Kokoro has
  * no per-conversation cache to share, so the only hazard is calling
  * `synthesize` twice at once, which `exclusive` alone covers. What is
@@ -13,11 +19,10 @@
 import type { KokoroTextToSpeech } from 'react-native-executorch';
 
 import { getExecuTorch } from '@/lib/executorch';
-import type { KokoroVoice } from '@/services/device-tts/catalogue';
+import { VOICE_ACCENTS, type KokoroAccent, type KokoroVoice } from '@/services/device-tts/catalogue';
 import { localModelFiles } from '@/services/device-tts/files';
 
-let engine: KokoroTextToSpeech<KokoroVoice> | null = null;
-let loading: Promise<void> | null = null;
+let engine: { accent: KokoroAccent; pipeline: KokoroTextToSpeech<string> } | null = null;
 /**
  * Tail of the queue a `synthesize` call waits its turn on.
  *
@@ -29,29 +34,25 @@ let loading: Promise<void> | null = null;
  */
 let synthesisQueue: Promise<unknown> = Promise.resolve();
 
-export function getEngine(): KokoroTextToSpeech<KokoroVoice> | null {
-  return engine;
-}
-
 /**
- * Loads Kokoro from local files, if it isn't already loaded.
+ * The pipeline for `accent`, loaded from local files if it isn't the one
+ * already loaded. Only ever called from inside a synthesis turn.
  *
  * Never fetches: like `device-llm`'s `loadEngine`, this must not start a
  * multi-gigabyte-or-not download just because something asked for a voice.
  */
-export function loadEngine(): Promise<void> {
-  if (engine) return Promise.resolve();
-  if (!loading) {
-    loading = (async () => {
-      const et = getExecuTorch();
-      const files = await localModelFiles();
-      if (!et || !files) throw new Error("Kokoro isn't downloaded.");
-      engine = await et.createKokoroTextToSpeech(files);
-    })().finally(() => {
-      loading = null;
-    });
-  }
-  return loading;
+async function pipelineFor(accent: KokoroAccent): Promise<KokoroTextToSpeech<string>> {
+  if (engine?.accent === accent) return engine.pipeline;
+
+  engine?.pipeline.dispose();
+  engine = null;
+
+  const et = getExecuTorch();
+  const files = await localModelFiles(accent);
+  if (!et || !files) throw new Error("Kokoro isn't downloaded.");
+  const pipeline = await et.createKokoroTextToSpeech(files);
+  engine = { accent, pipeline };
+  return pipeline;
 }
 
 /**
@@ -67,9 +68,6 @@ export function synthesize(
   text: string,
   options: { voice: KokoroVoice; speed?: number },
 ): AsyncGenerator<{ audio: Float32Array; sampleRate: number; duration: number; chunkIndex: number; totalChunks: number }> {
-  const current = engine;
-  if (!current) throw new Error('Kokoro is not loaded.');
-
   const myTurn = synthesisQueue;
   let releaseTurn!: () => void;
   synthesisQueue = new Promise<void>((resolve) => {
@@ -79,7 +77,8 @@ export function synthesize(
   async function* run() {
     await myTurn;
     try {
-      yield* current!.synthesize(text, options);
+      const pipeline = await pipelineFor(VOICE_ACCENTS[options.voice]);
+      yield* pipeline.synthesize(text, options);
     } finally {
       releaseTurn();
     }
@@ -88,5 +87,5 @@ export function synthesize(
 }
 
 export function stop(): void {
-  engine?.synthesizeStop();
+  engine?.pipeline.synthesizeStop();
 }

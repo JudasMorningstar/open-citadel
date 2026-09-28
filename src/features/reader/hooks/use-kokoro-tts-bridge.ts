@@ -14,12 +14,8 @@ import { useCallback } from 'react';
 import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
 import { KOKORO_SAMPLE_RATE } from 'react-native-executorch';
 
-import { DEFAULT_VOICE, KOKORO_EN_US_VOICES, type KokoroVoice } from '@/services/device-tts/catalogue';
-import { getEngine, loadEngine, stop as stopSynthesis, synthesize } from '@/services/device-tts/engine';
-
-function isKokoroVoice(voice: string | undefined): voice is KokoroVoice {
-  return !!voice && (KOKORO_EN_US_VOICES as readonly string[]).includes(voice);
-}
+import { DEFAULT_VOICE, isKokoroVoice } from '@/services/device-tts/catalogue';
+import { stop as stopSynthesis, synthesize } from '@/services/device-tts/engine';
 
 /** The exact bytes of a chunk's audio, regardless of how its Float32Array views its buffer. */
 function chunkBytes(audio: Float32Array): ArrayBuffer {
@@ -34,8 +30,6 @@ export function useKokoroTtsBridge(readerRef: React.RefObject<ReadiumViewRef | n
     (request: TTSSynthesisRequest) => {
       void (async () => {
         try {
-          if (!getEngine()) await loadEngine();
-
           const voice = isKokoroVoice(request.voice) ? request.voice : DEFAULT_VOICE;
           let sentAny = false;
           for await (const chunk of synthesize(request.text, { voice, speed: request.speed })) {

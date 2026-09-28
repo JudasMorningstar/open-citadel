@@ -18,7 +18,9 @@ import { totalSizeBytes } from "@/services/huggingface";
 import { downloadModelFiles, remoteUrls } from "@/services/device-tts/files";
 import { formatBytes } from "@/utils/format";
 
-const IS_DOWNLOADED_KEY = "tts.kokoro.isDownloaded";
+// v2: the pack grew British voices. Anyone who downloaded the US-only pack sees
+// the download card once more, and only the new files are fetched.
+const IS_DOWNLOADED_KEY = "tts.kokoro.isDownloaded.v2";
 
 interface TtsStore {
   isDownloaded: boolean;

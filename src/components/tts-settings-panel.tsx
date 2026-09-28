@@ -2,26 +2,46 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { Download } from '@/components/icons';
-import { ActionButton } from '@/components/action-button';
+import { Smartphone, Sparkles } from '@/components/icons';
+import { ModeCard } from '@/components/mode-card';
+import { NativeVoicePicker } from '@/components/native-voice-picker';
 import { ReadingSpeedStepper } from '@/components/reading-speed-stepper';
 import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/ui/card';
+import { TtsDownloadCard } from '@/components/tts-download-card';
 import { Touchable } from '@/components/ui/touchable';
 import { VoiceCarousel } from '@/components/voice-carousel';
+import {
+  AI_VOICES_SUPPORTED,
+  DEFAULT_VOICE,
+  DEVICE_VOICE,
+  NATIVE_SPEED_SUPPORTED,
+  NATIVE_VOICE_AVAILABLE,
+  isKokoroVoice,
+  voiceMode,
+} from '@/services/device-tts/catalogue';
+import { useSettingsStore } from '@/stores/settings';
 import { useTtsStore } from '@/stores/tts';
 import { asColor } from '@/utils/colors';
 
 export interface TtsSettingsPanelProps {
   /** Closes the sheet this panel is mounted in, shown as a "DONE" control
-   * next to the voice carousel's own header. Omitted on the Settings screen,
-   * which has its own back navigation and nothing to close here. */
+   * next to the panel's header. Omitted on the Settings screen, which has its
+   * own back navigation and nothing to close here. */
   onDone?: () => void;
 }
 
 /**
- * The reading voice's settings: download the voice pack if it isn't on the
- * device yet, then voice (with a one-line preview) and reading speed.
+ * The reading voice's settings. Two choices, AI (Kokoro) first and native (the
+ * phone's own voices) as the fallback for phones that cannot run it, and each
+ * shows its own controls:
+ *
+ * - AI: the download card until the voices are on the device, and only then
+ *   the voice carousel and reading speed. Before that there is nothing to
+ *   preview or pick.
+ * - Native: the list of the phone's voices, and reading speed (Android only).
+ *   Nothing to download.
+ *
+ * Where there is no native path at all (web), only the AI controls show.
  *
  * Otherwise self-contained — it and the components it hosts read and write
  * `useSettingsStore`/`useTtsStore` directly, so the Settings screen and the
@@ -29,11 +49,10 @@ export interface TtsSettingsPanelProps {
  * show the same state.
  */
 export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
-  const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
-  ]);
+  const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
+  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
   const isDownloaded = useTtsStore((s) => s.isDownloaded);
   const downloadProgress = useTtsStore((s) => s.downloadProgress);
   const loadError = useTtsStore((s) => s.loadError);
@@ -44,60 +63,86 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
     void useTtsStore.getState().loadState();
   }, []);
 
+  const mode = voiceMode(ttsVoice);
+  const showSpeed = mode === 'native' ? NATIVE_SPEED_SUPPORTED : isDownloaded;
+
+  const aiDescription = AI_VOICES_SUPPORTED
+    ? 'Natural voices that run offline.'
+    : 'Needs more memory than this phone has.';
+  // The saved phone voice's identifier, '' for the system default (which is
+  // also what an AI voice or nothing at all means here).
+  const nativeVoiceId = isKokoroVoice(ttsVoice) || ttsVoice === DEVICE_VOICE ? '' : (ttsVoice ?? '');
+  const nativeNote = NATIVE_SPEED_SUPPORTED ? null : 'Reading speed cannot be changed with a phone voice.';
+
+  const selectAi = () => {
+    if (mode !== 'ai') void setTtsVoice(DEFAULT_VOICE);
+  };
+  const selectNative = () => {
+    if (mode !== 'native') void setTtsVoice(DEVICE_VOICE);
+  };
+  const selectPhoneVoice = React.useCallback(
+    (identifier: string, language: string) => {
+      void setTtsVoice(identifier || DEVICE_VOICE, language || null);
+    },
+    [setTtsVoice],
+  );
+
   return (
     <View className="gap-4">
-      {!isDownloaded && (
-        <Card className="gap-3 p-4">
-          <View className="flex-row items-start justify-between gap-3">
-            <View className="flex-1 gap-1">
-              <ThemedText type="bodyMd">Reading voice</ThemedText>
-              <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                Download the on-device voice to read books aloud.
-              </ThemedText>
-              {loadError && (
-                <ThemedText type="labelSm" color={asColor(destructive)}>
-                  {loadError}
-                </ThemedText>
-              )}
-            </View>
-            {downloadProgress === null && (
-              <ActionButton
-                icon={Download}
-                label="DOWNLOAD"
-                tint={asColor(mutedForeground)}
-                onPress={() => void downloadModel()}
-              />
-            )}
-          </View>
-          {downloadProgress !== null && (
-            <View className="gap-1">
-              <View className="h-1 overflow-hidden bg-surface-tertiary">
-                <View
-                  className="h-1 bg-primary"
-                  style={{ width: `${Math.round(downloadProgress * 100)}%` }}
-                />
-              </View>
-              <View className="flex-row items-center justify-between">
-                <ThemedText
-                  type="labelSm"
-                  color={asColor(mutedForeground)}
-                  style={{ fontVariant: ['tabular-nums'] }}
-                >
-                  {Math.round(downloadProgress * 100)}%
-                </ThemedText>
-                <Touchable onPress={cancelDownload}>
-                  <ThemedText type="labelSm" color={asColor(destructive)}>
-                    CANCEL
-                  </ThemedText>
-                </Touchable>
-              </View>
-            </View>
-          )}
-        </Card>
+      <View className="flex-row items-baseline justify-between">
+        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+          READING VOICE
+        </ThemedText>
+        {onDone ? (
+          <Touchable onPress={onDone} haptic="tap" hitSlop={8}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
+              DONE
+            </ThemedText>
+          </Touchable>
+        ) : null}
+      </View>
+
+      {NATIVE_VOICE_AVAILABLE && (
+        <View className="flex-row gap-3" accessibilityRole="radiogroup">
+          <ModeCard
+            active={mode === 'ai'}
+            icon={Sparkles}
+            label="AI"
+            description={aiDescription}
+            disabled={!AI_VOICES_SUPPORTED}
+            onSelect={selectAi}
+          />
+          <ModeCard
+            active={mode === 'native'}
+            icon={Smartphone}
+            label="Native"
+            description="Your phone's own voices."
+            onSelect={selectNative}
+          />
+        </View>
       )}
 
-      <VoiceCarousel onDone={onDone} />
-      <ReadingSpeedStepper />
+      {mode === 'native' ? (
+        <View className="gap-2">
+          <NativeVoicePicker selected={nativeVoiceId} onSelect={selectPhoneVoice} />
+          {nativeNote && (
+            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+              {nativeNote}
+            </ThemedText>
+          )}
+        </View>
+      ) : isDownloaded ? (
+        <VoiceCarousel />
+      ) : (
+        <TtsDownloadCard
+          progress={downloadProgress}
+          error={loadError}
+          onDownload={() => void downloadModel()}
+          onCancel={cancelDownload}
+        />
+      )}
+
+      {showSpeed && <ReadingSpeedStepper />}
     </View>
   );
 }
