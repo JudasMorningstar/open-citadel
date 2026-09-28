@@ -42,7 +42,7 @@ export function BookShelves({
   return (
     <>
       {shelves.reading.length > 0 ? (
-        <ShelfSection title="Currently Reading" onViewAll={viewAll.reading} capped={false}>
+        <ShelfSection title="Continue Reading" onViewAll={viewAll.reading} capped={false}>
           <PagedRow items={shelves.reading} keyOf={bookKey} renderPage={renderReading} />
         </ShelfSection>
       ) : null}

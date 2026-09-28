@@ -1,0 +1,73 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import React from 'react';
+
+import { useAddBlog } from '@/features/blogs/hooks/use-add-blog';
+import { useArticleActions } from '@/features/blogs/hooks/use-article-actions';
+import { useBlogImport } from '@/features/blogs/hooks/use-blog-import';
+import {
+  createBlogSectionQueryOptions,
+  createBlogsHomeQueryOptions,
+  invalidateBlogLibrary,
+  type BlogSection,
+  type BlogsHomeData,
+} from '@/query-manager/blogs';
+import { refreshAllBlogs } from '@/services/blogs/refresh';
+
+/** What the blogs side draws: nothing for one frame, the welcome, or the shelves. */
+export type BlogsPageView = 'loading' | 'welcome' | 'home';
+
+const EMPTY: BlogsHomeData = { blogs: [], shelves: { continue: [], latest: [], saved: [] } };
+
+/**
+ * The blogs side of the Library: which view it shows, and what its doors,
+ * pull and shelves do.
+ *
+ * Opening it is when followed blogs are checked for new posts (those past
+ * the interval only; a pull checks every one), which is when the reader
+ * would look for them.
+ */
+export function useBlogsPage() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { data } = useQuery(createBlogsHomeQueryOptions());
+  const home = data ?? EMPTY;
+  const articles = useArticleActions();
+  const importer = useBlogImport();
+  const addBlog = useAddBlog(articles.openBlog);
+  const pull = useMutation({ mutationFn: () => refreshAllBlogs(true), onSettled: invalidateBlogLibrary });
+
+  React.useEffect(() => {
+    void refreshAllBlogs(false).then((summary) => {
+      if (summary.refreshed > 0) invalidateBlogLibrary();
+    });
+  }, []);
+  const openExplore = React.useCallback(() => router.push('/blogs/explore'), [router]);
+  const { mutate, isPending } = pull;
+  const refresh = React.useCallback(() => {
+    if (!isPending) mutate();
+  }, [isPending, mutate]);
+  const viewAll = React.useCallback(
+    (section: BlogSection) => {
+      void queryClient.prefetchQuery(createBlogSectionQueryOptions(section));
+      router.push({ pathname: '/blogs/section/[type]', params: { type: section } });
+    },
+    [queryClient, router],
+  );
+
+  // Nothing kept here yet: no blog followed, and no post saved or opened.
+  const empty = home.blogs.length === 0 && home.shelves.saved.length === 0 && home.shelves.continue.length === 0;
+  const view: BlogsPageView = data === undefined ? 'loading' : empty ? 'welcome' : 'home';
+
+  return {
+    view,
+    home,
+    articles,
+    importer,
+    addBlog,
+    pulling: isPending,
+    refresh,
+    openExplore,
+    viewAll,
+  };
+}

@@ -411,6 +411,21 @@ export default function RootLayout() {
                     name="free-books/book/[id]"
                     options={screenTransitions.side}
                   />
+                  {/* Blogs, laid out as podcasts are: a blog is a place you go
+                  into, from the side; Explore and a "View all" rise from the
+                  bottom. A post opens in the reader, like a book. */}
+                  <TransitionStack.Screen
+                    name="blogs/blog/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="blogs/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="blogs/section/[type]"
+                    options={screenTransitions.drawer}
+                  />
                 </TransitionStack>
                 <ApprovalSheet />
               </ThemeProvider>

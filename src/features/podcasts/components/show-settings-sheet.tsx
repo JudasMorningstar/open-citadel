@@ -3,7 +3,7 @@ import React from 'react';
 import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { ChoiceChips } from '@/features/podcasts/components/choice-chips';
+import { ChoiceChips } from '@/components/choice-chips';
 import { ToggleRow } from '@/features/podcasts/components/toggle-row';
 import { SHOW_NEW_EPISODES, SHOW_SKIPS, SHOW_SPEEDS, SHOW_SWITCHES } from '@/features/podcasts/utils/setting-choices';
 import type { Podcast } from '@/services/podcasts/records';

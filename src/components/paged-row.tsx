@@ -13,8 +13,10 @@ type PagedRowProps<T> = {
 };
 
 /**
- * What someone is part-way through, a page each: Currently Reading on the
- * books side, Continue Listening on the podcasts side.
+ * What someone is part-way through, a page each: Continue Reading on the
+ * books side, Continue Listening on the podcasts side, Continue Reading on
+ * the blogs side. Each lists the latest first, so when the first item
+ * changes (the one just read moved to the front) the row returns to it.
  *
  * Pages are full-window width, because the paging math owns that width; the
  * card inside each is what gets capped to the content column. Dots underneath
@@ -22,7 +24,8 @@ type PagedRowProps<T> = {
  */
 export function PagedRow<T>({ items, keyOf, renderPage }: PagedRowProps<T>) {
   // Destructured: the ref is handed to the ScrollView, never read in render.
-  const { ref, width, page, onSettle } = usePager(items.length);
+  const lead = items.length > 0 ? keyOf(items[0]) : null;
+  const { ref, width, page, onSettle } = usePager(items.length, lead);
   const pageStyle = { width };
 
   return (

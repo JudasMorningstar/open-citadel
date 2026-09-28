@@ -25,7 +25,6 @@ export type PodcastsPageView = 'import' | 'loading' | 'welcome' | 'home';
 export function usePodcastsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const onboarding = usePodcastPrefs((s) => s.onboarding);
   const home = usePodcastHome();
   const importer = useAntennaPodImport();
   const episodes = useEpisodeActions();
@@ -53,16 +52,13 @@ export function usePodcastsPage() {
     [queryClient, router],
   );
 
-  // Local data, one render away: nothing is drawn for that one frame rather
-  // than a skeleton of it (see DESIGN.md on skeletons).
-  const view: PodcastsPageView =
-    importer.active
-      ? 'import'
-      : !home.loaded
-        ? 'loading'
-        : onboarding === 'pending' && home.shows.length === 0
-          ? 'welcome'
-          : 'home';
+  // Nothing here yet: no show followed, and no episode started, queued,
+  // downloaded or kept. That is the welcome, whenever it is true: leaving
+  // Explore without following anything comes back to it, as leaving the free
+  // books' or the blogs' Explore does. Local data, one render away: nothing is
+  // drawn for that one frame rather than a skeleton of it.
+  const empty = home.shows.length === 0 && Object.values(home.shelves).every((shelf) => shelf.length === 0);
+  const view: PodcastsPageView = importer.active ? 'import' : !home.loaded ? 'loading' : empty ? 'welcome' : 'home';
 
   return {
     view,
@@ -70,7 +66,6 @@ export function usePodcastsPage() {
     importer,
     episodes,
     pulling: pull.isPending,
-    followsNothing: home.shows.length === 0,
     refresh,
     openExplore,
     startFresh,

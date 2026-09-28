@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
 import { SHELF_TILE_WIDTH } from '@/constants/theme';
-import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
+import { FeedTileSkeleton } from '@/components/skeletons/feed-tile-skeleton';
 
 const SHELVES = [0, 1, 2];
 const TILES = [0, 1, 2];
@@ -20,7 +20,7 @@ export function ExploreSkeleton() {
           </View>
           <View className="flex-row gap-4 px-6">
             {TILES.map((i) => (
-              <ShowTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
+              <FeedTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
             ))}
           </View>
         </View>

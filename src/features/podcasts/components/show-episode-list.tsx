@@ -3,7 +3,7 @@ import React from 'react';
 
 import { PullToSync, type PullScrollProps } from '@/components/pull-to-sync';
 import { LIST_DRAW_DISTANCE } from '@/constants/theme';
-import { EpisodeSeparator } from '@/features/podcasts/components/episode-separator';
+import { RowSeparator } from '@/components/row-separator';
 import { NEW_EPISODES_PULL_LABELS, renderNewEpisodesIndicator } from '@/features/podcasts/components/new-episodes-indicator';
 import type { EpisodeItem } from '@/services/podcasts/records';
 
@@ -40,7 +40,7 @@ export function ShowEpisodeList({
       data={episodes}
       keyExtractor={keyExtractor}
       renderItem={renderItem}
-      ItemSeparatorComponent={EpisodeSeparator}
+      ItemSeparatorComponent={RowSeparator}
       drawDistance={LIST_DRAW_DISTANCE}
       ListHeaderComponent={header}
       ListEmptyComponent={empty}

@@ -25,7 +25,7 @@ type HeroCardProps = {
 };
 
 /**
- * The card that heads both Library pages, Currently Reading and Continue
+ * The card that heads both Library pages, Continue Reading and Continue
  * Listening: the cover or artwork running the card's full height, flush to its
  * edge, and the text in a padded column with what it is at the top and the
  * progress at the foot. One shell, so the two libraries open the same way.

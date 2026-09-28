@@ -30,7 +30,16 @@ export const books = sqliteTable("books", {
   /** Manual position within the queue (lower = earlier). Null for books
    * that predate this column or have never been queued. */
   queueOrder: integer("queue_order"),
+  /**
+   * `article` is a blog post opened in the reader: a small EPUB the app wrote
+   * (`services/blogs/article-book.ts`), so highlights, notes, tags, chats and
+   * read-aloud work on it exactly as on a book. It has no `sourceUri`, so a
+   * folder scan never touches it, and the book shelves leave it out.
+   */
+  kind: text("kind").$type<BookKind>().notNull().default("book"),
 });
+
+export type BookKind = "book" | "article";
 
 export const readingProgress = sqliteTable("reading_progress", {
   id: text("id").primaryKey(),
@@ -716,4 +725,67 @@ export const podcastListeningDays = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [index("podcast_listening_days_day_idx").on(table.day)],
+);
+
+// ── Blogs ────────────────────────────────────────────────────────────────────
+
+/** `preview`: opened from Explore and not followed, kept so its posts can be read. */
+export type BlogState = "subscribed" | "preview";
+
+export const blogs = sqliteTable(
+  "blogs",
+  {
+    id: text("id").primaryKey(),
+    /** Where the feed is fetched from. Unique. */
+    feedUrl: text("feed_url").notNull(),
+    title: text("title").notNull(),
+    /** The blog's home page. */
+    siteUrl: text("site_url"),
+    description: text("description"),
+    imageUrl: text("image_url"),
+    language: text("language"),
+    state: text("state").$type<BlogState>().notNull().default("subscribed"),
+    subscribedAt: text("subscribed_at"),
+    lastRefreshAt: text("last_refresh_at"),
+    /** Why the last refresh failed, in words for the blog's page; null when it worked. */
+    lastRefreshError: text("last_refresh_error"),
+    /** `ETag` or `Last-Modified` from the last fetch, for a conditional GET. */
+    httpValidator: text("http_validator"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("blogs_feed_url_idx").on(table.feedUrl), index("blogs_state_idx").on(table.state)],
+);
+
+export const blogArticles = sqliteTable(
+  "blog_articles",
+  {
+    id: text("id").primaryKey(),
+    blogId: text("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    guid: text("guid"),
+    /** The post on the web; unique within its blog, which is how a refresh knows a post it has seen. */
+    link: text("link").notNull(),
+    title: text("title").notNull(),
+    author: text("author"),
+    /** Plain text for a list row. */
+    summary: text("summary"),
+    /** The post as the feed carried it. May be only a summary; the whole post is fetched on opening. */
+    contentHtml: text("content_html"),
+    imageUrl: text("image_url"),
+    publishedAt: text("published_at").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+    /** Null while unread. */
+    readAt: text("read_at"),
+    /** Null unless kept to read later. Saved posts are never tidied away. */
+    savedAt: text("saved_at"),
+    /** The reader's copy (`books.kind = 'article'`), once opened. Never tidied away either. */
+    bookId: text("book_id"),
+  },
+  (table) => [
+    uniqueIndex("blog_articles_blog_link_idx").on(table.blogId, table.link),
+    index("blog_articles_published_idx").on(table.publishedAt),
+    index("blog_articles_saved_idx").on(table.savedAt),
+    index("blog_articles_book_idx").on(table.bookId),
+  ],
 );

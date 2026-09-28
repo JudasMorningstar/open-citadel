@@ -6,70 +6,9 @@
  * entirely) and the way out: the same file AntennaPod's own "Import OPML"
  * reads, so nobody's library is locked in here either.
  */
-import { XMLParser } from "fast-xml-parser";
-
+import { buildOpml, type OpmlFeed } from "@/services/feeds/opml";
 import { addShowFromFeed } from "@/services/podcasts/feed-sync";
-import type { Podcast } from "@/services/podcasts/records";
 import type { ImportProgress } from "@/services/podcasts/antennapod-import";
-
-export type OpmlFeed = { title: string; feedUrl: string };
-
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: "@_",
-  parseAttributeValue: false,
-  isArray: (name) => name === "outline",
-});
-
-type Outline = { "@_xmlUrl"?: string; "@_text"?: string; "@_title"?: string; outline?: Outline[] };
-
-/** Every feed in the file, however deeply the exporting app nested its folders. */
-export function parseOpml(xml: string): OpmlFeed[] {
-  const doc = parser.parse(xml) as { opml?: { body?: { outline?: Outline[] } } };
-  const found: OpmlFeed[] = [];
-  const seen = new Set<string>();
-  const walk = (outlines: Outline[] | undefined) => {
-    for (const outline of outlines ?? []) {
-      const url = outline["@_xmlUrl"]?.trim();
-      if (url && !seen.has(url)) {
-        seen.add(url);
-        found.push({ title: outline["@_title"] ?? outline["@_text"] ?? url, feedUrl: url });
-      }
-      walk(outline.outline);
-    }
-  };
-  walk(doc.opml?.body?.outline);
-  return found;
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-export function buildOpml(shows: Pick<Podcast, "title" | "customTitle" | "feedUrl" | "link">[]): string {
-  const outlines = shows
-    .map((s) => {
-      const title = escapeXml(s.customTitle?.trim() || s.title);
-      const html = s.link ? ` htmlUrl="${escapeXml(s.link)}"` : "";
-      return `    <outline text="${title}" title="${title}" type="rss" xmlUrl="${escapeXml(s.feedUrl)}"${html} />`;
-    })
-    .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<opml version="2.0">
-  <head>
-    <title>Open Citadel podcasts</title>
-    <dateCreated>${new Date().toUTCString()}</dateCreated>
-  </head>
-  <body>
-${outlines}
-  </body>
-</opml>
-`;
-}
 
 export type OpmlImportResult = { added: number; failed: OpmlFeed[] };
 
@@ -113,7 +52,13 @@ export async function exportOpml(): Promise<number> {
   const shows = await listSubscribedShows();
   if (shows.length === 0) return 0;
   const uri = `${cacheDirectory}open-citadel-podcasts.opml`;
-  await writeAsStringAsync(uri, buildOpml(shows));
+  await writeAsStringAsync(
+    uri,
+    buildOpml(
+      "Open Citadel podcasts",
+      shows.map((s) => ({ title: s.customTitle?.trim() || s.title, feedUrl: s.feedUrl, siteUrl: s.link })),
+    ),
+  );
   await shareAsync(uri, { mimeType: "text/x-opml", dialogTitle: "Export podcasts", UTI: "public.xml" });
   return shows.length;
 }

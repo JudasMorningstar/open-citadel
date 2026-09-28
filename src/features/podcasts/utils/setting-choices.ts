@@ -1,8 +1,8 @@
+import type { Choice } from '@/components/choice-chips';
 import { formatSpeed } from '@/features/podcasts/utils/format';
 import type { NewEpisodesAction, ShowSwitch } from '@/db/schema';
 
-/** One option of a setting: what it is stored as, and what it says. */
-export type Choice<T> = { value: T; label: string };
+export type { Choice };
 
 /** The playback speeds offered anywhere a speed is chosen. */
 export const SPEEDS = [0.8, 0.9, 1, 1.1, 1.2, 1.25, 1.3, 1.5, 1.75, 2, 2.5, 3];

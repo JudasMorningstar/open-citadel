@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { ChoiceChips } from '@/features/podcasts/components/choice-chips';
+import { ChoiceChips } from '@/components/choice-chips';
 import { SPEEDS } from '@/features/podcasts/utils/setting-choices';
 import { formatSpeed } from '@/features/podcasts/utils/format';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';

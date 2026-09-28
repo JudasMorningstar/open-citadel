@@ -137,7 +137,7 @@ async function saveProgressToDb(bookId: string, locator: Locator) {
    * usually won. The bar showed the position from the previous visit and only
    * caught up on the next one, which is exactly how it was reported.
    */
-  useBooksStore.getState().setBookProgress(bookId, percentage);
+  useBooksStore.getState().setBookProgress(bookId, percentage, now);
 
   // First-ever write for a book has no previous position to compare against,
   // so it contributes nothing — opening a book isn't reading it.
@@ -199,9 +199,11 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       }
     }
 
-    // Only auto-move to reading from queued or null — never touch archived books
+    // Only auto-move to reading from queued or null — never touch archived
+    // books. Never a blog post either: it is read in a sitting, and "currently
+    // reading" (the shelf, Samwell's picture of the reader) means books.
     let effectiveBook = book;
-    if (book.status === "queued" || !book.status) {
+    if (book.kind === "book" && (book.status === "queued" || !book.status)) {
       await db
         .update(books)
         .set({ status: "reading" })

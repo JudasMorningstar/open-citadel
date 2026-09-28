@@ -1,7 +1,8 @@
 /** RSS 2.0 with the podcast namespaces AntennaPod reads. */
 import type { ParsedChapter, ParsedEpisode, ParsedFeed } from "@/services/podcasts/feed/types";
-import { parseChapterStart, parseDuration, parseFeedDate, positiveInt } from "@/services/podcasts/feed/values";
-import { attr, firstLink, isNode, text, type Node } from "@/services/podcasts/feed/xml";
+import { parseFeedDate } from "@/services/feeds/dates";
+import { parseChapterStart, parseDuration, positiveInt } from "@/services/podcasts/feed/values";
+import { attr, firstLink, isNode, text, type Node } from "@/services/feeds/xml";
 
 function parseChapters(item: Node): ParsedChapter[] {
   const container = item["psc:chapters"];

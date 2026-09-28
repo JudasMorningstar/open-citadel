@@ -6,7 +6,7 @@ import { SkeletonGroup } from '@/components/skeletons/skeleton-group';
 import { ThemedText } from '@/components/themed-text';
 import { SHELF_TILE_WIDTH } from '@/constants/theme';
 import { ShowTile } from '@/features/podcasts/components/show-tile';
-import { ShowTileSkeleton } from '@/features/podcasts/components/show-tile-skeleton';
+import { FeedTileSkeleton } from '@/components/skeletons/feed-tile-skeleton';
 import type { ChartState, FollowedCheck } from '@/features/podcasts/hooks/use-explore';
 import { tileFromDiscovered, type ShowTileData } from '@/features/podcasts/utils/show-tiles';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -28,7 +28,7 @@ function LoadingRow() {
   return (
     <SkeletonGroup className="flex-row gap-4 px-6">
       {PLACEHOLDERS.map((i) => (
-        <ShowTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
+        <FeedTileSkeleton key={i} width={SHELF_TILE_WIDTH} />
       ))}
     </SkeletonGroup>
   );

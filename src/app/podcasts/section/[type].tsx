@@ -15,10 +15,10 @@ import { SearchBar } from "@/components/ui/search-bar";
 import { LIST_DRAW_DISTANCE, contentColumn, layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { EpisodeListSkeleton } from "@/features/podcasts/components/episode-list-skeleton";
-import { EpisodeSeparator } from "@/features/podcasts/components/episode-separator";
+import { RowSeparator } from "@/components/row-separator";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { ShowGrid } from "@/features/podcasts/components/show-grid";
-import { ShowGridSkeleton } from "@/features/podcasts/components/show-grid-skeleton";
+import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { useEpisodeActions } from "@/features/podcasts/hooks/use-episode-actions";
 import { useEpisodeRowRenderer } from "@/features/podcasts/hooks/use-episode-row-renderer";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
@@ -41,7 +41,7 @@ export default function PodcastSectionScreen() {
   const miniPlayer = useMiniPlayer(insets.bottom);
   const bottomPadding = layout.scrollBottom + insets.bottom + miniPlayer.clearance;
   const empty = <ListEmpty text={screen.emptyText} />;
-  const skeleton = screen.isShows ? <ShowGridSkeleton /> : <EpisodeListSkeleton />;
+  const skeleton = screen.isShows ? <TileGridSkeleton label="Loading shows" /> : <EpisodeListSkeleton />;
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -74,7 +74,7 @@ export default function PodcastSectionScreen() {
               data={screen.episodes}
               keyExtractor={episodeKey}
               renderItem={renderEpisode}
-              ItemSeparatorComponent={EpisodeSeparator}
+              ItemSeparatorComponent={RowSeparator}
               drawDistance={LIST_DRAW_DISTANCE}
               contentContainerStyle={{ paddingBottom: bottomPadding }}
               showsVerticalScrollIndicator={false}

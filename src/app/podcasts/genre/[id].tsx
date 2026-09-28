@@ -10,7 +10,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize, layout } from "@/constants/theme";
 import { ShowGrid } from "@/features/podcasts/components/show-grid";
-import { ShowGridSkeleton } from "@/features/podcasts/components/show-grid-skeleton";
+import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { useGenreScreen } from "@/features/podcasts/hooks/use-genre-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
@@ -32,7 +32,7 @@ export default function GenreScreen() {
         onLeftPress={screen.back}
       />
       {/* The grid mounts once the slide has landed and the chart is in. */}
-      <Handover ready={landed && !screen.loading} skeleton={<ShowGridSkeleton />}>
+      <Handover ready={landed && !screen.loading} skeleton={<TileGridSkeleton label="Loading shows" />}>
         <PageFade>
           <ShowGrid
             tiles={screen.tiles}

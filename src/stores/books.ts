@@ -7,6 +7,7 @@ import type { ToastOptions } from "@/components/toast/types";
 import { db } from "@/db/client";
 import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import { byLastRead } from "@/features/library/utils/last-read";
 import { gutenbergIdFromUri } from "@/services/gutenberg/records";
 import {
     OWNED_DIR,
@@ -158,8 +159,13 @@ interface BooksState {
    * the one that was just saved.
    */
   progressByBook: Record<string, number>;
+  /**
+   * When each book was last read (its progress row's `updatedAt`), so
+   * Continue Reading leads with the book in hand. Written with the progress.
+   */
+  lastReadByBook: Record<string, string>;
   /** Called by `saveProgressToDb` once the write has actually committed. */
-  setBookProgress: (bookId: string, percentage: number) => void;
+  setBookProgress: (bookId: string, percentage: number, readAt: string) => void;
   loadBooks: () => Promise<void>;
   /** The scan root is gone: forget it so the picker comes back. */
   forgetDirectory: () => Promise<void>;
@@ -318,16 +324,23 @@ function applySyncProgress(
 export const useBooksStore = create<BooksState>((set, get) => ({
   books: [],
   progressByBook: {},
+  lastReadByBook: {},
   booksDirectoryUri: null,
   isLoading: false,
   sync: IDLE_SYNC,
 
-  setBookProgress: (bookId: string, percentage: number) => {
-    set((state) =>
-      state.progressByBook[bookId] === percentage
-        ? state
-        : { progressByBook: { ...state.progressByBook, [bookId]: percentage } },
-    );
+  setBookProgress: (bookId: string, percentage: number, readAt: string) => {
+    set((state) => {
+      const sameProgress = state.progressByBook[bookId] === percentage;
+      // Only a change of which book was read last reorders anything, but the
+      // time is kept current so that change is caught when it comes.
+      const sameTime = state.lastReadByBook[bookId] === readAt;
+      if (sameProgress && sameTime) return state;
+      return {
+        ...(sameProgress ? {} : { progressByBook: { ...state.progressByBook, [bookId]: percentage } }),
+        ...(sameTime ? {} : { lastReadByBook: { ...state.lastReadByBook, [bookId]: readAt } }),
+      };
+    });
   },
 
   loadBooks: async () => {
@@ -351,20 +364,27 @@ export const useBooksStore = create<BooksState>((set, get) => ({
      * holding the newer number, and they converge either way.
      */
     const [allBooks, progressRows] = await Promise.all([
-      db.select().from(books),
+      // Books only: a blog post opened in the reader is a `books` row too,
+      // and it belongs on the Blogs side, not the shelves.
+      db.select().from(books).where(eq(books.kind, 'book')),
       db
         .select({
           bookId: readingProgress.bookId,
           percentage: readingProgress.percentage,
+          updatedAt: readingProgress.updatedAt,
         })
         .from(readingProgress),
     ]);
     const progressByBook: Record<string, number> = {};
-    for (const row of progressRows) progressByBook[row.bookId] = row.percentage;
+    const lastReadByBook: Record<string, string> = {};
+    for (const row of progressRows) {
+      progressByBook[row.bookId] = row.percentage;
+      lastReadByBook[row.bookId] = row.updatedAt;
+    }
     set(
       firstRead
-        ? { books: allBooks, progressByBook, isLoading: false }
-        : { books: allBooks, progressByBook },
+        ? { books: allBooks, progressByBook, lastReadByBook, isLoading: false }
+        : { books: allBooks, progressByBook, lastReadByBook },
     );
   },
 
@@ -627,9 +647,15 @@ export const useBooksStore = create<BooksState>((set, get) => ({
 
 // ── Selectors ────────────────────────────────────────────────────────────────
 
+/** The books being read, the one read most recently first (see `byLastRead`). */
 export const useCurrentlyReading = () =>
   useBooksStore(
-    useShallow((s) => s.books.filter((b) => b.status === "reading")),
+    useShallow((s) =>
+      byLastRead(
+        s.books.filter((b) => b.status === "reading"),
+        s.lastReadByBook,
+      ),
+    ),
   );
 export const useQueuedBooks = () =>
   useBooksStore(

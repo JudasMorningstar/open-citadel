@@ -8,7 +8,6 @@ import { fabClearance } from "@/components/fab-placement";
 import { ScreenFab } from "@/components/screen-fab";
 import { layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
-import { NoShowsYet } from "@/features/podcasts/components/no-shows-yet";
 import { PodcastsHomeSkeleton } from "@/features/podcasts/components/podcasts-home-skeleton";
 import { PodcastsHome } from "@/features/podcasts/components/podcasts-home";
 import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/import-guide-sheet";
@@ -66,7 +65,6 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
           home={page.home}
           refreshing={page.pulling}
           bottomPadding={bottomChrome + fabClearance(insets.bottom)}
-          emptyState={page.followsNothing ? <NoShowsYet onExplore={page.openExplore} /> : null}
           onRefresh={page.refresh}
           onViewAll={page.viewAll}
           onOpenEpisode={episodes.openEpisode}

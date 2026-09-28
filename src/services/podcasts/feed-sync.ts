@@ -13,7 +13,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { podcastChapters, podcastEpisodes, podcasts, type EpisodePlayState } from "@/db/schema";
 import { enqueue } from "@/services/podcasts/queue";
-import { fetchFeed, FeedFetchError } from "@/services/podcasts/feed-fetch";
+import { fetchFeed, FeedFetchError } from "@/services/feeds/fetch";
 import { parseFeed, type ParsedEpisode } from "@/services/podcasts/feed-parser";
 import { isFreshlyPublished, planEpisodeMerge } from "@/services/podcasts/episode-match";
 import {

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
+import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import {
     listSessions,
     readMessages,
@@ -653,8 +654,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .get()
       : undefined;
     const readPct = progress ? Math.round(progress.percentage * 100) : null;
+    // A blog post opened in the reader is a book row too, but it has no plot
+    // to spoil, and the boundary's wording is about books.
+    const isArticle = bookId
+      ? db.select({ kind: books.kind }).from(books).where(eq(books.id, bookId)).get()?.kind === 'article'
+      : false;
     const boundaryLine =
-      readPct !== null
+      readPct !== null && !isArticle
         ? `The user has read ${readPct}% of this book${
             progress?.currentPage ? ` (up to page ${progress.currentPage})` : ''
           }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point, not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
@@ -716,7 +722,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .where(eq(books.id, bookId))
         .get();
 
-      if (bookRow) {
+      if (bookRow && isArticle) {
+        // A post is grounded in the whole post, from the top.
+        const text = bookRow.filePath ? await articleText(bookRow.filePath) : null;
+        db.insert(chatMessages)
+          .values({
+            id: uuid(),
+            sessionId: id,
+            role: 'system',
+            content: articleChatPrompt(bookRow.title, bookRow.author, text),
+            createdAt: ts,
+          })
+          .run();
+      } else if (bookRow) {
         // Ground book-level chats in the text the user has actually read,
         // sliced up to their current position — not the model's own memory
         // of the book.

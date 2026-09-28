@@ -17,7 +17,7 @@ import {
 import { countLabel } from '@/utils/format';
 
 const TITLES: Record<Exclude<BookSection, 'collections'>, string> = {
-  reading: 'Currently Reading',
+  reading: 'Continue Reading',
   all: 'All Books',
   queue: 'Queue',
   favorites: 'Favorites',

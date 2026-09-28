@@ -180,8 +180,8 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
   switch (toolName) {
     case 'remove_from_currently_reading':
       return approve(
-        'Remove from Currently Reading?',
-        `Samwell wants to remove ${bookWord} from Currently Reading.`,
+        'Remove from Continue Reading?',
+        `Samwell wants to remove ${bookWord} from Continue Reading.`,
       );
     case 'add_to_queue':
       return approve('Add to queue?', `Samwell wants to add ${bookWord} to your reading queue.`);
@@ -208,7 +208,7 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
     case 'start_reading':
       return approve(
         'Start reading?',
-        `Samwell wants to move ${bookWord} into Currently Reading.`,
+        `Samwell wants to move ${bookWord} into Continue Reading.`,
       );
     case 'clear_queue':
       return approve(

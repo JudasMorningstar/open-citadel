@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   formatClock,
   formatDuration,
-  formatPubDate,
   playLabel,
 } from '@/features/podcasts/utils/format';
 
@@ -24,12 +23,5 @@ describe('format', () => {
     expect(playLabel({ positionSec: 600, durationSec: 1800, playState: 'unplayed' })).toBe('20 min left');
     expect(playLabel({ positionSec: 0, durationSec: 1800, playState: 'new' })).toBe('30 min');
     expect(playLabel({ positionSec: 0, durationSec: 1800, playState: 'played' })).toBe('Played');
-  });
-
-  it('writes relative dates', () => {
-    const now = new Date(2026, 8, 26, 12);
-    expect(formatPubDate(new Date(2026, 8, 26, 3).toISOString(), now)).toBe('Today');
-    expect(formatPubDate(new Date(2026, 8, 25, 23).toISOString(), now)).toBe('Yesterday');
-    expect(formatPubDate(null, now)).toBe('');
   });
 });

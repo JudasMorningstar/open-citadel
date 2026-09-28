@@ -3,7 +3,7 @@ import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { ChoiceChips } from '@/features/podcasts/components/choice-chips';
+import { ChoiceChips } from '@/components/choice-chips';
 import { SLEEP_CHOICES as CHOICES, type SleepChoice } from '@/features/podcasts/utils/setting-choices';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 

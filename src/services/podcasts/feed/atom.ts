@@ -1,7 +1,8 @@
 /** Atom feeds, which a few podcasts still publish. */
 import type { ParsedEpisode, ParsedFeed } from "@/services/podcasts/feed/types";
-import { parseDuration, parseFeedDate, positiveInt } from "@/services/podcasts/feed/values";
-import { attr, isNode, text, type Node } from "@/services/podcasts/feed/xml";
+import { parseFeedDate } from "@/services/feeds/dates";
+import { parseDuration, positiveInt } from "@/services/podcasts/feed/values";
+import { attr, isNode, text, type Node } from "@/services/feeds/xml";
 
 function atomLink(links: unknown, rel: string): Node | null {
   if (!Array.isArray(links)) return null;

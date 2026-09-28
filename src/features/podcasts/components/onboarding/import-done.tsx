@@ -6,9 +6,9 @@ import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { revealIn } from '@/constants/theme';
 import { ImportStatGrid } from '@/features/podcasts/components/onboarding/import-stat-grid';
-import { OnboardingStage } from '@/features/podcasts/components/onboarding/onboarding-stage';
-import { StageGlyph } from '@/features/podcasts/components/onboarding/stage-glyph';
-import { StageHeading } from '@/features/podcasts/components/onboarding/stage-heading';
+import { OnboardingStage } from '@/components/stage/onboarding-stage';
+import { StageGlyph } from '@/components/stage/stage-glyph';
+import { StageHeading } from '@/components/stage/stage-heading';
 import { importOutcome, importStats, type ImportResult } from '@/features/podcasts/utils/import-summary';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 

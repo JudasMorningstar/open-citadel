@@ -27,7 +27,7 @@ export function bookMenu(book: Book, options: BookMenuOptions): MenuRow<BookMenu
       : { key: 'favorite', label: 'Add to Favorites' },
   );
   if (options.collections) rows.push({ key: 'collection', label: 'Add to Collection' });
-  if (book.status === 'reading') rows.push({ key: 'stop-reading', label: 'Remove from Currently Reading' });
+  if (book.status === 'reading') rows.push({ key: 'stop-reading', label: 'Remove from Continue Reading' });
   if (!queued && !archived) rows.push({ key: 'queue', label: 'Add to Queue' });
   if (queued) rows.push({ key: 'dequeue', label: 'Remove from Queue' });
   rows.push(

@@ -12,7 +12,7 @@ import { deleteDownloads, deleteIfPlayed, deleteShowDownloads, downloadEpisodes,
 import * as episodeState from "@/services/podcasts/episode-state";
 import * as queue from "@/services/podcasts/queue";
 import { appleIdFromLink, resolveFeedUrl, type DiscoveredShow } from "@/services/podcasts/discovery";
-import { normalizeFeedUrl } from "@/services/podcasts/feed-fetch";
+import { normalizeFeedUrl } from "@/services/feeds/fetch";
 import { addShowFromFeed, refreshShow } from "@/services/podcasts/feed-sync";
 import { finishCurrentAndAdvance, stopPlayback, syncNativeQueue } from "@/services/podcasts/player";
 import * as shows from "@/services/podcasts/shows";

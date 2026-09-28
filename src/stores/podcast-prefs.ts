@@ -14,7 +14,7 @@ import { appSettings } from '@/db/schema';
 export type PodcastOnboarding = 'pending' | 'fresh' | 'imported';
 
 /** Which side of the Library header switch is showing. */
-export type LibraryTab = 'books' | 'podcasts';
+export type LibraryTab = 'books' | 'podcasts' | 'blogs';
 
 /**
  * The app-wide podcast preferences. The defaults are AntennaPod's own, so
