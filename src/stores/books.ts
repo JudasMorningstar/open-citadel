@@ -29,7 +29,7 @@ import {
     type SyncStatus,
 } from "@/services/sync-coordinator";
 
-type Book = typeof books.$inferSelect;
+export type Book = typeof books.$inferSelect;
 export type BookStatus = "reading" | "queued" | "archived" | "favorite";
 
 // ── Sync state shape ─────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@
  */
 import { useRouter } from "expo-router";
 import React from "react";
-import { Keyboard, View, type TextInput, type ViewStyle } from "react-native";
+import { Keyboard, View, type TextInput } from "react-native";
 import Animated, {
     useAnimatedKeyboard,
     useAnimatedStyle,
@@ -38,7 +38,7 @@ import {
     type ToolboxItem,
 } from "@/components/samwell/samwell-toolbox";
 import { ThemedText } from "@/components/themed-text";
-import { MaxContentWidth, spacing } from "@/constants/theme";
+import { contentColumn, spacing } from "@/constants/theme";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
@@ -67,16 +67,6 @@ import { HUB, useHubStore } from "@/stores/hub";
 import { useSamwellSessionStore } from "@/stores/samwell-session";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
-
-// The content column: centred and capped on wide screens, pixel-identical on
-// phones (the cap never bites below 800). Applied to the transcripts and the
-// floating control-center stack so chat stays a column on tablets; the chat
-// bubbles' own `max-w-[82%]` then resolves against it.
-const contentColumn: ViewStyle = {
-  maxWidth: MaxContentWidth,
-  width: "100%",
-  alignSelf: "center",
-};
 
 export function SamwellPage() {
   // Library and Timeline are peer pages of this one, reached by moving the
@@ -772,13 +762,7 @@ export function SamwellPage() {
                   type="bodySm"
                   color={asColor(destructive)}
                   className="px-4 pb-2"
-                  // Inline rather than `contentColumn`: ThemedText takes a
-                  // TextStyle, and the shared const is typed as a ViewStyle.
-                  style={{
-                    maxWidth: MaxContentWidth,
-                    width: "100%",
-                    alignSelf: "center",
-                  }}
+                  style={contentColumn}
                 >
                   {compassError}
                 </ThemedText>

@@ -22,6 +22,7 @@ import m0018 from "./0018_trackables.js";
 import m0019 from "./0019_goal_primary.js";
 import m0020 from "./0020_sync_skips.js";
 import m0021 from "./0021_annotation_days.js";
+import m0022 from "./0022_podcasts.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -49,5 +50,6 @@ export default {
     m0019,
     m0020,
     m0021,
+    m0022,
   },
 };

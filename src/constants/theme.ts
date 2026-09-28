@@ -285,6 +285,25 @@ export function popOut(duration: number = motion.fast) {
 export const MaxContentWidth = 800;
 
 /**
+ * The content column: centred and capped on wide screens, pixel-identical on
+ * phones (the cap never bites below 800). A horizontal margin goes on a view
+ * INSIDE it, never on the same view: a width and a margin on one element
+ * overflow the cap. Nine screens used to spell this out for themselves.
+ */
+/**
+ * How far past the viewport a FlashList draws, in points: about a screen.
+ * The default (250) left the edge of a fast scroll blank for a moment, with
+ * rows drawing in front of the reader.
+ */
+export const LIST_DRAW_DISTANCE = 800;
+
+export const contentColumn = {
+  maxWidth: MaxContentWidth,
+  width: '100%',
+  alignSelf: 'center',
+} as const;
+
+/**
  * The spacing system. `spacing` above is the *scale* (which numbers exist);
  * this is the *system* (which number to reach for). Before this existed the
  * app had five different screen gutters and section gaps ranging from 16 to

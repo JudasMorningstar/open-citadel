@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
-import { MaxContentWidth } from '@/constants/theme';
+import { contentColumn } from '@/constants/theme';
 
 import { ThemedText } from '@/components/themed-text';
 
@@ -40,7 +40,7 @@ export function SectionHeader({
     // centres the header over the capped content on wide screens.
     <View
       className="gap-2 px-6"
-      style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+      style={contentColumn}
     >
       {label && (
         <ThemedText type="labelSm" color={primaryColor}>

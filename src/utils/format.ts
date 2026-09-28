@@ -22,3 +22,21 @@ export function formatBytes(bytes: number | null | undefined): string {
   if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;
   return `${Math.round(bytes)} B`;
 }
+
+/**
+ * `1 BOOK`, `12 EPISODES`: a count and its noun, the way a list's subtitle
+ * reads. The plural is the singular plus S unless it is given.
+ */
+export function countLabel(count: number, singular: string, plural = `${singular}S`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * Whether any of `fields` contains `query`, ignoring case and the spaces
+ * around it. An empty query matches everything, so a cleared search field
+ * shows the whole list.
+ */
+export function matchesQuery(query: string, ...fields: (string | null | undefined)[]): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || fields.some((field) => field?.toLowerCase().includes(q));
+}

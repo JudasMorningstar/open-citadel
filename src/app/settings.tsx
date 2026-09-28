@@ -11,13 +11,14 @@ import { PageFade } from "@/components/scroll-fades";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
-import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
+import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { AppearanceSection } from "@/features/settings/components/appearance-section";
 import { BooksTipSection } from "@/features/settings/components/books-tip-section";
 import { ProfileSection } from "@/features/settings/components/profile-section";
 import { ReachOutSection } from "@/features/settings/components/reach-out-section";
 import { SamwellSection } from "@/features/settings/components/samwell-section";
 import { TtsSection } from "@/features/settings/components/tts-section";
+import { PodcastSettings } from "@/features/podcasts/components/podcast-settings-section";
 import { backTo } from "@/navigation/navigate";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 import { asColor } from "@/utils/colors";
@@ -113,11 +114,7 @@ export default function SettingsScreen() {
         skeleton={
           <View
             className="flex-1 px-6"
-            style={{
-              maxWidth: MaxContentWidth,
-              width: "100%",
-              alignSelf: "center",
-            }}
+            style={contentColumn}
           >
             <SettingsSkeleton />
           </View>
@@ -128,11 +125,7 @@ export default function SettingsScreen() {
           <TransitionScrollView
             ref={scrollRef}
             className="flex-1 px-6"
-            style={{
-              maxWidth: MaxContentWidth,
-              width: "100%",
-              alignSelf: "center",
-            }}
+            style={contentColumn}
             contentContainerStyle={{
               paddingBottom: layout.scrollBottom + insets.bottom,
             }}
@@ -164,6 +157,8 @@ export default function SettingsScreen() {
             </View>
 
             {settled && <TtsSection />}
+
+            {settled && <PodcastSettings />}
 
             {settled && <ReachOutSection />}
           </TransitionScrollView>

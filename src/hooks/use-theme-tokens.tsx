@@ -32,6 +32,10 @@ const TOKENS = [
   '--color-card',
   '--color-muted',
   '--color-surface-tertiary',
+  // For list rows that draw gold and secondary text (the podcast shelves and
+  // episode lists): one shared read instead of a subscription per row.
+  '--color-primary',
+  '--color-muted-foreground',
 ] as const;
 
 type TokenName = (typeof TOKENS)[number];
@@ -46,6 +50,8 @@ const EMPTY: ThemeTokens = {
   '--color-card': undefined,
   '--color-muted': undefined,
   '--color-surface-tertiary': undefined,
+  '--color-primary': undefined,
+  '--color-muted-foreground': undefined,
 };
 
 const ThemeTokensContext = React.createContext<ThemeTokens>(EMPTY);

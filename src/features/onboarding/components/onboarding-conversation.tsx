@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { MaxContentWidth } from '@/constants/theme';
+import { contentColumn } from '@/constants/theme';
 import {
   OnboardingComposer,
   type OnboardingPhase,
@@ -16,11 +16,6 @@ import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
 /** Centred and capped on wide screens, pixel-identical on phones. */
-const COLUMN = {
-  maxWidth: MaxContentWidth,
-  width: '100%',
-  alignSelf: 'center',
-} as const;
 
 /**
  * The concierge conversation itself.
@@ -160,7 +155,7 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
       className="flex-1 bg-background"
       behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}
     >
-      <View className="flex-1" style={COLUMN}>
+      <View className="flex-1" style={contentColumn}>
         {/* No back button and no settings cog. There is nowhere to go back to,
             and Settings is a screen about an app they have not been shown
             yet. */}

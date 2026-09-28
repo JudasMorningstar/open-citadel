@@ -1,270 +1,62 @@
-import { useFocusEffect } from "expo-router/react-navigation";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronDown, Plus, Search, Trash2, X } from "@/components/icons";
-import React, { useCallback, useMemo, useState } from "react";
-import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
-import { Handover } from "@/components/navigation/handover";
-import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
-import { useScreenSettled } from "@/navigation/use-screen-settled";
+import { useLocalSearchParams } from 'expo-router';
+import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { IconButton } from "@/components/icon-button";
-import { Touchable } from "@/components/ui/touchable";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCSSVariable } from "uniwind";
+import { DrawerHeader } from '@/components/drawer-header';
+import { IconButton } from '@/components/icon-button';
+import { Plus, Trash2 } from '@/components/icons';
+import { ThemedView } from '@/components/themed-view';
+import { AddBooksSheet } from '@/features/library/components/add-books-sheet';
+import { BookGrid } from '@/features/library/components/book-grid';
+import { BookSheets } from '@/features/library/components/book-sheets';
+import { LibrarySearchField } from '@/features/library/components/library-search-field';
+import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
+import { useCollectionScreen } from '@/features/library/hooks/use-collection-screen';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { useSettledOnce } from '@/navigation/use-settled-once';
 
-import { AddBooksSheet } from "@/components/library/add-books-sheet";
-import { BookActionSheet } from "@/components/library/book-action-sheet";
-import { BookMasonryGrid, bookGridItemWidth } from "@/components/library/book-masonry-grid";
-import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
-import { EditTitleSheet } from "@/components/library/edit-title-sheet";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { fontFamily, MaxContentWidth } from "@/constants/theme";
-import type { books as booksTable } from "@/db/schema";
-import { asColor } from "@/utils/colors";
-import { useAllBooks, useBooksStore } from "@/stores/books";
-import { useCollectionsStore } from "@/stores/collections";
-
-type Book = typeof booksTable.$inferSelect;
-
-const COLUMNS = 2;
-
-// The content column: centred and capped on wide screens, pixel-identical on
-// phones (the cap never bites below 800).
-const contentColumn: ViewStyle = {
-  maxWidth: MaxContentWidth,
-  width: "100%",
-  alignSelf: "center",
-};
-
+/** One collection: its books, and adding, removing and deleting. */
 export default function CollectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-
-  // Half the live width minus one gap and both side pads, bounded by the
-  // content column cap (see note above). Memoized to feed `BookGridCard`'s
-  // memo a stable value across search keystrokes.
-  const itemWidth = useMemo(
-    () => bookGridItemWidth(windowWidth, MaxContentWidth),
-    [windowWidth],
-  );
-
-  const settled = useScreenSettled();
-
-  const [mutedForeground, foreground, surfaceTertiary] = useCSSVariable([
-    "--color-muted-foreground",
-    "--color-foreground",
-    "--color-surface-tertiary",
-  ]);
-
-  const {
-    collections,
-    loadCollections,
-    deleteCollection,
-    addBookToCollection,
-    removeBookFromCollection,
-    getCollectionBooks,
-  } = useCollectionsStore();
-  const updateBookStatus = useBooksStore((s) => s.updateBookStatus);
-  const toggleFavorite = useBooksStore((s) => s.toggleFavorite);
-  const deleteBook = useBooksStore((s) => s.deleteBook);
-  const updateBookTitle = useBooksStore((s) => s.updateBookTitle);
-  const allBooks = useAllBooks();
-
-  const [books, setBooks] = useState<Book[]>([]);
-  const [query, setQuery] = useState("");
-  const [actionBook, setActionBook] = useState<Book | null>(null);
-  const [deleteConfirmBook, setDeleteConfirmBook] = useState<Book | null>(null);
-  const [editTitleBook, setEditTitleBook] = useState<Book | null>(null);
-  const [showAddBooks, setShowAddBooks] = useState(false);
-
-  const collection = collections.find((c) => c.id === id);
-
-  const loadCollectionBooks = useCallback(async () => {
-    if (!id) return;
-    const result = await getCollectionBooks(id);
-    setBooks(result);
-  }, [id, getCollectionBooks]);
-
-  // Load all books into the store + collection books on focus
-  useFocusEffect(
-    useCallback(() => {
-      useBooksStore
-        .getState()
-        .loadBooks()
-        .then(() => loadCollectionBooks());
-      loadCollections();
-    }, [loadCollectionBooks, loadCollections]),
-  );
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return books;
-    const q = query.toLowerCase();
-    return books.filter(
-      (b) =>
-        b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q),
-    );
-  }, [books, query]);
-
-  const openReader = useCallback(
-    (bookId: string) => {
-      router.push(`/reader/${bookId}` as any);
-    },
-    [router],
-  );
-
-  const handleDeleteCollection = async () => {
-    if (!id) return;
-    await deleteCollection(id);
-    router.back();
-  };
-
-  const handleAddBooksConfirm = async (selectedIds: string[]) => {
-    if (!id) return;
-    const existingIds = new Set(books.map((b) => b.id));
-
-    for (const bookId of selectedIds) {
-      if (!existingIds.has(bookId)) {
-        await addBookToCollection(bookId, id);
-      }
-    }
-    for (const bookId of [...existingIds]) {
-      if (!selectedIds.includes(bookId)) {
-        await removeBookFromCollection(bookId, id);
-      }
-    }
-
-    await loadCollectionBooks();
-    await loadCollections();
-  };
+  const tokens = useThemeTokens();
+  // The grid mounts when the slide has actually finished, and stays mounted.
+  const landed = useSettledOnce();
+  const screen = useCollectionScreen(id);
+  // A collection manages its own membership, so its menu has no "Add to collection".
+  const sheets = useBookSheets({ collections: false, onDeleted: screen.reload });
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View
-        className="flex-row items-center gap-3 px-4 py-4"
-        style={contentColumn}
-      >
-        <IconButton onPress={() => router.back()} label="Close">
-          {/* Down, not back. This screen arrives on the `drawer` transition —
-              the same one Settings uses — so it leaves by going down, and the
-              control should point where the screen actually goes. */}
-          <ChevronDown size={20} color={asColor(foreground)} strokeWidth={2} />
+      <DrawerHeader title={screen.title} subtitle={screen.subtitle} onClose={screen.close}>
+        <IconButton onPress={screen.openAddBooks} label="Add books">
+          <Plus size={18} color={tokens['--color-foreground']} strokeWidth={2} />
         </IconButton>
-        <View className="flex-1">
-          <ThemedText type="headlineSm" numberOfLines={1}>
-            {collection?.name ?? "Collection"}
-          </ThemedText>
-          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-            {`${books.length} ${books.length === 1 ? "BOOK" : "BOOKS"}`}
-          </ThemedText>
-        </View>
-        <IconButton onPress={() => setShowAddBooks(true)} label="Add books">
-          <Plus size={18} color={asColor(foreground)} strokeWidth={2} />
+        <IconButton onPress={screen.deleteCollection} label="Delete collection">
+          <Trash2 size={16} color={tokens['--color-muted-foreground']} strokeWidth={2} />
         </IconButton>
-        <IconButton onPress={handleDeleteCollection} label="Delete collection">
-          <Trash2 size={16} color={asColor(mutedForeground)} strokeWidth={2} />
-        </IconButton>
-      </View>
-
-      {/* Search — wrapped in the content column because its own `mx-6` margin
-          must stay inside the cap (a width + margin on one element would
-          overflow the column). */}
-      <View style={contentColumn}>
-        <View className="mx-6 mb-5 flex-row items-center gap-3 border border-surface-tertiary bg-card px-4 py-3">
-          <Search size={16} color={asColor(mutedForeground)} />
-          <TextInput
-            className="flex-1 p-0 text-[14px] text-foreground"
-            style={{ fontFamily: fontFamily.sans }}
-            placeholder="Search by title or author…"
-            placeholderTextColor={asColor(mutedForeground)}
-            value={query}
-            onChangeText={setQuery}
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <Touchable onPress={() => setQuery("")}>
-              <X size={16} color={asColor(mutedForeground)} />
-            </Touchable>
-          )}
-        </View>
-      </View>
-
-      {/* Grid — held until the screen has settled, behind a placeholder grid of
-          the same geometry. Mounting it mid-push competed with the transition
-          for the UI thread and stalled the slide (see `Handover`). */}
-      <Handover
-        ready={settled}
-        skeleton={
-          <View className="px-6" style={contentColumn}>
-            <BookGridSkeleton width={itemWidth} columns={COLUMNS} />
-          </View>
-        }
-      >
-        <BookMasonryGrid
-          books={filtered}
-          itemWidth={itemWidth}
-          mutedForeground={asColor(mutedForeground)}
-          surfaceTertiary={asColor(surfaceTertiary)}
-          bottomInset={insets.bottom}
-          emptyText={query ? "No results." : "No books in this collection yet."}
-          style={contentColumn}
-          onPress={openReader}
-          onLongPress={setActionBook}
-        />
-      </Handover>
-
-      {settled && (
+      </DrawerHeader>
+      <LibrarySearchField
+        value={screen.search.query}
+        onChange={screen.search.setQuery}
+        placeholder="Search by title or author…"
+      />
+      <BookGrid
+        books={screen.search.results}
+        ready={landed && screen.loaded}
+        emptyText={screen.emptyText}
+        bottomInset={insets.bottom}
+        onOpen={screen.openReader}
+        onMenu={sheets.openMenu}
+      />
+      {/* Sheets mount after the drawer has settled: several bottom sheets is
+          more than the rise can absorb in its opening frames. */}
+      {landed ? (
         <>
-          <BookActionSheet
-            visible={actionBook !== null}
-            book={actionBook}
-            onClose={() => setActionBook(null)}
-            onOpen={openReader}
-            onToggleFavorite={toggleFavorite}
-            onSetStatus={updateBookStatus}
-            onDelete={(bookId) => {
-              const book = allBooks.find((b) => b.id === bookId) ?? null;
-              setDeleteConfirmBook(book);
-            }}
-            onEditTitle={(bookId) => {
-              const book = allBooks.find((b) => b.id === bookId) ?? null;
-              setEditTitleBook(book);
-            }}
-          />
-
-          <AddBooksSheet
-            visible={showAddBooks}
-            allBooks={allBooks}
-            existingBookIds={books.map((b) => b.id)}
-            onConfirm={handleAddBooksConfirm}
-            onClose={() => setShowAddBooks(false)}
-          />
-
-          <DeleteBookSheet
-            visible={deleteConfirmBook !== null}
-            book={deleteConfirmBook}
-            onClose={() => setDeleteConfirmBook(null)}
-            onConfirm={async (bookId) => {
-              await deleteBook(bookId);
-              setDeleteConfirmBook(null);
-              await loadCollectionBooks();
-            }}
-          />
-
-          <EditTitleSheet
-            visible={editTitleBook !== null}
-            book={editTitleBook}
-            onClose={() => setEditTitleBook(null)}
-            onSave={async (bookId, title) => {
-              await updateBookTitle(bookId, title);
-              setEditTitleBook(null);
-            }}
-          />
+          <BookSheets sheets={sheets} />
+          <AddBooksSheet {...screen.addBooks} />
         </>
-      )}
+      ) : null}
     </ThemedView>
   );
 }

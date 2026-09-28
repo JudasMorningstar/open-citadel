@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatBubble } from "@/components/chat/chat-bubble";
 import { TranscriptFade } from "@/components/scroll-fades";
 import { MessageScroller } from "@/components/ui/message-scroller";
-import { MaxContentWidth } from "@/constants/theme";
+import { contentColumn } from "@/constants/theme";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { SamwellBanner } from "@/features/chat/components/samwell-banner";
@@ -37,11 +37,6 @@ type TranscriptRow = ChatMessage & { messageId: string; scrollAnchor: boolean };
 /* Static styles hoisted — new objects per render re-layout the list's
     container for no reason. */
 const LIST_STYLE = { flex: 1 } as const;
-const COLUMN_STYLE = {
-  maxWidth: MaxContentWidth,
-  width: "100%",
-  alignSelf: "center",
-} as const;
 
 export default function ChatSessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -246,7 +241,7 @@ export default function ChatSessionScreen() {
       {/* The content column: centred and capped on wide screens, pixel-
           identical on phones (the cap never bites below 800). The header
           and input rules stop at the column's edges along with it. */}
-      <View className="flex-1" style={COLUMN_STYLE}>
+      <View className="flex-1" style={contentColumn}>
         <View style={{ paddingTop: insets.top }}>
           <ChatHeader
             title={activeSession?.title ?? null}
