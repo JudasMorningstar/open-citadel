@@ -7,6 +7,7 @@ import { ActionButton } from '@/components/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
+import { AI_VOICES_DOWNLOAD_SIZE } from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
 
 export interface TtsDownloadCardProps {
@@ -27,12 +28,12 @@ export function TtsDownloadCard({ progress, error, onDownload, onCancel }: TtsDo
   const percent = progress === null ? 0 : Math.round(progress * 100);
 
   return (
-    <Card className="gap-3 p-4">
+    <Card className="gap-2 p-3">
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-1">
-          <ThemedText type="bodyMd">AI voices</ThemedText>
+          <ThemedText type="bodyMd">Download the voices</ThemedText>
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            Download the voices to read books aloud. They run on your device, so reading works offline.
+            {`About ${AI_VOICES_DOWNLOAD_SIZE}, once. Works offline after.`}
           </ThemedText>
           {error && (
             <ThemedText type="labelSm" color={asColor(destructive)}>

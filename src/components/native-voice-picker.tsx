@@ -44,9 +44,9 @@ export function NativeVoicePicker({ selected, onSelect }: NativeVoicePickerProps
   return (
     <>
       <Touchable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="Choose a phone voice">
-        <Card className="flex-row items-center justify-between p-4">
+        <Card className="flex-row items-center justify-between p-3">
           <View className="flex-row items-center gap-3">
-            <PrefixIcon icon={AudioLines} size={36} />
+            <PrefixIcon icon={AudioLines} size={28} />
             <ThemedText type="bodyMd">Voice</ThemedText>
           </View>
           <View className="flex-row items-center gap-1">

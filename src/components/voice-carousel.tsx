@@ -13,7 +13,7 @@ import { asColor } from '@/utils/colors';
 import { haptics } from '@/utils/haptics';
 
 const CARD_WIDTH = 240;
-const CARD_HEIGHT = 156;
+const CARD_HEIGHT = 160;
 const CARD_GAP = 12;
 const ITEM_SIZE = CARD_WIDTH + CARD_GAP;
 

@@ -2,12 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { Smartphone, Sparkles } from '@/components/icons';
-import { ModeCard } from '@/components/mode-card';
 import { NativeVoicePicker } from '@/components/native-voice-picker';
 import { ReadingSpeedStepper } from '@/components/reading-speed-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { TtsDownloadCard } from '@/components/tts-download-card';
+import { TtsModeCards } from '@/components/tts-mode-cards';
 import { Touchable } from '@/components/ui/touchable';
 import { VoiceCarousel } from '@/components/voice-carousel';
 import {
@@ -66,9 +65,6 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
   const mode = voiceMode(ttsVoice);
   const showSpeed = mode === 'native' ? NATIVE_SPEED_SUPPORTED : isDownloaded;
 
-  const aiDescription = AI_VOICES_SUPPORTED
-    ? 'Natural voices that run offline.'
-    : 'Needs more memory than this phone has.';
   // The saved phone voice's identifier, '' for the system default (which is
   // also what an AI voice or nothing at all means here).
   const nativeVoiceId = isKokoroVoice(ttsVoice) || ttsVoice === DEVICE_VOICE ? '' : (ttsVoice ?? '');
@@ -103,23 +99,13 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
       </View>
 
       {NATIVE_VOICE_AVAILABLE && (
-        <View className="flex-row gap-3" accessibilityRole="radiogroup">
-          <ModeCard
-            active={mode === 'ai'}
-            icon={Sparkles}
-            label="AI"
-            description={aiDescription}
-            disabled={!AI_VOICES_SUPPORTED}
-            onSelect={selectAi}
-          />
-          <ModeCard
-            active={mode === 'native'}
-            icon={Smartphone}
-            label="Native"
-            description="Your phone's own voices."
-            onSelect={selectNative}
-          />
-        </View>
+        <TtsModeCards
+          mode={mode}
+          aiSupported={AI_VOICES_SUPPORTED}
+          aiDownloaded={isDownloaded}
+          onSelectAi={selectAi}
+          onSelectNative={selectNative}
+        />
       )}
 
       {mode === 'native' ? (

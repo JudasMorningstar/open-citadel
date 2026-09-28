@@ -76,6 +76,9 @@ export const LOW_MEMORY_ANDROID = process.env.EXPO_OS === 'android'
   && Device.totalMemory !== null
   && Device.totalMemory < 3 * 1024 ** 3;
 
+/** What the AI voices cost to download, for the prompt. Kokoro's weights plus the two accents' extras. */
+export const AI_VOICES_DOWNLOAD_SIZE = '350 MB';
+
 /** Whether this device can run the AI voices at all. */
 export const AI_VOICES_SUPPORTED = !LOW_MEMORY_ANDROID;
 
@@ -102,7 +105,7 @@ export function voiceMode(voice: string | null): VoiceMode {
 /** A name worth reading, for the voice picker. The registry only has ids. */
 export const VOICE_LABELS: Record<KokoroVoice, string> = {
   af_heart: 'Yennefer',
-  bf_emma: 'Eleanor',
+  bf_emma: 'Emma',
   am_adam: 'Arthur',
   bm_daniel: 'Winston',
   af_river: 'Lara',

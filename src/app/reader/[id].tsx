@@ -15,7 +15,6 @@ import {
   View,
 } from "react-native";
 
-import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Touchable } from "@/components/ui/touchable";
 import type {
@@ -41,7 +40,7 @@ import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
-import { TtsSettingsPanel } from "@/components/tts-settings-panel";
+import { TtsSettingsSheet } from "@/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
@@ -1200,11 +1199,7 @@ export default function ReaderScreen() {
       {/* Long-press on the header's read-aloud button: voice/rate settings
           without leaving the book. Same panel Settings uses, so the two
           never disagree about what "the voice" currently is. */}
-      <Sheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} snapRatios={[0.5]}>
-        <View className="px-6 pb-6 pt-3">
-          <TtsSettingsPanel onDone={() => setShowTtsSettings(false)} />
-        </View>
-      </Sheet>
+      <TtsSettingsSheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} />
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (
