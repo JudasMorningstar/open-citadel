@@ -63,6 +63,7 @@ import {
   type ToolCallContext,
 } from '@/services/chat-tools';
 import { cloudHeaders } from '@/services/cloud-identity';
+import { createSmoothReveal } from '@/services/smooth-reveal';
 import {
   runDownloadFreeBooks,
   runFindFreeBooks,
@@ -523,12 +524,22 @@ function createOnboardingClientTools({ onFinished, said, onAction }: OnboardingT
     followBlogsTool.client(async (input) => recorded('follow_blogs', runFollowBlogs(input))),
     finishOnboardingTool.client(async ({ goodbye }) => {
       const result = await runFinishOnboarding(said(), goodbye);
+      // Refused (he is still waiting on an answer): the model hears why.
       if (!result.ok) return result;
-      // The turn is over the moment this returns. See `finished` in
-      // `sendCloudChatTurn` for why that has to be enforced here rather than
-      // asked for in the prompt.
+      // The turn is over. See `finished` in `sendCloudChatTurn`.
       onFinished(goodbye);
-      return result;
+      /*
+       * And no result goes back, on purpose.
+       *
+       * The ChatClient sends the model another turn as soon as every tool
+       * call it made has a result; nothing in the library lets a tool say
+       * "that was the last one". Returning here cost a model call after every
+       * goodbye, paid for by the house, whose answer the turn then threw away
+       * (and cut off mid-request, which the server logged as a 500). A call
+       * that never completes is never continued: the settle loop sees
+       * `finished`, stops the client and disposes of it, promise and all.
+       */
+      return new Promise<never>(() => {});
     }),
     explainAppTool.client(async () => runExplainApp()),
   );
@@ -983,7 +994,9 @@ export async function sendCloudChatTurn({
   let lastProgressAt = Date.now();
 
   const flushThinking = createThrottle(onThinkingContent, 120);
-  const flushStreaming = createThrottle(onStreamingContent, 50);
+  // Paced rather than throttled: a reply released whole is revealed a few
+  // words at a time. See `createSmoothReveal`.
+  const reveal = createSmoothReveal(onStreamingContent);
 
   // Resolved once, here, rather than passed in: who the turn belongs to is
   // not the caller's business, and a fresh `ChatClient` is built per turn, so
@@ -1078,7 +1091,7 @@ export async function sendCloudChatTurn({
         // stores blank the bubble on a non-null tool status), so a trailing
         // throttled write must not resurrect it.
         flushThinking.flush();
-        flushStreaming.cancel();
+        reveal.drop();
         inToolPhase = true;
         lastToolName = toolName;
         saidWhenToolCalled = saidSoFar;
@@ -1107,7 +1120,7 @@ export async function sendCloudChatTurn({
         endToolPhase();
       }
       flushThinking.flush();
-      flushStreaming(text);
+      reveal.push(text);
     },
   });
 
@@ -1132,6 +1145,7 @@ export async function sendCloudChatTurn({
      * is what happens to the tool call either way.
      */
     useApprovalStore.getState().clearSession(sessionId);
+    reveal.cancel();
     try {
       client.stop();
     } catch {
@@ -1236,7 +1250,10 @@ export async function sendCloudChatTurn({
         if (text) {
           reportThinkingDone();
           flushThinking.flush();
-          flushStreaming.flush();
+          // Committed only once it has all been shown, so the hand-over from
+          // the streaming bubble does not jump.
+          reveal.push(text);
+          await reveal.settle();
           return text;
         }
       }
@@ -1253,6 +1270,12 @@ export async function sendCloudChatTurn({
     const partial = [assistantTextSinceUser(client.getMessages()).trim(), farewell]
       .filter(Boolean)
       .join('\n\n');
+    // The goodbye arrives in a tool call rather than as text, so it is
+    // revealed here like any other reply.
+    if (partial && !aborted) {
+      reveal.push(partial);
+      await reveal.settle();
+    }
     if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
@@ -1262,7 +1285,7 @@ export async function sendCloudChatTurn({
   } finally {
     signal?.removeEventListener('abort', onAbort);
     flushThinking.cancel();
-    flushStreaming.cancel();
+    reveal.cancel();
     client.dispose();
   }
 }

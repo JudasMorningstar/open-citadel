@@ -83,12 +83,12 @@ register 'deepseek/deepseek-v4-flash-0731' maester
 
 echo "Grand Maester"
 register 'anthropic/claude-sonnet-5.5'     grand_maester
-register 'openai/gpt-5.6-terra'            grand_maester
+register 'openai/gpt-6-sol'                grand_maester
 register 'deepseek/deepseek-v4-pro-0813'   grand_maester
 
 echo "Archmaester"
 register 'anthropic/claude-opus-5.5'       archmaester
-register 'openai/gpt-6-sol'                archmaester
+register 'x-ai/grok-4.7'                   archmaester
 register 'moonshotai/kimi-k3'              archmaester
 
 # Rows carried over from before plans existed that are NOT in the nine above.
@@ -115,6 +115,8 @@ retire 'openai/gpt-5.6-luna'
 retire 'anthropic/claude-sonnet-5'
 retire 'anthropic/claude-opus-5'
 retire 'openai/gpt-5.6-sol'
+# GPT-6 Sol took Grand Maester's OpenAI slot; Terra has no GPT-6 successor.
+retire 'openai/gpt-5.6-terra'
 
 echo
 echo "Catalogue now:"
