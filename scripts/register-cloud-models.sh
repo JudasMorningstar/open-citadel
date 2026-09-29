@@ -52,7 +52,7 @@ if [ -z "${ADMIN_API_KEY:-}" ]; then
 fi
 [ -n "${ADMIN_API_KEY:-}" ] || { echo "No admin key given, nothing to do." >&2; exit 1; }
 
-# The app's own server. The old thamsanqa.africa host answers 503 now.
+# The official API, the same host the app and SAMWELL_API_RESOURCE use.
 SAMWELL_CLOUD_URL="${SAMWELL_CLOUD_URL:-https://api.open-citadel.online}"
 BASE="${SAMWELL_CLOUD_URL%/}"
 
