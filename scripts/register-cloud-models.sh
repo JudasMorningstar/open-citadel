@@ -33,14 +33,27 @@ set -euo pipefail
 #
 #    ADMIN_API_KEY='...' ./scripts/register-cloud-models.sh
 #
+# Read from the terminal itself, a line at a time, until one has something in
+# it. A value copied out of a dashboard often starts with a newline; a single
+# `read` took that as the whole answer, the script exited, and the rest of the
+# paste landed in the shell, which ran the key as a command and put it in the
+# history. Whitespace and bracketed-paste markers are stripped for the same
+# reason.
 if [ -z "${ADMIN_API_KEY:-}" ]; then
   printf 'ADMIN_API_KEY (from the Coolify app env, input hidden): ' >&2
-  read -rs ADMIN_API_KEY
+  while IFS= read -rs line </dev/tty; do
+    line="${line//$'\e[200~'/}"
+    line="${line//$'\e[201~'/}"
+    line="${line//[[:space:]]/}"
+    if [ -n "$line" ]; then ADMIN_API_KEY="$line"; break; fi
+  done
+  unset line
   echo >&2
 fi
 [ -n "${ADMIN_API_KEY:-}" ] || { echo "No admin key given, nothing to do." >&2; exit 1; }
 
-SAMWELL_CLOUD_URL="${SAMWELL_CLOUD_URL:-https://open-citadel-api.thamsanqa.africa}"
+# The app's own server. The old thamsanqa.africa host answers 503 now.
+SAMWELL_CLOUD_URL="${SAMWELL_CLOUD_URL:-https://api.open-citadel.online}"
 BASE="${SAMWELL_CLOUD_URL%/}"
 
 register() { # <model-id> <min-plan>
