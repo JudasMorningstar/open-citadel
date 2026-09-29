@@ -79,7 +79,7 @@ retire() { # <model-id>
 echo "Maester"
 register 'z-ai/glm-5.3-flash'              maester
 register 'openai/gpt-6-luna-pro'           maester
-register 'deepseek/deepseek-v4-flash-0731' maester
+register 'deepseek/deepseek-v4.1-flash'    maester
 
 echo "Grand Maester"
 register 'anthropic/claude-sonnet-5.5'     grand_maester
@@ -119,6 +119,8 @@ retire 'openai/gpt-5.6-sol'
 retire 'openai/gpt-5.6-terra'
 # GPT-6.1 Sol replaced it, 2026-09-29: same price, cheaper cached input.
 retire 'openai/gpt-6-sol'
+# DeepSeek V4.1 Flash replaced V4 Flash in Maester, 2026-09-29.
+retire 'deepseek/deepseek-v4-flash-0731'
 
 echo
 echo "Catalogue now:"

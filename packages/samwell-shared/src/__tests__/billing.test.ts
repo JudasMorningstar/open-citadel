@@ -277,7 +277,8 @@ describe('the model catalogue', () => {
     );
 
     expect(defaults).toEqual({
-      maester: 'openai/gpt-6-luna-pro',
+      // V4.1 Flash out-prices Luna Pro per message, so it is Maester's default.
+      maester: 'deepseek/deepseek-v4.1-flash',
       // Sonnet 5.5 and GPT-6.1 Sol cost the same; a tie goes to the first listed.
       grand_maester: 'anthropic/claude-sonnet-5.5',
       archmaester: 'anthropic/claude-opus-5.5',
