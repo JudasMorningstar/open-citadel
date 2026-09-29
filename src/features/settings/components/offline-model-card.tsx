@@ -19,11 +19,12 @@ import { ConfirmDeleteSheet } from "@/features/settings/components/confirm-delet
 import { MemoryInfoSheet } from "@/features/settings/components/memory-info-sheet";
 import { ModelPickerSheet } from "@/features/settings/components/model-picker-sheet";
 import { TuneSheet } from "@/features/settings/components/tune-sheet";
+import { ModelSizeLine } from "@/features/settings/components/model-size-line";
 import { useModelSheet } from "@/features/settings/hooks/use-model-sheet";
+import { useModelSize } from "@/features/settings/hooks/use-model-size";
 import { usePulse } from "@/hooks/use-pulse";
 import { useModelStore } from "@/stores/model";
 import { asColor } from "@/utils/colors";
-import { formatBytes } from "@/utils/format";
 
 /**
  * The offline engine's model card: identity, download progress, memory
@@ -55,6 +56,8 @@ export function OfflineModelCard() {
   const memoryEstimate = useModelStore((s) => s.memoryEstimate);
   const checkMemory = useModelStore((s) => s.checkMemory);
   const activeModel = models.find((m) => m.id === activeModelId);
+  // Asked for while the card is up, in case launch could not measure it.
+  const size = useModelSize(activeModel);
 
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [isDownloading, setIsDownloading] = React.useState(false);
@@ -94,15 +97,12 @@ export function OfflineModelCard() {
                 <ThemedText type="bodyMd" numberOfLines={2}>
                   {activeModel.name}
                 </ThemedText>
-                <ThemedText
-                  type="labelSm"
+                <ModelSizeLine
+                  sizeBytes={size.sizeBytes}
+                  measuring={size.measuring}
+                  downloaded={activeModel.isDownloaded}
                   color={asColor(mutedForeground)}
-                  style={{ fontVariant: ["tabular-nums"] }}
-                >
-                  {activeModel.isDownloaded
-                    ? `${formatBytes(activeModel.sizeBytes)} · Downloaded`
-                    : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`}
-                </ThemedText>
+                />
               </>
             ) : (
               /* The empty state is a wayfinding moment, not an error: one

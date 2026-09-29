@@ -22,7 +22,8 @@ import {
   localModelFiles,
   remoteUrls,
 } from "@/services/device-llm/files";
-import { totalSizeBytes } from "@/services/huggingface";
+import { queryClient } from "@/lib/query-client";
+import { createModelSizeQueryOptions } from "@/query-manager/device-models";
 import { formatBytes } from "@/utils/format";
 import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
 
@@ -73,6 +74,8 @@ interface ModelStore {
   loadModels(): Promise<void>;
   /** Fills in what each brain weighs, for any not yet measured, or only `ids`. Needs the network. */
   measureModels(ids?: readonly string[]): Promise<void>;
+  /** Keep a measured size: on the row, and on the brain in memory. */
+  recordModelSize(id: string, sizeBytes: number): void;
   setActiveModel(id: string): Promise<void>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): void;
@@ -252,28 +255,36 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       modelsHydrated: true,
     });
 
-    // The Samwell card shows the active brain's size before anything is
-    // downloaded, and on a first launch nothing had measured it: the size
-    // only arrived once the picker was opened. The rest wait for the picker.
-    if (activeModelId) {
-      void get()
-        .measureModels([activeModelId])
-        .catch((err) => console.warn('[Models] Could not measure the active brain:', err));
-    }
+    /*
+     * The sizes, prefetched: the active brain first, since the Samwell card
+     * shows it, then the rest for the picker. Each is measured once and kept
+     * on its row, so after the first launch this asks for nothing. Retried
+     * through the query cache, where a size that could not be had is asked
+     * again when something showing it mounts. See `createModelSizeQueryOptions`.
+     */
+    void (async () => {
+      if (activeModelId) await get().measureModels([activeModelId]);
+      await get().measureModels();
+    })();
   },
 
   async measureModels(ids) {
     const unmeasured = get().models.filter((m) => m.sizeBytes == null && (!ids || ids.includes(m.id)));
     await Promise.all(
       unmeasured.map(async (m) => {
-        const entry = catalogueModel(m.id);
-        if (!entry) return;
-        const sizeBytes = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
-        if (sizeBytes == null) return;
-        db.update(deviceModels).set({ sizeBytes }).where(eq(deviceModels.id, m.id)).run();
-        set(patchModel(m.id, { sizeBytes }));
+        // Shared with any surface already asking, so one brain is one request.
+        const sizeBytes = await queryClient
+          .fetchQuery(createModelSizeQueryOptions(m.id))
+          .catch(() => null);
+        if (sizeBytes != null) get().recordModelSize(m.id, sizeBytes);
       }),
     );
+  },
+
+  recordModelSize(id, sizeBytes) {
+    if (get().models.find((m) => m.id === id)?.sizeBytes === sizeBytes) return;
+    db.update(deviceModels).set({ sizeBytes }).where(eq(deviceModels.id, id)).run();
+    set(patchModel(id, { sizeBytes }));
   },
 
   async setActiveModel(id) {
@@ -297,14 +308,8 @@ export const useModelStore = create<ModelStore>((set, get) => ({
 
     // The storage check needs the size, which a brain never browsed may not
     // have yet.
-    let required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
-    if (required == null) {
-      required = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
-      if (required != null) {
-        db.update(deviceModels).set({ sizeBytes: required }).where(eq(deviceModels.id, id)).run();
-        set(patchModel(id, { sizeBytes: required }));
-      }
-    }
+    if (get().models.find((m) => m.id === id)?.sizeBytes == null) await get().measureModels([id]);
+    const required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
     const freeSpace = await getFreeDiskStorageAsync();
     if (required && freeSpace < required * 1.1) {
       set({
