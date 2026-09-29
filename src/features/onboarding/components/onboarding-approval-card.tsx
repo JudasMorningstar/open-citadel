@@ -5,6 +5,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ShieldQuestionMark } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
+import { useMessageScroller } from '@/components/ui/message-scroller';
 import { Touchable } from '@/components/ui/touchable';
 import { easing, elevation, motion, spacing } from '@/constants/theme';
 import { approvalCopy } from '@/services/approval-copy';
@@ -53,6 +54,16 @@ export const OnboardingApprovalCard = React.memo(function OnboardingApprovalCard
     sessionId ? (s.pendingBySession.get(sessionId)?.request ?? null) : null,
   );
   const respond = useApprovalStore((s) => s.respond);
+
+  // A question below the fold is a turn that waits forever: bring it into
+  // view the moment it arrives. See `FollowNewTurns`.
+  const { scrollToEnd } = useMessageScroller();
+  const asking = pending !== null;
+  React.useEffect(() => {
+    if (!asking) return;
+    const frame = requestAnimationFrame(() => scrollToEnd(true));
+    return () => cancelAnimationFrame(frame);
+  }, [asking, scrollToEnd]);
 
   const copy = pending ? approvalCopy(pending) : null;
 

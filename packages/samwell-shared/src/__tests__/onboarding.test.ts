@@ -27,7 +27,9 @@ describe('onboarding for a build with podcasts and blogs', () => {
   it('carries the podcasts and blogs step and the three-sided guide', () => {
     const prompt = onboardingSystemPrompt({ feeds: true });
     expect(prompt).toContain('**Podcasts and blogs.**');
-    expect(prompt).toContain('5. **Say where to find you');
+    expect(prompt).toContain('4. **End it with `finish_onboarding`.**');
+    expect(prompt).toContain('Done in this conversation');
+    expect(prompt).toContain('Never ask whether to go ahead');
     expect(prompt).toContain('**Podcasts.** Shows they follow');
     expect(prompt).not.toContain('${');
   });
@@ -43,6 +45,13 @@ describe('onboarding for an older build', () => {
     expect(tools).toContain('finish_onboarding');
   });
 
+  it('keeps the finish it knows, with no goodbye argument', () => {
+    const finish = (feeds: boolean) =>
+      onboardingClientToolDefinitions({ feeds }).find((tool) => tool.name === 'finish_onboarding');
+    expect(JSON.stringify(finish(false)?.inputSchema)).not.toContain('goodbye');
+    expect(JSON.stringify(finish(true)?.inputSchema)).toContain('goodbye');
+  });
+
   it('is the books-only script, with its steps closed up', () => {
     const prompt = onboardingSystemPrompt({ feeds: false });
     expect(prompt).not.toContain('find_podcasts');
@@ -50,6 +59,7 @@ describe('onboarding for an older build', () => {
     expect(prompt).toContain('blogs and podcasts are coming');
     expect(prompt).toContain('4. **Say where to find you');
     expect(prompt).toContain('go to step 3.');
+    expect(prompt).not.toContain('Done in this conversation');
   });
 });
 

@@ -104,7 +104,27 @@ export const DownloadFreeBooksOutputSchema = z.object({
   error: z.string().optional(),
 });
 
-export const FinishOnboardingInputSchema = z.object({});
+/** The finish an older build runs: goodbye first as a message, then this. */
+export const FinishOnboardingLegacyInputSchema = z.object({});
+
+/**
+ * The goodbye travels in the call.
+ *
+ * Asking for "your goodbye as a message, then this call, in the same reply"
+ * depended on a model writing text and then remembering a trailing tool call,
+ * and the one on the free route kept doing the first and not the second: the
+ * reader was left in a finished conversation with a text field, asking to be
+ * let out. A call whose argument IS the goodbye cannot be half done. The app
+ * shows it as his last message and opens the way to the library.
+ */
+export const FinishOnboardingInputSchema = z.object({
+  goodbye: z
+    .string()
+    .min(1)
+    .describe(
+      "Your last message to them, shown as your words. In a few short lines: what is in their library now, where to find you (swipe right from the Library, or the button at the top right), what to bring you (a passage that landed, a book they finished, a goal they want to move), and a warm goodbye. No question in it.",
+    ),
+});
 
 export const FinishOnboardingOutputSchema = z.object({
   ok: z.boolean(),
@@ -141,8 +161,17 @@ export const downloadFreeBooksTool = toolDefinition({
 export const finishOnboardingTool = toolDefinition({
   name: 'finish_onboarding',
   description:
-    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first. Never call it in a message that asks them anything: a question means you are waiting for their answer, not finished.",
+    "End onboarding with your goodbye. Call this once everything is set up or they have declined it: your `goodbye` is shown to them as your last message, and then they get the button through to their library. Do not also write the goodbye as a message. Never call it while you are waiting on an answer from them. Calling it ends the conversation: there is no turn after it.",
   inputSchema: FinishOnboardingInputSchema,
+  outputSchema: FinishOnboardingOutputSchema,
+});
+
+/** `finish_onboarding` as a build from before the goodbye argument knows it. */
+export const finishOnboardingLegacyTool = toolDefinition({
+  name: 'finish_onboarding',
+  description:
+    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first. Never call it in a message that asks them anything: a question means you are waiting for their answer, not finished.",
+  inputSchema: FinishOnboardingLegacyInputSchema,
   outputSchema: FinishOnboardingOutputSchema,
 });
 
@@ -169,14 +198,18 @@ export const ONBOARDING_TOOL_DEFINITIONS = [
 ] as const;
 
 const ALL_CLIENT_TOOLS = ONBOARDING_TOOL_DEFINITIONS.map((tool) => tool.client());
-const BOOKS_ONLY_CLIENT_TOOLS = ALL_CLIENT_TOOLS.filter(
-  (tool) => !ONBOARDING_FEED_TOOL_NAMES.has(tool.name),
-);
+const BOOKS_ONLY_CLIENT_TOOLS = [
+  ...ONBOARDING_TOOL_DEFINITIONS.filter(
+    (tool) => !ONBOARDING_FEED_TOOL_NAMES.has(tool.name) && tool.name !== 'finish_onboarding',
+  ),
+  finishOnboardingLegacyTool,
+].map((tool) => tool.client());
 
 /**
  * What the route sends, for the build on the other end. One from before
  * podcasts and blogs has no code to run their tools, so it is never offered
- * them. See `ONBOARDING_FEEDS_PROP`.
+ * them, and it knows `finish_onboarding` without the goodbye argument. See
+ * `ONBOARDING_FEEDS_PROP`.
  */
 export function onboardingClientToolDefinitions({ feeds }: { feeds: boolean }) {
   return feeds ? ALL_CLIENT_TOOLS : BOOKS_ONLY_CLIENT_TOOLS;

@@ -4,12 +4,14 @@ import { BLOG_DIRECTORY, DIRECTORY_BLOGS } from '@/services/blogs/directory';
 import {
   blogBySlug,
   blogSlug,
+  ACTION_NOTE_PREFIX,
   endsWithQuestion,
   followOutcome,
   formatBlogDirectory,
   formatPodcastCandidates,
   joinNames,
   numberIds,
+  onboardingActionNote,
   stringIds,
 } from '@/services/onboarding-tools/format';
 import { createShortlist } from '@/services/onboarding-tools/shortlist';
@@ -135,5 +137,34 @@ describe('endsWithQuestion', () => {
   it('lets a goodbye through, even one with a question earlier on', () => {
     expect(endsWithQuestion('What will you read first? Whatever it is, bring it to me.\n\nGoodbye for now.')).toBe(false);
     expect(endsWithQuestion('')).toBe(false);
+  });
+});
+
+describe('onboardingActionNote', () => {
+  it('records what each tool really did', () => {
+    expect(
+      onboardingActionNote('download_free_books', {
+        ok: true,
+        downloaded: ['My Life and Work', 'The Art of Money Getting'],
+        failed: [],
+      }),
+    ).toBe(`${ACTION_NOTE_PREFIX} downloaded My Life and Work and The Art of Money Getting into their library.`);
+    expect(
+      onboardingActionNote('follow_podcasts', { ok: true, followed: ['Founders'], failed: [] }),
+    ).toBe(`${ACTION_NOTE_PREFIX} followed the podcasts Founders.`);
+    expect(
+      onboardingActionNote('set_up_library', {
+        ok: true,
+        imported: 1,
+        folder: { platform: 'android', folderName: 'Open Citadel' },
+      }),
+    ).toBe(`${ACTION_NOTE_PREFIX} moved 1 EPUB book into their library folder ("Open Citadel").`);
+  });
+
+  it('records nothing that did not happen', () => {
+    expect(onboardingActionNote('follow_blogs', { ok: false, followed: [], failed: [] })).toBeNull();
+    expect(onboardingActionNote('download_free_books', { ok: true, downloaded: [] })).toBeNull();
+    expect(onboardingActionNote('find_podcasts', { ok: true })).toBeNull();
+    expect(onboardingActionNote('follow_blogs', null)).toBeNull();
   });
 });

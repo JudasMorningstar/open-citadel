@@ -19,7 +19,7 @@ import {
 } from './db.js';
 import { requireOpenRouterKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
-import { PROVIDER_PREFERENCES } from './openrouter.js';
+import { cachedOnboardingPrompt, PROVIDER_PREFERENCES } from './openrouter.js';
 
 /**
  * The introduction, on the house.
@@ -122,7 +122,10 @@ onboardingRoutes.post('/chat', async (c) => {
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
     }),
     messages: conversationMessages as any,
-    systemPrompts: [onboardingSystemPrompt({ feeds }), ...sessionSystemPrompts],
+    systemPrompts: [
+      cachedOnboardingPrompt(onboardingSystemPrompt({ feeds }), modelId),
+      ...sessionSystemPrompts,
+    ],
     tools: onboardingClientToolDefinitions({ feeds }),
     threadId: body.threadId,
     runId: body.runId ?? `onboarding-${Date.now()}-${Math.random().toString(36).slice(2)}`,

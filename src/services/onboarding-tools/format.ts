@@ -98,3 +98,37 @@ export function followOutcome<T>(
   });
   return { ok: followed.length > 0, followed, failed };
 }
+
+/**
+ * The app's record of something really done in the conversation, written
+ * into it as a note Samwell reads and the reader does not see. The prompt
+ * tells him these lines are the truth about their library; see `RECORD_RULE`
+ * in samwell-shared.
+ */
+export const ACTION_NOTE_PREFIX = 'Done in this conversation, confirmed by the app:';
+
+type SetUpOutcome = { ok: boolean; imported: number; folder: { folderName: string } | null };
+
+/** A note for whichever tool just ran, or null when it changed nothing. */
+export function onboardingActionNote(toolName: string, result: unknown): string | null {
+  const done = (what: string) => `${ACTION_NOTE_PREFIX} ${what}`;
+  const r = result as Partial<SetUpOutcome & FollowResult & { downloaded: string[] }> | null;
+  if (!r?.ok) return null;
+  switch (toolName) {
+    case 'set_up_library': {
+      const folder = r.folder?.folderName ? ` ("${r.folder.folderName}")` : '';
+      const count = r.imported ?? 0;
+      return count > 0
+        ? done(`moved ${count} EPUB ${count === 1 ? 'book' : 'books'} into their library folder${folder}.`)
+        : done(`made their library folder${folder}, but no EPUB books were in it.`);
+    }
+    case 'download_free_books':
+      return r.downloaded?.length ? done(`downloaded ${joinNames(r.downloaded)} into their library.`) : null;
+    case 'follow_podcasts':
+      return r.followed?.length ? done(`followed the podcasts ${joinNames(r.followed)}.`) : null;
+    case 'follow_blogs':
+      return r.followed?.length ? done(`followed the blogs ${joinNames(r.followed)}.`) : null;
+    default:
+      return null;
+  }
+}

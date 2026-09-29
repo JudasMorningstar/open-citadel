@@ -73,6 +73,7 @@ import {
   runListBlogs,
   runSetUpLibrary,
 } from '@/services/onboarding-tools';
+import { onboardingActionNote } from '@/services/onboarding-tools/format';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -259,6 +260,8 @@ export interface CloudChatTurnOptions {
    * something it had already been told.
    */
   onCredits?: (available: number) => void;
+  /** Onboarding only: a tool really changed their library. See `onboardingActionNote`. */
+  onOnboardingAction?: (note: string) => void;
   /**
    * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
    * returns whatever text had streamed so far and no error is raised.
@@ -488,23 +491,43 @@ function statusForTool(toolName: string): string {
  * No `ToolCallContext` either, because none of these touch a chat session or
  * a book. They touch the file system.
  */
-function createOnboardingClientTools(onFinished: () => void, said: () => string) {
+type OnboardingToolHooks = {
+  /** `finish_onboarding` ran, with the goodbye that is his last message. */
+  onFinished: (goodbye: string) => void;
+  /** What he has said this turn, so a question cannot be a goodbye. */
+  said: () => string;
+  /** Something was really done; see `onboardingActionNote`. */
+  onAction?: (note: string) => void;
+};
+
+function createOnboardingClientTools({ onFinished, said, onAction }: OnboardingToolHooks) {
+  // The result goes back to the model untouched; the note goes into the
+  // transcript, so later turns can see what earlier ones did.
+  const recorded = async <T,>(toolName: string, work: Promise<T>): Promise<T> => {
+    const result = await work;
+    const note = onboardingActionNote(toolName, result);
+    if (note) onAction?.(note);
+    return result;
+  };
   return clientTools(
-    setUpLibraryTool.client(async () => runSetUpLibrary()),
+    setUpLibraryTool.client(async () => recorded('set_up_library', runSetUpLibrary())),
     findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
-    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+    downloadFreeBooksTool.client(async (input) =>
+      recorded('download_free_books', runDownloadFreeBooks(input)),
+    ),
     findPodcastsTool.client(async (input) => runFindPodcasts(input)),
-    followPodcastsTool.client(async (input) => runFollowPodcasts(input)),
+    followPodcastsTool.client(async (input) =>
+      recorded('follow_podcasts', runFollowPodcasts(input)),
+    ),
     listBlogsTool.client(async () => runListBlogs()),
-    followBlogsTool.client(async (input) => runFollowBlogs(input)),
-    finishOnboardingTool.client(async () => {
-      // What he has said this turn, so a question cannot be a goodbye.
-      const result = await runFinishOnboarding(said());
+    followBlogsTool.client(async (input) => recorded('follow_blogs', runFollowBlogs(input))),
+    finishOnboardingTool.client(async ({ goodbye }) => {
+      const result = await runFinishOnboarding(said(), goodbye);
       if (!result.ok) return result;
       // The turn is over the moment this returns. See `finished` in
       // `sendCloudChatTurn` for why that has to be enforced here rather than
       // asked for in the prompt.
-      onFinished();
+      onFinished(goodbye);
       return result;
     }),
     explainAppTool.client(async () => runExplainApp()),
@@ -830,6 +853,7 @@ export async function sendCloudChatTurn({
   onThinkingDone,
   onToolStatus,
   onCredits,
+  onOnboardingAction,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
   /*
@@ -908,8 +932,11 @@ export async function sendCloudChatTurn({
    * house a turn each time. The tool that ends the conversation ends the turn.
    */
   let finished = false;
-  const endConversation = () => {
+  // His last message, carried in the `finish_onboarding` call itself.
+  let farewell = '';
+  const endConversation = (goodbye: string) => {
     finished = true;
+    farewell = goodbye.trim();
   };
   const endToolPhase = () => {
     if (!inToolPhase) return;
@@ -991,7 +1018,11 @@ export async function sendCloudChatTurn({
     },
     tools:
       mode === 'onboarding'
-        ? createOnboardingClientTools(endConversation, () => saidSoFar)
+        ? createOnboardingClientTools({
+            onFinished: endConversation,
+            said: () => saidSoFar,
+            onAction: onOnboardingAction,
+          })
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
@@ -1218,7 +1249,10 @@ export async function sendCloudChatTurn({
     // the reader where they were, free to send again or stop it themselves —
     // a canned "he got stuck" bubble dropped into the transcript reads worse
     // than the quiet, and it is the reader's call, not the app's.
-    const partial = assistantTextSinceUser(client.getMessages()).trim();
+    // The goodbye, when he ended onboarding, is the last of what he said.
+    const partial = [assistantTextSinceUser(client.getMessages()).trim(), farewell]
+      .filter(Boolean)
+      .join('\n\n');
     if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,

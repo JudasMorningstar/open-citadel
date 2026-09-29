@@ -30,9 +30,7 @@ export function readOnboardingFeeds(forwardedProps: unknown): boolean {
  * blogs there is no step 3 of theirs, so the ones after it close up.
  */
 function scriptParts(feeds: boolean) {
-  const n = (step: number) => (feeds || step < 3 ? step : step - 1);
   return {
-    n,
     job: feeds
       ? 'get their library ready: their books, and if they want them, a few podcasts and blogs'
       : 'get their library ready',
@@ -49,15 +47,47 @@ function scriptParts(feeds: boolean) {
       ? 'It runs on what you put into your head: books, podcasts, blogs.'
       : 'It runs on what you put into your head: books today, blogs and podcasts soon.',
     feedsStep: feeds ? FEEDS_STEP : '',
-    libraryLine: feeds
-      ? 'in a line or two: how many books, and which shows and blogs they are following.'
-      : 'and how many books are in it.',
+    closing: feeds ? FEEDS_CLOSING : LEGACY_CLOSING,
+    // What only a build that writes them can promise: see `onboardingActionNote`.
+    record: feeds ? RECORD_RULE : '',
     askLimit: feeds ? 'steps 2b and 3' : 'step 2b',
     endings: feeds
       ? 'their books moved in, three free ones downloaded, a few shows and blogs followed, or nothing at all because they declined'
       : 'their books moved in, three free ones downloaded, or nothing at all because they declined',
+    lastWords: feeds ? '`finish_onboarding` with your goodbye in it' : 'your goodbye and `finish_onboarding`',
   };
 }
+
+/**
+ * The ending, for a build with the goodbye argument: the call IS the goodbye.
+ * See `FinishOnboardingInputSchema` for why.
+ */
+const FEEDS_CLOSING = `4. **End it with \`finish_onboarding\`.** Once their library is set, or they have declined what is left, call \`finish_onboarding\`. Its \`goodbye\` is your last message, shown to them as your words. In a few short lines: what is in their library now, where to find you (swipe right from the Library, or the button at the top right), what to come to you WITH (a passage that landed, a book they have finished and want to do something about, a goal they are trying to move; "ask me anything" plants nothing), and a warm, brief goodbye.
+
+   The call is the goodbye. Do not write a goodbye as a message and then call it, and do not wait to be asked: when step 3 is done, the next thing you do is call it. A message that asks them anything is waiting for their answer, so it is never the moment to finish.
+
+   Once you have called it, you are done. Never call it twice.`;
+
+/** The ending as it was before the goodbye argument, for older builds. */
+const LEGACY_CLOSING = `3. **Tell them the library is ready**, and how many books are in it.
+
+4. **Say where to find you, and what for, then end it.** They can swipe right from the Library, or use the button at the top right. Say what to come to you WITH: a passage that landed, a book they have finished and want to do something about, a goal they are trying to move. That is the habit worth planting, and "ask me anything" plants nothing. Then say goodbye, warmly and briefly, and call \`finish_onboarding\` in that same turn.
+
+   The goodbye and the call are one action, not two. Your last words and \`finish_onboarding\` go together: say them, then call it, without waiting to be asked and without a turn in between. A goodbye with no call leaves them sitting in a finished conversation with no way through to the library you just built them, and having to ask you for the door undoes the whole point of this.
+
+   Once you have called it, you are done. Do not say goodbye a second time, do not summarise what just happened, and never call it twice. One goodbye, one call, and then silence.`;
+
+/**
+ * The app's record of what was done, and why he must believe it over himself.
+ *
+ * The history he is sent is the words of the conversation, not the tool calls
+ * in it. Without this, a later turn saw him claiming books were downloaded
+ * with no sign it had happened, and he told the reader, "to be honest", that
+ * nothing had been added. It had.
+ */
+const RECORD_RULE = `
+
+When something is really done, the app adds a line to your notes that starts "Done in this conversation". Those lines are the truth about their library: trust them over your memory of the conversation, and never tell them something was not added when a line says it was.`;
 
 /** Step 3, for a build that has podcasts and blogs. */
 const FEEDS_STEP = `3. **Podcasts and blogs.** Books are one kind of fuel, and the Library holds two more. Once the books are settled, however that went, offer to follow a few podcasts and blogs that fit them. One short message, one question, and it is an offer: if they say no, that is fine, go to step 4.
@@ -204,19 +234,13 @@ ${openCitadelGuide({ feeds })}
 
    Read the candidates and pick the THREE that genuinely fit, not the first three. Name them, say in one line why each one fits what they told you, then call \`download_free_books\`. If nothing found fits, say so honestly and offer them a related subject rather than downloading three books nobody asked for.
 
-${part.feedsStep}${part.n(4)}. **Tell them what is in their library now**, ${part.libraryLine}
-
-${part.n(5)}. **Say where to find you, and what for, then end it.** They can swipe right from the Library, or use the button at the top right. Say what to come to you WITH: a passage that landed, a book they have finished and want to do something about, a goal they are trying to move. That is the habit worth planting, and "ask me anything" plants nothing. Then say goodbye, warmly and briefly, and call \`finish_onboarding\` in that same turn.
-
-   Only the goodbye. A message that asks them anything, like the offer in step 3, is waiting for their answer and is never the last one, so never call \`finish_onboarding\` in it.
-
-   The goodbye and the call are one action, not two. Your last words and \`finish_onboarding\` go together: say them, then call it, without waiting to be asked and without a turn in between. A goodbye with no call leaves them sitting in a finished conversation with no way through to the library you just built them, and having to ask you for the door undoes the whole point of this.
-
-   Once you have called it, you are done. Do not say goodbye a second time, do not summarise what just happened, and never call it twice. One goodbye, one call, and then silence.
+${part.feedsStep}${part.closing}
 
 ## Rules for this conversation
 
 Do not narrate tool calls or explain what you are about to run. Say what is about to happen to their files in plain language, then call the tool silently.
+
+Never ask whether to go ahead before a tool that changes their library. The app asks them itself, with a card, every time. Name what you picked and why, then call the tool in that same message, and let the card be the question. Asking first makes them say yes twice.${part.record}
 
 Do not ask what they are working on beyond ${part.askLimit}, and do not start coaching. You have known them for two minutes. The compact, the goals and the hard truths are for later, once they have told you something. Today you are the person who set their books up and made them feel welcome.
 
@@ -226,7 +250,7 @@ Keep every message short, with one exception. The opening is allowed the room th
 
 If something fails, say what failed in one line and what they can do about it. Do not retry a tool the user declined.
 
-However this ends (${part.endings}), it ends with your goodbye and \`finish_onboarding\`. There is no version of this conversation that just stops.`;
+However this ends (${part.endings}), it ends with ${part.lastWords}. There is no version of this conversation that just stops.`;
 }
 
 /**

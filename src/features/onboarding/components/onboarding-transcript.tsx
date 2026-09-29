@@ -2,7 +2,7 @@ import React from 'react';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller } from '@/components/ui/message-scroller';
+import { MessageScroller, useMessageScroller } from '@/components/ui/message-scroller';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import type { TurnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
@@ -32,6 +32,30 @@ import type { ChatMessage } from '@/services/chat-sessions';
  * highlight of theirs, and until the last minute of it there are no books in
  * the library to link to. There is nowhere for a tap to go.
  */
+/**
+ * Brings each new turn into view: a message, the start of a reply, and
+ * (through `OnboardingApprovalCard`) a question for the reader.
+ *
+ * The scroller on its own follows only while it believes the reader is at
+ * the bottom, which is right for a chat somebody is browsing. Here every new
+ * message is the next step, and one that lands below the fold is a step
+ * nobody sees: the reader was left scrolling to find Samwell's answer. A
+ * reply that arrives whole, as the cloud ones do, grows the transcript in one
+ * jump rather than a line at a time, and that is where it went missing.
+ *
+ * `scrollToEnd` also turns following back on, so the reply laying itself out
+ * after the jump is followed too.
+ */
+function FollowNewTurns({ lastId, replying }: { lastId: string | null; replying: boolean }) {
+  const { scrollToEnd } = useMessageScroller();
+  React.useEffect(() => {
+    if (!lastId && !replying) return;
+    const frame = requestAnimationFrame(() => scrollToEnd(true));
+    return () => cancelAnimationFrame(frame);
+  }, [lastId, replying, scrollToEnd]);
+  return null;
+}
+
 export function OnboardingTranscript({
   sessionId,
   messages,
@@ -61,6 +85,8 @@ export function OnboardingTranscript({
    * token, and an unmemoized filter would hand the list a new array each time.
    */
   const turns = React.useMemo(() => messages.filter(isVisibleChatMessage), [messages]);
+  const lastId = turns.at(-1)?.id ?? null;
+  const replying = streamingReply.length > 0;
 
   return (
     <MessageScroller key={sessionId ?? 'onboarding'} autoScroll className="flex-1">
@@ -100,6 +126,7 @@ export function OnboardingTranscript({
         </MessageScroller.Viewport>
       </TranscriptFade>
       <MessageScroller.Button />
+      <FollowNewTurns lastId={lastId} replying={replying} />
     </MessageScroller>
   );
 }

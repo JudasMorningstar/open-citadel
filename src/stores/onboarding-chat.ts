@@ -305,6 +305,27 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
         // length: the stream reports the message's whole text, so blanking the
         // bubble on a tool call makes the next flush look like a restream.
         onToolStatus: (status, name) => set({ toolStatus: status, toolName: name }),
+        /*
+         * The app's record of what a tool really did, kept in the transcript.
+         *
+         * The history each turn sends is the words of the conversation, not
+         * the tool calls in it, so without this a later turn saw Samwell
+         * claiming books were downloaded with nothing to show it happened, and
+         * he told the reader, "to be honest", that nothing had been added.
+         * Written as a system message: the transcript hides those, the server
+         * hands them to him as notes, and they survive the app being killed.
+         */
+        onOnboardingAction: (note) => {
+          const record: ChatMessage = {
+            id: uuid(),
+            sessionId,
+            role: 'system',
+            content: note,
+            createdAt: new Date().toISOString(),
+          };
+          appendMessage(record);
+          set((state) => ({ messages: [...state.messages, record] }));
+        },
       });
 
       /*

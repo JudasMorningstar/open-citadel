@@ -58,19 +58,30 @@ export async function completeOnboarding(): Promise<void> {
 }
 
 /**
- * `finish_onboarding`, refused when what he just said ends in a question.
+ * `finish_onboarding`, refused while he is still waiting on an answer.
  *
  * The model has asked "shall I find you a few podcasts?" and called this in
  * the same breath, which ended onboarding under a question the reader never
- * got to answer: the field went, and GO TO MY LIBRARY took its place. The
- * prompt says not to; this makes it true whatever the model does.
+ * got to answer: the field went, and GO TO MY LIBRARY took its place. So what
+ * he said this turn, and the goodbye itself, must not end in a question. The
+ * prompt says so; this makes it true whatever the model does.
  */
-export async function runFinishOnboarding(said: string): Promise<{ ok: boolean; error?: string }> {
+export async function runFinishOnboarding(
+  said: string,
+  goodbye: string,
+): Promise<{ ok: boolean; error?: string }> {
   if (endsWithQuestion(said)) {
     return {
       ok: false,
       error:
-        'Not finished: your message asks them a question. Say nothing more now. Wait for their answer, and call finish_onboarding only with your goodbye.',
+        'Not finished: your message asks them a question. Say nothing more now. Wait for their answer, and call finish_onboarding only when you are done.',
+    };
+  }
+  if (endsWithQuestion(goodbye)) {
+    return {
+      ok: false,
+      error:
+        'Not finished: your goodbye asks them a question. If you are waiting on an answer, do not finish yet. Otherwise call finish_onboarding again with a goodbye that asks nothing.',
     };
   }
   await completeOnboarding();
