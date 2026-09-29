@@ -248,15 +248,18 @@ export function popIn(duration: number = motion.fast) {
  * ```tsx
  * <Animated.View entering={revealIn(0)}>…</Animated.View>
  * ```
+ *
+ * `duration` is for the rare arrival that should be felt settling rather
+ * than just appear, like a question landing in a conversation.
  */
 const REVEAL_RISE = 10;
 const REVEAL_MAX_STEPS = 6;
 
-export function revealIn(index: number = 0) {
+export function revealIn(index: number = 0, duration: number = motion.base) {
   return () => {
     'worklet';
     const delay = Math.min(index, REVEAL_MAX_STEPS) * motion.stagger;
-    const config = { duration: motion.base, easing, reduceMotion: ReduceMotion.System };
+    const config = { duration, easing, reduceMotion: ReduceMotion.System };
     return {
       initialValues: { opacity: 0, transform: [{ translateY: REVEAL_RISE }] },
       animations: {

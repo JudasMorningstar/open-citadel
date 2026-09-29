@@ -36,6 +36,10 @@ import { asColor } from '@/utils/colors';
  * streamed token, and for all but a few seconds of the conversation its answer
  * is `null`.
  */
+/** Three stagger steps: the status row lands, then the card. */
+const CARD_BEAT = 3;
+const CARD_ENTER_MS = 450;
+
 export const OnboardingApprovalCard = React.memo(function OnboardingApprovalCard({
   sessionId,
 }: {
@@ -82,7 +86,8 @@ export const OnboardingApprovalCard = React.memo(function OnboardingApprovalCard
       // A beat behind the status row above it, and only once the words
       // before it have finished arriving (`createReplySequence`), so the
       // question reads as the next thing he said rather than a second voice.
-      entering={revealIn(1)}
+      // Slower than a screen section: it settles into the thread, calmly.
+      entering={revealIn(CARD_BEAT, CARD_ENTER_MS)}
       layout={LinearTransition.duration(motion.base).easing(easing)}
       exiting={FadeOut.duration(motion.fast).easing(easing)}
       style={[
