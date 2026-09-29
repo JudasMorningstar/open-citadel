@@ -2,10 +2,7 @@
  * `set_up_library`: the reader's own EPUBs, brought into a folder Open
  * Citadel reads.
  */
-import { followedFeedUrls } from '@/services/blogs/blogs';
-import { hasLibrary, setUpLibrary, type LibrarySetupResult } from '@/services/library-setup';
-import { libraryReady } from '@/services/onboarding-tools/library-ready';
-import { followedShowKeys } from '@/services/podcasts/shows';
+import { setUpLibrary, type LibrarySetupResult } from '@/services/library-setup';
 
 /**
  * What Samwell reads back after the library is made.
@@ -48,17 +45,6 @@ export async function runSetUpLibrary(): Promise<{
   try {
     const result = await setUpLibrary();
     const summary = describeSetup(result);
-    /*
-     * Books, not just a folder.
-     *
-     * A pick that found nothing leaves an empty Open Citadel folder and a
-     * conversation that carries on to free books, so marking readiness there
-     * would swap the reader's text field for a GO TO MY LIBRARY button in the
-     * middle of Samwell asking them a question.
-     */
-    if (result.ok && result.imported > 0) {
-      libraryReady();
-    }
     return {
       ok: result.ok,
       folder: result.folderName
@@ -80,19 +66,4 @@ export async function runSetUpLibrary(): Promise<{
         : 'Setting up the library failed.';
     return { ok: false, folder: null, imported: 0, skipped: 0, summary, error: summary };
   }
-}
-
-/**
- * Is anything in their library yet: a books folder, a followed show, or a
- * followed blog?
- *
- * What the leave link is seeded from when a conversation opens, since the
- * tools that set it may have run in a process that is gone. Any of the three
- * counts, because a reader who followed three shows and brought no books has
- * a library to go to.
- */
-export async function libraryHasSomething(): Promise<boolean> {
-  if (await hasLibrary()) return true;
-  const [shows, blogs] = await Promise.all([followedShowKeys(), followedFeedUrls()]);
-  return shows.feedUrls.size > 0 || blogs.size > 0;
 }

@@ -11,7 +11,6 @@ import {
   type FollowResult,
 } from '@/services/onboarding-tools/format';
 import { podcastShortlist, type PodcastPick } from '@/services/onboarding-tools/shortlist';
-import { libraryReady } from '@/services/onboarding-tools/library-ready';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
 
 export async function runFindPodcasts(input: { query: string }): Promise<{
@@ -68,7 +67,6 @@ export async function runFollowPodcasts(input: { podcast_ids: number[] }): Promi
     // They have met Podcasts now, by way of Samwell rather than its welcome.
     const prefs = usePodcastPrefs.getState();
     if (prefs.onboarding === 'pending') prefs.set('onboarding', 'fresh');
-    libraryReady();
   }
   return outcome;
 }

@@ -15,7 +15,6 @@ import {
   type FollowResult,
 } from '@/services/onboarding-tools/format';
 import { invalidateBlogLibrary } from '@/query-manager/blogs/invalidate';
-import { libraryReady } from '@/services/onboarding-tools/library-ready';
 
 export function runListBlogs(): { formatted: string } {
   return { formatted: formatBlogDirectory(BLOG_DIRECTORY) };
@@ -36,9 +35,6 @@ export async function runFollowBlogs(input: { blog_ids: string[] }): Promise<Fol
   const outcome = followOutcome(chosen, settled, (blog) => blog.title);
   if (outcome.failed.length > 0) console.warn('[onboarding] follow_blogs failures:', outcome.failed);
 
-  if (outcome.ok) {
-    invalidateBlogLibrary();
-    libraryReady();
-  }
+  if (outcome.ok) invalidateBlogLibrary();
   return outcome;
 }

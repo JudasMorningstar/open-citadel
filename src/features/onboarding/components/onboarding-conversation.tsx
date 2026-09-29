@@ -57,7 +57,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   const toolStatus = useOnboardingChatStore((s) => s.toolStatus);
   const toolName = useOnboardingChatStore((s) => s.toolName);
   const error = useOnboardingChatStore((s) => s.error);
-  const libraryReady = useOnboardingChatStore((s) => s.libraryReady);
 
   const onboarding = useSettingsStore((s) => s.onboarding);
 
@@ -67,30 +66,17 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   /*
    * Where the conversation is, derived rather than stored.
    *
-   * Two facts, two ways out. `onboarding === 'done'` is the settings flag the
-   * router also reads, written by `finish_onboarding`, and it ends the
-   * conversation: the field goes and GO TO MY LIBRARY takes its place.
-   * `libraryReady` is the separate, smaller claim that something is in their
-   * library, written by the tools that put it there, and it only adds a quiet
-   * way out above the field.
+   * One way out, and it is Samwell's to open. `onboarding === 'done'` is the
+   * settings flag the router also reads, written by `finish_onboarding` with
+   * his goodbye, and only then does the field give way to GO TO MY LIBRARY.
+   * There used to be a second, quieter exit once anything was in the library,
+   * but the conversation is not over when the books land: podcasts and blogs
+   * come after them, and a way out on screen then cut the concierge short.
    *
-   * It used to end the conversation too, and that was right while books were
-   * the last step. Now podcasts and blogs come after them, and swapping the
-   * field out the moment the books landed took away the reader's way to
-   * answer "shall I find you a few podcasts?".
-   *
-   * It exists at all because `finish_onboarding` is not reliable: it depends
-   * on the model choosing to call a tool after it has finished speaking, and
-   * on the run that prompted this it said its goodbye and called nothing,
-   * three times over. A screen must not trap somebody because a model forgot
-   * its last instruction.
-   *
-   * `!busy` on `done` matters. The flag flips mid-turn, while Samwell is still
-   * streaming. Without it the composer swaps to GO TO MY LIBRARY over the top
-   * of a reply still arriving, and takes the stop button away with it. The
-   * link is held back the same way: it first appears once the reply in which
-   * the library filled has finished, and after that it stays mounted (so the
-   * composer keeps its height) and is hidden whenever he is replying.
+   * `!busy` matters. `finish_onboarding` runs mid-turn, so the flag flips
+   * while his goodbye is still streaming. Without it the composer swaps to
+   * GO TO MY LIBRARY over the top of a reply still arriving, and takes the
+   * stop button away with it.
    *
    * `said` and NOT `busy` decides the other branch, which is the opposite
    * mistake and worth naming. Pressing GET STARTED puts the store to work for
@@ -101,11 +87,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
    * button show its own spinner is the honest report: the press landed, and
    * nothing else has happened yet.
    */
-  // Latched: once offered it stays, so later turns only fade it rather than
-  // mount and unmount it.
-  const [leaveOffered, setLeaveOffered] = React.useState(false);
-  if (libraryReady && !busy && !leaveOffered) setLeaveOffered(true);
-
   const phase: OnboardingPhase =
     onboarding === 'done' && !busy && said ? 'done' : said ? 'talking' : 'start';
 
@@ -201,7 +182,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
           onSend={onSend}
           onStop={onStop}
           onFinish={onDone}
-          canLeave={leaveOffered}
           busy={busy}
           bottomInset={insets.bottom}
         />

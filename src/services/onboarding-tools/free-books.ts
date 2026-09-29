@@ -5,7 +5,6 @@
 import { cloudHeaders } from '@/services/cloud-identity';
 import { downloadBooksIntoLibrary } from '@/services/gutenberg/download';
 import { freeBookShortlist, type FreeBookPick } from '@/services/onboarding-tools/shortlist';
-import { libraryReady } from '@/services/onboarding-tools/library-ready';
 import { useSettingsStore } from '@/stores/settings';
 
 type FreeBook = Omit<FreeBookPick, 'epubUrl'>;
@@ -105,7 +104,6 @@ export async function runDownloadFreeBooks(input: { gutenberg_ids: number[] }): 
           'The user closed the folder picker, so there is nowhere to put the books. That is their decision. Do not try again unless they ask.',
       };
     }
-    if (downloaded.length > 0) libraryReady();
     return { ok: downloaded.length > 0, downloaded, failed };
   } catch (error) {
     console.warn('[onboarding] download_free_books failed:', error);
