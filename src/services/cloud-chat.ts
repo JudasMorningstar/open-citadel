@@ -488,7 +488,7 @@ function statusForTool(toolName: string): string {
  * No `ToolCallContext` either, because none of these touch a chat session or
  * a book. They touch the file system.
  */
-function createOnboardingClientTools(onFinished: () => void) {
+function createOnboardingClientTools(onFinished: () => void, said: () => string) {
   return clientTools(
     setUpLibraryTool.client(async () => runSetUpLibrary()),
     findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
@@ -498,7 +498,9 @@ function createOnboardingClientTools(onFinished: () => void) {
     listBlogsTool.client(async () => runListBlogs()),
     followBlogsTool.client(async (input) => runFollowBlogs(input)),
     finishOnboardingTool.client(async () => {
-      const result = await runFinishOnboarding();
+      // What he has said this turn, so a question cannot be a goodbye.
+      const result = await runFinishOnboarding(said());
+      if (!result.ok) return result;
       // The turn is over the moment this returns. See `finished` in
       // `sendCloudChatTurn` for why that has to be enforced here rather than
       // asked for in the prompt.
@@ -889,6 +891,7 @@ export async function sendCloudChatTurn({
    */
   let saidSoFar = '';
   let saidWhenToolCalled = '';
+  const streamTiming = createStreamTiming();
   /*
    * `finish_onboarding` has run, so there is nothing left for this turn to do.
    *
@@ -988,7 +991,7 @@ export async function sendCloudChatTurn({
     },
     tools:
       mode === 'onboarding'
-        ? createOnboardingClientTools(endConversation)
+        ? createOnboardingClientTools(endConversation, () => saidSoFar)
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
@@ -1014,7 +1017,10 @@ export async function sendCloudChatTurn({
         }
       }
 
+      if (__DEV__ && chunk.type === 'TEXT_MESSAGE_CONTENT') streamTiming.mark();
+
       if (chunk.type === 'RUN_FINISHED') {
+        if (__DEV__) streamTiming.report();
         finishReason = (chunk as { finishReason?: string | null }).finishReason ?? null;
         // A finish that is not itself another tool call means the model has
         // stopped talking for this turn — release the held tool row even if
@@ -1225,6 +1231,34 @@ export async function sendCloudChatTurn({
     flushStreaming.cancel();
     client.dispose();
   }
+}
+
+/**
+ * How the answer's text arrived, per request, in development.
+ *
+ * Tokens spread over a second or more is a stream; all of them inside a few
+ * milliseconds is a response something held back and released at once (a
+ * compressing proxy is the usual suspect), which on screen is the whole
+ * reply popping in.
+ */
+function createStreamTiming() {
+  let count = 0;
+  let first = 0;
+  let last = 0;
+  return {
+    mark() {
+      const now = Date.now();
+      if (count === 0) first = now;
+      last = now;
+      count += 1;
+    },
+    report() {
+      if (count > 0) {
+        console.log(`[Samwell Cloud] stream: ${count} text chunks over ${last - first}ms`);
+      }
+      count = 0;
+    },
+  };
 }
 
 function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {

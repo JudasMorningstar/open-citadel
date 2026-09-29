@@ -17,6 +17,15 @@ export function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+/**
+ * Whether a message ends by asking something: its last line ends in a
+ * question mark, past any closing quote, bracket or emphasis.
+ */
+export function endsWithQuestion(text: string): boolean {
+  const lastLine = text.trim().split('\n').pop() ?? '';
+  return /\?[\s"'\u201d\u2019)*_]*$/.test(lastLine);
+}
+
 /** Enough to choose from without spending the turn on a long tail. */
 export const PODCAST_CANDIDATE_LIMIT = 15;
 

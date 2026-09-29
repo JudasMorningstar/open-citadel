@@ -108,6 +108,8 @@ export const FinishOnboardingInputSchema = z.object({});
 
 export const FinishOnboardingOutputSchema = z.object({
   ok: z.boolean(),
+  /** Why it did not end, when it did not: he had just asked them something. */
+  error: z.string().optional(),
 });
 
 export const setUpLibraryTool = toolDefinition({
@@ -139,7 +141,7 @@ export const downloadFreeBooksTool = toolDefinition({
 export const finishOnboardingTool = toolDefinition({
   name: 'finish_onboarding',
   description:
-    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first.",
+    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first. Never call it in a message that asks them anything: a question means you are waiting for their answer, not finished.",
   inputSchema: FinishOnboardingInputSchema,
   outputSchema: FinishOnboardingOutputSchema,
 });

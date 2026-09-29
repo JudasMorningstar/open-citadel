@@ -14,6 +14,7 @@
  * person who told you something did not work.
  */
 import { cloudHeaders } from '@/services/cloud-identity';
+import { endsWithQuestion } from '@/services/onboarding-tools/format';
 import { useSettingsStore } from '@/stores/settings';
 
 export { runListBlogs, runFollowBlogs } from '@/services/onboarding-tools/blogs';
@@ -56,7 +57,22 @@ export async function completeOnboarding(): Promise<void> {
   await useSettingsStore.getState().finishOnboarding();
 }
 
-export async function runFinishOnboarding(): Promise<{ ok: boolean }> {
+/**
+ * `finish_onboarding`, refused when what he just said ends in a question.
+ *
+ * The model has asked "shall I find you a few podcasts?" and called this in
+ * the same breath, which ended onboarding under a question the reader never
+ * got to answer: the field went, and GO TO MY LIBRARY took its place. The
+ * prompt says not to; this makes it true whatever the model does.
+ */
+export async function runFinishOnboarding(said: string): Promise<{ ok: boolean; error?: string }> {
+  if (endsWithQuestion(said)) {
+    return {
+      ok: false,
+      error:
+        'Not finished: your message asks them a question. Say nothing more now. Wait for their answer, and call finish_onboarding only with your goodbye.',
+    };
+  }
   await completeOnboarding();
   return { ok: true };
 }

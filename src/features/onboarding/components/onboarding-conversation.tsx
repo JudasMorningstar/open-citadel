@@ -88,8 +88,9 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
    * `!busy` on `done` matters. The flag flips mid-turn, while Samwell is still
    * streaming. Without it the composer swaps to GO TO MY LIBRARY over the top
    * of a reply still arriving, and takes the stop button away with it. The
-   * link needs no such guard: it sits over the field rather than replacing
-   * it, and the composer disables it while he is replying.
+   * link is held back the same way: it first appears once the reply in which
+   * the library filled has finished, and after that it stays mounted (so the
+   * composer keeps its height) and is hidden whenever he is replying.
    *
    * `said` and NOT `busy` decides the other branch, which is the opposite
    * mistake and worth naming. Pressing GET STARTED puts the store to work for
@@ -100,6 +101,11 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
    * button show its own spinner is the honest report: the press landed, and
    * nothing else has happened yet.
    */
+  // Latched: once offered it stays, so later turns only fade it rather than
+  // mount and unmount it.
+  const [leaveOffered, setLeaveOffered] = React.useState(false);
+  if (libraryReady && !busy && !leaveOffered) setLeaveOffered(true);
+
   const phase: OnboardingPhase =
     onboarding === 'done' && !busy && said ? 'done' : said ? 'talking' : 'start';
 
@@ -195,7 +201,7 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
           onSend={onSend}
           onStop={onStop}
           onFinish={onDone}
-          canLeave={libraryReady}
+          canLeave={leaveOffered}
           busy={busy}
           bottomInset={insets.bottom}
         />

@@ -208,6 +208,8 @@ ${part.feedsStep}${part.n(4)}. **Tell them what is in their library now**, ${par
 
 ${part.n(5)}. **Say where to find you, and what for, then end it.** They can swipe right from the Library, or use the button at the top right. Say what to come to you WITH: a passage that landed, a book they have finished and want to do something about, a goal they are trying to move. That is the habit worth planting, and "ask me anything" plants nothing. Then say goodbye, warmly and briefly, and call \`finish_onboarding\` in that same turn.
 
+   Only the goodbye. A message that asks them anything, like the offer in step 3, is waiting for their answer and is never the last one, so never call \`finish_onboarding\` in it.
+
    The goodbye and the call are one action, not two. Your last words and \`finish_onboarding\` go together: say them, then call it, without waiting to be asked and without a turn in between. A goodbye with no call leaves them sitting in a finished conversation with no way through to the library you just built them, and having to ask you for the door undoes the whole point of this.
 
    Once you have called it, you are done. Do not say goodbye a second time, do not summarise what just happened, and never call it twice. One goodbye, one call, and then silence.

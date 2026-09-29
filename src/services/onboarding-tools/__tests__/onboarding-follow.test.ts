@@ -4,6 +4,7 @@ import { BLOG_DIRECTORY, DIRECTORY_BLOGS } from '@/services/blogs/directory';
 import {
   blogBySlug,
   blogSlug,
+  endsWithQuestion,
   followOutcome,
   formatBlogDirectory,
   formatPodcastCandidates,
@@ -113,5 +114,26 @@ describe('followOutcome', () => {
     const outcome = followOutcome([{ t: 'A' }], [{ status: 'rejected', reason: 'x' }], (item) => item.t);
     expect(outcome.ok).toBe(false);
     expect(outcome.failed[0].error).toBe('Could not follow it.');
+  });
+});
+
+describe('endsWithQuestion', () => {
+  it('sees the offer that ended onboarding early', () => {
+    expect(
+      endsWithQuestion(
+        'Your library is ready with 7 books.\n\nWould you like me to find a few podcasts and blogs to follow, and what are you working toward?',
+      ),
+    ).toBe(true);
+  });
+
+  it('sees a question behind a closing quote or emphasis', () => {
+    expect(endsWithQuestion('Shall I find some? ')).toBe(true);
+    expect(endsWithQuestion('He asked, "what next?"')).toBe(true);
+    expect(endsWithQuestion('*Ready to begin?*')).toBe(true);
+  });
+
+  it('lets a goodbye through, even one with a question earlier on', () => {
+    expect(endsWithQuestion('What will you read first? Whatever it is, bring it to me.\n\nGoodbye for now.')).toBe(false);
+    expect(endsWithQuestion('')).toBe(false);
   });
 });
