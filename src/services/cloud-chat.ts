@@ -4,15 +4,7 @@ import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_FEEDS_PROP,
-  downloadFreeBooksTool,
   explainAppTool,
-  findFreeBooksTool,
-  findPodcastsTool,
-  finishOnboardingTool,
-  followBlogsTool,
-  followPodcastsTool,
-  listBlogsTool,
-  setUpLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -64,17 +56,8 @@ import {
 } from '@/services/chat-tools';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { createSmoothReveal } from '@/services/smooth-reveal';
-import {
-  runDownloadFreeBooks,
-  runFindFreeBooks,
-  runFindPodcasts,
-  runFinishOnboarding,
-  runFollowBlogs,
-  runFollowPodcasts,
-  runListBlogs,
-  runSetUpLibrary,
-} from '@/services/onboarding-tools';
-import { onboardingActionNote } from '@/services/onboarding-tools/format';
+import { createStreamTiming } from '@/services/stream-timing';
+import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -480,72 +463,6 @@ function statusForTool(toolName: string): string {
 }
 
 /**
- * Onboarding's tools: the library, the free books, a few podcasts and blogs,
- * and the way out.
- *
- * Nothing from the reading or Compass catalogues, and that is structural
- * rather than a matter of taste. This is the only conversation where the model
- * has never met the person and cannot be steered by anything it knows about
- * them, so the smaller the surface the fewer ways the first two minutes go
- * somewhere strange.
- *
- * No `ToolCallContext` either, because none of these touch a chat session or
- * a book. They touch the file system.
- */
-type OnboardingToolHooks = {
-  /** `finish_onboarding` ran, with the goodbye that is his last message. */
-  onFinished: (goodbye: string) => void;
-  /** What he has said this turn, so a question cannot be a goodbye. */
-  said: () => string;
-  /** Something was really done; see `onboardingActionNote`. */
-  onAction?: (note: string) => void;
-};
-
-function createOnboardingClientTools({ onFinished, said, onAction }: OnboardingToolHooks) {
-  // The result goes back to the model untouched; the note goes into the
-  // transcript, so later turns can see what earlier ones did.
-  const recorded = async <T,>(toolName: string, work: Promise<T>): Promise<T> => {
-    const result = await work;
-    const note = onboardingActionNote(toolName, result);
-    if (note) onAction?.(note);
-    return result;
-  };
-  return clientTools(
-    setUpLibraryTool.client(async () => recorded('set_up_library', runSetUpLibrary())),
-    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
-    downloadFreeBooksTool.client(async (input) =>
-      recorded('download_free_books', runDownloadFreeBooks(input)),
-    ),
-    findPodcastsTool.client(async (input) => runFindPodcasts(input)),
-    followPodcastsTool.client(async (input) =>
-      recorded('follow_podcasts', runFollowPodcasts(input)),
-    ),
-    listBlogsTool.client(async () => runListBlogs()),
-    followBlogsTool.client(async (input) => recorded('follow_blogs', runFollowBlogs(input))),
-    finishOnboardingTool.client(async ({ goodbye }) => {
-      const result = await runFinishOnboarding(said(), goodbye);
-      // Refused (he is still waiting on an answer): the model hears why.
-      if (!result.ok) return result;
-      // The turn is over. See `finished` in `sendCloudChatTurn`.
-      onFinished(goodbye);
-      /*
-       * And no result goes back, on purpose.
-       *
-       * The ChatClient sends the model another turn as soon as every tool
-       * call it made has a result; nothing in the library lets a tool say
-       * "that was the last one". Returning here cost a model call after every
-       * goodbye, paid for by the house, whose answer the turn then threw away
-       * (and cut off mid-request, which the server logged as a 500). A call
-       * that never completes is never continued: the settle loop sees
-       * `finished`, stops the client and disposes of it, promise and all.
-       */
-      return new Promise<never>(() => {});
-    }),
-    explainAppTool.client(async () => runExplainApp()),
-  );
-}
-
-/**
  * Compass's tools.
  *
  * Thin on purpose: the work is in `compass-tools.ts`, which reads the same
@@ -945,9 +862,28 @@ export async function sendCloudChatTurn({
   let finished = false;
   // His last message, carried in the `finish_onboarding` call itself.
   let farewell = '';
+  let signalFinished = () => {};
+  const finishedSignal = new Promise<void>((resolve) => {
+    signalFinished = resolve;
+  });
   const endConversation = (goodbye: string) => {
     finished = true;
     farewell = goodbye.trim();
+    signalFinished();
+  };
+  /*
+   * A guard on the call that brought `finish_onboarding` in.
+   *
+   * That tool never completes (see `createOnboardingClientTools`), and the
+   * client waits on any tool still running when a request ends. Today none
+   * is: the server sends a client tool after the run finishes, so the request
+   * is over before the tool starts. Were that order to change, `sendMessage`
+   * or the go-ahead's continuation would wait forever and onboarding would be
+   * stuck, so both are let go of the moment he finishes.
+   */
+  const untilFinished = <T,>(work: Promise<T>) => {
+    work.catch(() => {});
+    return Promise.race([work, finishedSignal]);
   };
   const endToolPhase = () => {
     if (!inToolPhase) return;
@@ -1033,7 +969,7 @@ export async function sendCloudChatTurn({
       mode === 'onboarding'
         ? createOnboardingClientTools({
             onFinished: endConversation,
-            said: () => saidSoFar,
+            messages: (): UIMessage[] => client.getMessages(),
             onAction: onOnboardingAction,
           })
         : mode === 'compass'
@@ -1086,12 +1022,12 @@ export async function sendCloudChatTurn({
       const toolName = readToolName(chunk);
       if (toolName) {
         // Ordered ahead of the status: a trace update still in flight must
-        // not land after it and leave the row describing the wrong phase. Any
-        // half-written narration from before the call is dropped here (the
-        // stores blank the bubble on a non-null tool status), so a trailing
-        // throttled write must not resurrect it.
+        // not land after it and leave the row describing the wrong phase. The
+        // narration before the call is shown whole here, never cut off under
+        // an approval card, and ahead of the status, since the reading and
+        // Compass stores blank the bubble on it.
         flushThinking.flush();
-        reveal.drop();
+        reveal.flush();
         inToolPhase = true;
         lastToolName = toolName;
         saidWhenToolCalled = saidSoFar;
@@ -1160,7 +1096,7 @@ export async function sendCloudChatTurn({
   try {
     console.log(`[Samwell Cloud] Sending ${mode} request to ${endpointFor(mode, baseUrl, metered)}`);
     try {
-      await client.sendMessage(content);
+      await untilFinished(client.sendMessage(content));
     } catch (err) {
       // A turn the reader called off rejects here through the aborted request;
       // that is the outcome they asked for, not a failure to report.
@@ -1190,7 +1126,9 @@ export async function sendCloudChatTurn({
          * He has said goodbye and closed the conversation. Whatever he said
          * before that call is the whole of it; anything after would be a
          * second goodbye, which is exactly what this is here to prevent.
+         * A card still up is answered no, as stop does.
          */
+        useApprovalStore.getState().clearSession(sessionId);
         try {
           client.stop();
         } catch {
@@ -1222,7 +1160,8 @@ export async function sendCloudChatTurn({
         const approved = await useApprovalStore
           .getState()
           .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
-        await client.addToolApprovalResponse({ id: approval.id, approved });
+        await untilFinished(client.addToolApprovalResponse({ id: approval.id, approved }));
+        if (finished) break;
         /*
          * They have answered, so stop saying they have not.
          *
@@ -1288,34 +1227,6 @@ export async function sendCloudChatTurn({
     reveal.cancel();
     client.dispose();
   }
-}
-
-/**
- * How the answer's text arrived, per request, in development.
- *
- * Tokens spread over a second or more is a stream; all of them inside a few
- * milliseconds is a response something held back and released at once (a
- * compressing proxy is the usual suspect), which on screen is the whole
- * reply popping in.
- */
-function createStreamTiming() {
-  let count = 0;
-  let first = 0;
-  let last = 0;
-  return {
-    mark() {
-      const now = Date.now();
-      if (count === 0) first = now;
-      last = now;
-      count += 1;
-    },
-    report() {
-      if (count > 0) {
-        console.log(`[Samwell Cloud] stream: ${count} text chunks over ${last - first}ms`);
-      }
-      count = 0;
-    },
-  };
 }
 
 function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {

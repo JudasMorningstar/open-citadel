@@ -23,12 +23,14 @@ export type SmoothReveal = {
   /** Resolves once everything pushed has been shown. */
   settle: () => Promise<void>;
   /**
-   * Drops what is still waiting to be shown, and carries on with whatever is
-   * pushed next. A tool call does this to the narration before it: the
-   * reading and Compass stores blank the bubble when a tool starts, and a
-   * trailing reveal would write the narration back into it.
+   * Shows everything pushed so far at once, and carries on with whatever is
+   * pushed next. A tool call does this to the narration before it, ahead of
+   * the tool status: onboarding keeps the narration on screen while the card
+   * asks for a go-ahead, so it must not stop half-written, and the reading
+   * and Compass stores blank the bubble on the status, so a reveal still
+   * running after it would write the narration back.
    */
-  drop: () => void;
+  flush: () => void;
   /** Stops for good: nothing more is written, and `settle` resolves at once. */
   cancel: () => void;
 };
@@ -49,6 +51,15 @@ export function createSmoothReveal(emit: (text: string) => void): SmoothReveal {
   const stop = () => {
     if (timer) clearInterval(timer);
     timer = null;
+  };
+
+  const showAll = () => {
+    if (!cancelled && shown.length < target.length) {
+      shown = target;
+      emit(shown);
+    }
+    stop();
+    release();
   };
 
   const tick = () => {
@@ -75,26 +86,15 @@ export function createSmoothReveal(emit: (text: string) => void): SmoothReveal {
     settle() {
       if (cancelled || shown.length >= target.length) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        const cap = setTimeout(() => {
-          // Past the backstop: show the rest now rather than hold the turn.
-          if (!cancelled && shown.length < target.length) {
-            shown = target;
-            emit(shown);
-          }
-          stop();
-          release();
-        }, SETTLE_CAP_MS);
+        // Past the backstop: show the rest now rather than hold the turn.
+        const cap = setTimeout(showAll, SETTLE_CAP_MS);
         waiters.push(() => {
           clearTimeout(cap);
           resolve();
         });
       });
     },
-    drop() {
-      target = shown;
-      stop();
-      release();
-    },
+    flush: showAll,
     cancel() {
       cancelled = true;
       stop();

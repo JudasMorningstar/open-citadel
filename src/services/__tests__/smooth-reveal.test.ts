@@ -25,17 +25,20 @@ describe('createSmoothReveal', () => {
     await expect(reveal.settle()).resolves.toBeUndefined();
   });
 
-  it('drops pending narration and carries on with the next push', async () => {
+  it('shows the whole narration on flush, then reveals what follows it', async () => {
     const seen: string[] = [];
     const reveal = createSmoothReveal((text) => seen.push(text));
     reveal.push(REPLY);
-    const before = seen.at(-1);
-    reveal.drop();
+    reveal.flush();
+    expect(seen.at(-1)).toBe(REPLY);
+    const count = seen.length;
     await vi.advanceTimersByTimeAsync(500);
-    expect(seen.at(-1)).toBe(before);
-    reveal.push('New answer after the tool.');
+    expect(seen.length).toBe(count);
+    const next = `${REPLY}\n\nAnd here is what I found once it was done.`;
+    reveal.push(next);
+    expect(seen.at(-1)?.startsWith(REPLY)).toBe(true);
     await vi.runAllTimersAsync();
-    expect(seen.at(-1)).toBe('New answer after the tool.');
+    expect(seen.at(-1)).toBe(next);
   });
 
   it('writes nothing after cancel, and releases anyone waiting', async () => {

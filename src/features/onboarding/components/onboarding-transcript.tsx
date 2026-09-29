@@ -2,13 +2,23 @@ import React from 'react';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller, useMessageScroller } from '@/components/ui/message-scroller';
+import { MessageScroller } from '@/components/ui/message-scroller';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import type { TurnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { OnboardingApprovalCard } from '@/features/onboarding/components/onboarding-approval-card';
+import { useScrollToEndOn } from '@/features/onboarding/hooks/use-scroll-to-end-on';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import type { ChatMessage } from '@/services/chat-sessions';
+
+/**
+ * Brings each new turn into view: a message, or the start of a reply. The
+ * approval card does the same for a question. See `useScrollToEndOn`.
+ */
+function FollowNewTurns({ turnKey }: { turnKey: string | null }) {
+  useScrollToEndOn(turnKey);
+  return null;
+}
 
 /**
  * The onboarding conversation on screen.
@@ -32,30 +42,6 @@ import type { ChatMessage } from '@/services/chat-sessions';
  * highlight of theirs, and until the last minute of it there are no books in
  * the library to link to. There is nowhere for a tap to go.
  */
-/**
- * Brings each new turn into view: a message, the start of a reply, and
- * (through `OnboardingApprovalCard`) a question for the reader.
- *
- * The scroller on its own follows only while it believes the reader is at
- * the bottom, which is right for a chat somebody is browsing. Here every new
- * message is the next step, and one that lands below the fold is a step
- * nobody sees: the reader was left scrolling to find Samwell's answer. A
- * reply that arrives whole, as the cloud ones do, grows the transcript in one
- * jump rather than a line at a time, and that is where it went missing.
- *
- * `scrollToEnd` also turns following back on, so the reply laying itself out
- * after the jump is followed too.
- */
-function FollowNewTurns({ lastId, replying }: { lastId: string | null; replying: boolean }) {
-  const { scrollToEnd } = useMessageScroller();
-  React.useEffect(() => {
-    if (!lastId && !replying) return;
-    const frame = requestAnimationFrame(() => scrollToEnd(true));
-    return () => cancelAnimationFrame(frame);
-  }, [lastId, replying, scrollToEnd]);
-  return null;
-}
-
 export function OnboardingTranscript({
   sessionId,
   messages,
@@ -87,6 +73,7 @@ export function OnboardingTranscript({
   const turns = React.useMemo(() => messages.filter(isVisibleChatMessage), [messages]);
   const lastId = turns.at(-1)?.id ?? null;
   const replying = streamingReply.length > 0;
+  const turnKey = lastId || replying ? `${lastId}:${replying}` : null;
 
   return (
     <MessageScroller key={sessionId ?? 'onboarding'} autoScroll className="flex-1">
@@ -126,7 +113,7 @@ export function OnboardingTranscript({
         </MessageScroller.Viewport>
       </TranscriptFade>
       <MessageScroller.Button />
-      <FollowNewTurns lastId={lastId} replying={replying} />
+      <FollowNewTurns turnKey={turnKey} />
     </MessageScroller>
   );
 }

@@ -14,7 +14,8 @@
  * person who told you something did not work.
  */
 import { cloudHeaders } from '@/services/cloud-identity';
-import { endsWithQuestion } from '@/services/onboarding-tools/format';
+import type { FinishTurn } from '@/services/onboarding-tools/finish-turn';
+import { endsWithQuestion, joinNames } from '@/services/onboarding-tools/format';
 import { useSettingsStore } from '@/stores/settings';
 
 export { runListBlogs, runFollowBlogs } from '@/services/onboarding-tools/blogs';
@@ -58,19 +59,26 @@ export async function completeOnboarding(): Promise<void> {
 }
 
 /**
- * `finish_onboarding`, refused while he is still waiting on an answer.
+ * `finish_onboarding`, refused while he is still waiting on something.
  *
  * The model has asked "shall I find you a few podcasts?" and called this in
  * the same breath, which ended onboarding under a question the reader never
- * got to answer: the field went, and GO TO MY LIBRARY took its place. So what
- * he said this turn, and the goodbye itself, must not end in a question. The
- * prompt says so; this makes it true whatever the model does.
+ * got to answer: the field went, and GO TO MY LIBRARY took its place. So his
+ * last words, and the goodbye itself, must not end in a question, and no card
+ * of his may still be waiting. The prompt says so; this makes it true
+ * whatever the model does.
  */
 export async function runFinishOnboarding(
-  said: string,
+  turn: FinishTurn,
   goodbye: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (endsWithQuestion(said)) {
+  if (turn.openCalls.length > 0) {
+    return {
+      ok: false,
+      error: `Not finished: ${joinNames([...new Set(turn.openCalls)])} must finish first. Wait for the result, then call finish_onboarding again.`,
+    };
+  }
+  if (endsWithQuestion(turn.said)) {
     return {
       ok: false,
       error:

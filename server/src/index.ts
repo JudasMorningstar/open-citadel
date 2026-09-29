@@ -35,7 +35,7 @@ import { z } from 'zod';
 import { accountRoutes } from './account-routes.js';
 import { guestRoutes } from './guest-routes.js';
 import { managementConfigured } from './logto-management.js';
-import { cachedOnboardingPrompt, PROVIDER_PREFERENCES } from './openrouter.js';
+import { PROVIDER_PREFERENCES } from './openrouter.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
 import { gutenbergCatalogRoutes } from './gutenberg-catalog.js';
@@ -1095,14 +1095,10 @@ app.post('/chat/http', async (c) => {
      * separate structured-output route, and everything unstable about it came
      * from that separation rather than from anything Compass does.
      */
-    systemPrompts: [
-      // Onboarding's one prompt is cached for an Anthropic model; see
-      // `cachedOnboardingPrompt`. Every other mode goes as it was.
-      ...personaPromptsFor(mode, onboardingFeeds).map((prompt) =>
-        mode === 'onboarding' ? cachedOnboardingPrompt(prompt, modelId) : prompt,
-      ),
-      ...sessionSystemPrompts,
-    ],
+    // Not cached for Anthropic, even in onboarding: this route is the
+    // reader's bill, and it does not price in a cache write. See
+    // `cachedOnboardingPrompt`.
+    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
     tools:
       mode === 'compass'
         ? COMPASS_CLIENT_TOOL_DEFINITIONS
