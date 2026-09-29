@@ -12,6 +12,14 @@ import type { PlanModel } from '@/stores/subscription';
 
 const NO_COUNTS: Record<PlanId, number> = { maester: 0, grand_maester: 0, archmaester: 0 };
 
+/**
+ * How long the prices wait for the counts once they are in hand. Long enough
+ * for a server that answers at all, so the cards land whole; short enough
+ * that a hung one cannot hold every price behind the skeleton through its
+ * retries.
+ */
+const COUNTS_GRACE_MS = 1_500;
+
 export type PlanOffer = {
   /** The store package behind each plan, keyed exactly. See `planForPackage`. */
   packages: Partial<Record<PlanId, PurchasesPackage>>;
@@ -58,6 +66,14 @@ export function usePlanOffer(enabled: boolean): PlanOffer {
     return out;
   }, [offering.data]);
 
+  const pricesIn = offering.isSuccess;
+  const [graceOver, setGraceOver] = React.useState(false);
+  React.useEffect(() => {
+    if (!pricesIn || !preview.isPending) return undefined;
+    const timer = setTimeout(() => setGraceOver(true), COUNTS_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [pricesIn, preview.isPending]);
+
   const { refetch: refetchOffering } = offering;
   const { refetch: refetchPreview } = preview;
   const retry = React.useCallback(() => {
@@ -70,9 +86,11 @@ export function usePlanOffer(enabled: boolean): PlanOffer {
     modelCounts: preview.data?.modelsByPlan ?? NO_COUNTS,
     catalogue: preview.data?.catalogue ?? [],
     // The counts are a nicety: a server that cannot say them does not hold
-    // the prices back. Settled either way is enough.
-    ready: offering.isSuccess && !preview.isPending,
-    failed: offering.isError,
+    // the prices back past a short grace. Settled either way is enough.
+    ready: pricesIn && (!preview.isPending || graceOver),
+    // Not while asking again, so TRY AGAIN visibly does something: the
+    // skeleton comes back until the answer does.
+    failed: offering.isError && !offering.isFetching,
     retry,
   };
 }

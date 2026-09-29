@@ -73,7 +73,7 @@ interface ModelStore {
 
   loadModels(): Promise<void>;
   /** Fills in what each brain weighs, for any not yet measured, or only `ids`. Needs the network. */
-  measureModels(ids?: readonly string[]): Promise<void>;
+  measureModels(ids?: readonly string[], options?: { background?: boolean }): Promise<void>;
   /** Keep a measured size: on the row, and on the brain in memory. */
   recordModelSize(id: string, sizeBytes: number): void;
   setActiveModel(id: string): Promise<void>;
@@ -264,17 +264,18 @@ export const useModelStore = create<ModelStore>((set, get) => ({
      */
     void (async () => {
       if (activeModelId) await get().measureModels([activeModelId]);
-      await get().measureModels();
+      await get().measureModels(undefined, { background: true });
     })();
   },
 
-  async measureModels(ids) {
+  async measureModels(ids, { background = false } = {}) {
     const unmeasured = get().models.filter((m) => m.sizeBytes == null && (!ids || ids.includes(m.id)));
     await Promise.all(
       unmeasured.map(async (m) => {
         // Shared with any surface already asking, so one brain is one request.
+        // In the background, one try each: the picker asks again on open.
         const sizeBytes = await queryClient
-          .fetchQuery(createModelSizeQueryOptions(m.id))
+          .fetchQuery(createModelSizeQueryOptions(m.id, background ? { retry: 0 } : undefined))
           .catch(() => null);
         if (sizeBytes != null) get().recordModelSize(m.id, sizeBytes);
       }),
@@ -306,23 +307,27 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     const entry = catalogueModel(id);
     if (!entry || downloads.has(id)) return;
 
-    // The storage check needs the size, which a brain never browsed may not
-    // have yet.
-    if (get().models.find((m) => m.id === id)?.sizeBytes == null) await get().measureModels([id]);
-    const required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
-    const freeSpace = await getFreeDiskStorageAsync();
-    if (required && freeSpace < required * 1.1) {
-      set({
-        loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
-      });
-      return;
-    }
-
+    // Claimed before anything is awaited: the size below can take a few
+    // seconds of retries, and a second tap in that gap must not start a
+    // second download. The progress row also shows from the tap.
     const controller = new AbortController();
     downloads.set(id, controller);
     set((s) => ({ downloadProgress: { ...s.downloadProgress, [id]: 0 }, loadError: null }));
 
     try {
+      // The storage check needs the size, which a brain never browsed may
+      // not have yet.
+      if (get().models.find((m) => m.id === id)?.sizeBytes == null) await get().measureModels([id]);
+      if (controller.signal.aborted) return;
+      const required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
+      const freeSpace = await getFreeDiskStorageAsync();
+      if (required && freeSpace < required * 1.1) {
+        set({
+          loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
+        });
+        return;
+      }
+
       await downloadModelFiles(entry, {
         signal: controller.signal,
         onProgress: (fraction) =>

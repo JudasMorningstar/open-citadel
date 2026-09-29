@@ -22,15 +22,24 @@ const HOUR = 60 * 60_000;
  * sells a plan, a prefetch at launch (see `prefetchPlanOffer`), and a retry
  * with a way to ask again, none of which the SDK call has alone.
  */
-export function createOfferingQueryOptions(options?: Options<PurchasesOffering | null>) {
+export function createOfferingQueryOptions(options?: Options<PurchasesOffering>) {
   return {
     staleTime: HOUR,
     gcTime: 24 * HOUR,
     retry: 2,
     ...options,
     queryKey: billingKeys.offering(),
-    queryFn: () => getOffering(),
-  } satisfies UseQueryOptions<PurchasesOffering | null, Error>;
+    queryFn: async () => {
+      /*
+       * No offering is a failure, not an answer. Play Billing can come back
+       * empty for a moment at launch, and cached as a success that would be
+       * an hour of cards with no prices and no way to ask again.
+       */
+      const offering = await getOffering();
+      if (!offering) throw new Error('The store has no plans on sale right now.');
+      return offering;
+    },
+  } satisfies UseQueryOptions<PurchasesOffering, Error>;
 }
 
 /** What each plan holds: the cards' model counts and the info sheets' list. */

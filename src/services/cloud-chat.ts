@@ -1190,6 +1190,9 @@ export async function sendCloudChatTurn({
         if (!approval) continue;
         // Asked once what he said before it has finished arriving.
         await sequence.idle();
+        // Stop may have landed while the words were arriving; its clear ran
+        // before this card existed, so nothing would ever answer it.
+        if (aborted) break;
         const approved = await useApprovalStore
           .getState()
           .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
@@ -1257,6 +1260,10 @@ export async function sendCloudChatTurn({
     signal?.removeEventListener('abort', onAbort);
     flushThinking.cancel();
     reveal.cancel();
+    // What he finished saying is kept, and before the caller hears how the
+    // turn ended: a part must not land under an error set a moment earlier.
+    // Unpaced now the reveal is cancelled, so this is a few microtasks.
+    await sequence.idle();
     client.dispose();
   }
 }

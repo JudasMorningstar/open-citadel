@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  LONGEST_WHOLE_WORD,
   MAX_REVEAL_MS,
   REVEAL_CHARS_PER_SECOND,
   revealRate,
@@ -25,6 +26,14 @@ describe('wholeWordsUpTo', () => {
   it('stops before a word the cursor is inside', () => {
     // "Your three" with the cursor in "three".
     expect(REPLY.slice(0, wholeWordsUpTo(REPLY, 7))).toBe('Your');
+  });
+
+  it('keeps revealing text written without spaces', () => {
+    const unspaced = '読書は心の糧であり、毎日少しずつ続けることが大切です。'.repeat(3);
+    expect(wholeWordsUpTo(unspaced, 40)).toBe(40);
+    expect(wholeWordsUpTo('https://example.com/a/very/long/path/to/a/page', LONGEST_WHOLE_WORD + 5)).toBe(
+      LONGEST_WHOLE_WORD + 5,
+    );
   });
 
   it('only ever stops at a word boundary or the end', () => {

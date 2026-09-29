@@ -27,14 +27,23 @@ export function revealRate(targetLength: number): number {
 }
 
 /**
+ * Past this, a run without a space is not a word to keep whole: a URL, or a
+ * language written without spaces, which would otherwise show nothing until
+ * the reveal reached its end.
+ */
+export const LONGEST_WHOLE_WORD = 24;
+
+/**
  * The prefix of `target` to show once the reveal has reached `cursor`
  * characters. It stops before the word the cursor is inside, so a word
  * appears whole or not at all, and everything shows once the cursor is past
- * the end.
+ * the end. A run longer than `LONGEST_WHOLE_WORD` is shown as far as the
+ * cursor instead.
  */
 export function wholeWordsUpTo(target: string, cursor: number): number {
   if (cursor >= target.length) return target.length;
-  let end = Math.max(0, Math.floor(cursor));
+  const at = Math.max(0, Math.floor(cursor));
+  let end = at;
   while (end > 0 && !/\s/.test(target[end] ?? '')) end -= 1;
-  return end;
+  return at - end > LONGEST_WHOLE_WORD ? at : end;
 }
