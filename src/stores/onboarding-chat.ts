@@ -301,9 +301,8 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
-        // The narration stays, for the reason the Compass store spells out at
-        // length: the stream reports the message's whole text, so blanking the
-        // bubble on a tool call makes the next flush look like a restream.
+        // The bubble is not blanked on a tool call: the narration before it
+        // becomes a message of its own instead. See `onReplyPart`.
         onToolStatus: (status, name) => set({ toolStatus: status, toolName: name }),
         /*
          * The app's record of what a tool really did, kept in the transcript.
@@ -315,6 +314,29 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
          * Written as a system message: the transcript hides those, the server
          * hands them to him as notes, and they survive the app being killed.
          */
+        /*
+         * Each stretch of his reply between two tool calls is its own
+         * message, not a bubble that grows three times over. Written once it
+         * has been shown in full, in the same update that empties the
+         * streaming bubble, so the hand-over does not jump.
+         */
+        onReplyPart: (text) => {
+          const part: ChatMessage = {
+            id: uuid(),
+            sessionId,
+            role: 'assistant',
+            content: text,
+            createdAt: new Date().toISOString(),
+            via: 'cloud',
+          };
+          appendMessage(part);
+          touchSession(sessionId, part.createdAt);
+          set((state) => ({
+            messages: [...state.messages, part],
+            streamingReply: '',
+            lastStreamedMessageId: part.id,
+          }));
+        },
         onOnboardingAction: (note) => {
           const record: ChatMessage = {
             id: uuid(),

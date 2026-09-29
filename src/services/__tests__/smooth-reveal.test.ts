@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSmoothReveal } from '@/services/smooth-reveal';
+import { REVEAL_CHARS_PER_SECOND } from '@/utils/reveal-step';
 
 const REPLY = 'Your three books are in your Library, and I followed three shows for you.';
 
@@ -8,16 +9,30 @@ describe('createSmoothReveal', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('reveals a reply that arrived whole a few words at a time', async () => {
+  it('reveals a reply that arrived whole a word at a time, growing only', async () => {
     const seen: string[] = [];
     const reveal = createSmoothReveal((text) => seen.push(text));
     reveal.push(REPLY);
     const settled = reveal.settle();
     await vi.runAllTimersAsync();
     await settled;
-    expect(seen.length).toBeGreaterThan(3);
+    expect(seen.length).toBeGreaterThan(8);
     expect(seen.at(-1)).toBe(REPLY);
     for (let i = 1; i < seen.length; i += 1) expect(seen[i].startsWith(seen[i - 1])).toBe(true);
+  });
+
+  it('takes about as long as the calm pace says', async () => {
+    const reveal = createSmoothReveal(() => {});
+    reveal.push(REPLY);
+    let done = false;
+    void reveal.settle().then(() => {
+      done = true;
+    });
+    const expected = (REPLY.length / REVEAL_CHARS_PER_SECOND) * 1000;
+    await vi.advanceTimersByTimeAsync(expected * 0.8);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(expected * 0.3);
+    expect(done).toBe(true);
   });
 
   it('settles at once when there is nothing left to show', async () => {
@@ -25,20 +40,18 @@ describe('createSmoothReveal', () => {
     await expect(reveal.settle()).resolves.toBeUndefined();
   });
 
-  it('shows the whole narration on flush, then reveals what follows it', async () => {
+  it('reveals the next part of a reply from its own start', async () => {
     const seen: string[] = [];
     const reveal = createSmoothReveal((text) => seen.push(text));
     reveal.push(REPLY);
-    reveal.flush();
-    expect(seen.at(-1)).toBe(REPLY);
-    const count = seen.length;
-    await vi.advanceTimersByTimeAsync(500);
-    expect(seen.length).toBe(count);
-    const next = `${REPLY}\n\nAnd here is what I found once it was done.`;
-    reveal.push(next);
-    expect(seen.at(-1)?.startsWith(REPLY)).toBe(true);
     await vi.runAllTimersAsync();
-    expect(seen.at(-1)).toBe(next);
+    const before = seen.length;
+    const next = 'Here is what I found.';
+    reveal.push(next);
+    await vi.runAllTimersAsync();
+    const after = seen.slice(before);
+    expect(after[0]).toBe('Here');
+    expect(after.at(-1)).toBe(next);
   });
 
   it('writes nothing after cancel, and releases anyone waiting', async () => {

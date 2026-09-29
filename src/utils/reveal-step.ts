@@ -1,30 +1,40 @@
 /**
- * How much more of a reply to show on the next tick of a smooth reveal.
+ * The pace of a smooth reveal, and where each step of it may stop.
  *
  * Some providers hold a whole reply back and release it in one piece, which
- * on screen is the answer popping in. Revealing it a few words a tick reads
- * as the stream it should have been. A brisk floor keeps a real stream from
- * being slowed, and a whole reply is shown within about `CATCH_UP_TICKS`, so
- * a long reply that arrived at once still lands in around a second rather
- * than making the reader wait for a typewriter. Steps end on a word boundary
- * so a word never appears half-written.
+ * on screen is the answer popping in. Shown a word at a time at a reading
+ * pace, it reads as a calm stream instead. The pace is a floor of about
+ * twelve words a second, raised for a long reply so that no reply takes more
+ * than `MAX_REVEAL_MS` to show: calm for a sentence, and never a typewriter
+ * for a page.
  *
  * Pure, so it is tested without timers.
  */
 
-/** The fewest characters a tick reveals: a quick reading pace. */
-export const MIN_REVEAL_STEP = 6;
+/** The pace a short reply is shown at, in characters a second. */
+export const REVEAL_CHARS_PER_SECOND = 70;
 
-/** How many ticks a backlog of any size is caught up in. */
-export const CATCH_UP_TICKS = 25;
+/** The longest any reply takes to show, however long it is. */
+export const MAX_REVEAL_MS = 4_000;
 
-/** The length of the prefix of `target` to show after this tick. */
-export function nextRevealLength(shown: number, target: string): number {
-  if (shown >= target.length) return target.length;
-  // Sized from the whole reply, not what is left of it: a step that shrank
-  // with the backlog slowed to a crawl at the end, three times as long.
-  const step = Math.max(MIN_REVEAL_STEP, Math.ceil(target.length / CATCH_UP_TICKS));
-  let end = Math.min(target.length, shown + step);
-  while (end < target.length && !/\s/.test(target[end])) end += 1;
+/**
+ * Characters a second for a reply this long. Sized from the whole reply,
+ * not what is left of it: a pace that shrank with the backlog crawled at the
+ * end.
+ */
+export function revealRate(targetLength: number): number {
+  return Math.max(REVEAL_CHARS_PER_SECOND, targetLength / (MAX_REVEAL_MS / 1000));
+}
+
+/**
+ * The prefix of `target` to show once the reveal has reached `cursor`
+ * characters. It stops before the word the cursor is inside, so a word
+ * appears whole or not at all, and everything shows once the cursor is past
+ * the end.
+ */
+export function wholeWordsUpTo(target: string, cursor: number): number {
+  if (cursor >= target.length) return target.length;
+  let end = Math.max(0, Math.floor(cursor));
+  while (end > 0 && !/\s/.test(target[end] ?? '')) end -= 1;
   return end;
 }

@@ -1,12 +1,12 @@
 import React from 'react';
 import { View } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
 import { ShieldQuestionMark } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { easing, elevation, motion, spacing } from '@/constants/theme';
+import { easing, elevation, motion, revealIn, spacing } from '@/constants/theme';
 import { useScrollToEndOn } from '@/features/onboarding/hooks/use-scroll-to-end-on';
 import { approvalCopy } from '@/services/approval-copy';
 import { useApprovalStore } from '@/stores/approval';
@@ -79,7 +79,10 @@ export const OnboardingApprovalCard = React.memo(function OnboardingApprovalCard
 
   return (
     <Animated.View
-      entering={FadeIn.duration(motion.base).easing(easing)}
+      // A beat behind the status row above it, and only once the words
+      // before it have finished arriving (`createReplySequence`), so the
+      // question reads as the next thing he said rather than a second voice.
+      entering={revealIn(1)}
       layout={LinearTransition.duration(motion.base).easing(easing)}
       exiting={FadeOut.duration(motion.fast).easing(easing)}
       style={[

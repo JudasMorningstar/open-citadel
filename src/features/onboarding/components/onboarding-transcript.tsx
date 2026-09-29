@@ -99,7 +99,9 @@ export function OnboardingTranscript({
             ))}
 
             {streamingReply.length > 0 && (
-              <ChatBubble role="assistant" content={streamingReply} streaming />
+              // Each part of his reply is its own bubble, and each fades up as
+              // it starts rather than appearing whole-sized from nowhere.
+              <ChatBubble role="assistant" content={streamingReply} streaming animateEntry />
             )}
 
             <TurnStatus indicator={indicator} />
