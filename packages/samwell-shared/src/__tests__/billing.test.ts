@@ -278,7 +278,7 @@ describe('the model catalogue', () => {
 
     expect(defaults).toEqual({
       maester: 'openai/gpt-6-luna-pro',
-      // Sonnet 5.5 and GPT-6 Sol cost the same; a tie goes to the first listed.
+      // Sonnet 5.5 and GPT-6.1 Sol cost the same; a tie goes to the first listed.
       grand_maester: 'anthropic/claude-sonnet-5.5',
       archmaester: 'anthropic/claude-opus-5.5',
     });

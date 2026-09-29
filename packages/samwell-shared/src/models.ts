@@ -125,8 +125,8 @@ export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
     cachedInputPricePerMillion: 0.2,
   },
   {
-    id: 'openai/gpt-6-sol',
-    label: 'GPT-6 Sol',
+    id: 'openai/gpt-6.1-sol',
+    label: 'GPT-6.1 Sol',
     provider: 'OpenAI',
     description: 'Broad general reasoning with a very large window.',
     capabilities: ['text', 'vision', 'tools'],
@@ -134,7 +134,7 @@ export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
     minPlan: 'grand_maester',
     inputPricePerMillion: 2,
     outputPricePerMillion: 10,
-    cachedInputPricePerMillion: 0.2,
+    cachedInputPricePerMillion: 0.1,
   },
   {
     id: 'deepseek/deepseek-v4-pro-0813',

@@ -83,7 +83,7 @@ register 'deepseek/deepseek-v4-flash-0731' maester
 
 echo "Grand Maester"
 register 'anthropic/claude-sonnet-5.5'     grand_maester
-register 'openai/gpt-6-sol'                grand_maester
+register 'openai/gpt-6.1-sol'              grand_maester
 register 'deepseek/deepseek-v4-pro-0813'   grand_maester
 
 echo "Archmaester"
@@ -117,6 +117,8 @@ retire 'anthropic/claude-opus-5'
 retire 'openai/gpt-5.6-sol'
 # GPT-6 Sol took Grand Maester's OpenAI slot; Terra has no GPT-6 successor.
 retire 'openai/gpt-5.6-terra'
+# GPT-6.1 Sol replaced it, 2026-09-29: same price, cheaper cached input.
+retire 'openai/gpt-6-sol'
 
 echo
 echo "Catalogue now:"
