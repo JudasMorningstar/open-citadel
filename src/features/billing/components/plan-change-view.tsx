@@ -17,7 +17,6 @@ export function PlanChangeView({
   catalogue,
   modelCounts,
   busy,
-  loading,
   onSelectionChange,
   onChoose,
 }: {
@@ -27,7 +26,6 @@ export function PlanChangeView({
   catalogue: PlanModel[];
   modelCounts: Record<PlanId, number>;
   busy: PlanId | "restore" | "manage" | null;
-  loading: boolean;
   onSelectionChange: (plan: PlanId) => void;
   onChoose: (plan: PlanId, packageToBuy: PurchasesPackage) => void;
 }) {
@@ -62,7 +60,6 @@ export function PlanChangeView({
             catalogue={catalogue}
             modelCounts={modelCounts}
             busy={busy}
-            loading={loading}
             showAction={false}
             showRestore={false}
             onSelectionChange={onSelectionChange}

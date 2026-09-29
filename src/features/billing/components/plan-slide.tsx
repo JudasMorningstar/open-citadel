@@ -4,8 +4,9 @@ import Animated, { Extrapolation, interpolate, useAnimatedStyle } from 'react-na
 import { Carousel, useCarouselState } from '@/components/ui/carousel';
 
 const REST_SCALE = 1;
-const AWAY_SCALE = 0.94;
-const AWAY_OPACITY = 0.55;
+/** Exported for the skeleton, which draws its neighbours the same way. */
+export const AWAY_SCALE = 0.94;
+export const AWAY_OPACITY = 0.55;
 
 /**
  * One slide of the plan run, with depth.

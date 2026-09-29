@@ -25,6 +25,7 @@ import { SubscriptionManagementSheet } from "@/features/billing/components/subsc
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
+import { usePlanOffer } from "@/features/billing/hooks/use-plan-offer";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
@@ -34,7 +35,6 @@ import { asColor } from "@/utils/colors";
 import {
     CREDIT_PLANS,
     PLANS,
-    planForPackage,
     planRank,
     type PlanId,
 } from "samwell-shared";
@@ -71,14 +71,11 @@ export function CloudPanel({
   const models = useSubscriptionStore((s) => s.models);
   const catalogue = useSubscriptionStore((s) => s.catalogue);
   const balance = useSubscriptionStore((s) => s.balance);
-  const offering = useSubscriptionStore((s) => s.offering);
   const lifecycle = useSubscriptionStore((s) => s.lifecycle);
   const busy = useSubscriptionStore((s) => s.busy);
   const loading = useSubscriptionStore((s) => s.loading);
   const error = useSubscriptionStore((s) => s.error);
   const refresh = useSubscriptionStore((s) => s.refresh);
-  const loadOffering = useSubscriptionStore((s) => s.loadOffering);
-  const loadPlanPreview = useSubscriptionStore((s) => s.loadPlanPreview);
   const buy = useSubscriptionStore((s) => s.purchase);
   const restore = useSubscriptionStore((s) => s.restore);
   const manage = useSubscriptionStore((s) => s.manage);
@@ -95,6 +92,12 @@ export function CloudPanel({
    */
   const identity = useCloudIdentity();
   const hasIdentity = identity.kind === "account" || identity.kind === "guest";
+  /*
+   * What is on sale and what each plan holds, from TanStack Query and
+   * usually already cached: see `usePlanOffer`. Not before the identity has
+   * settled, because the account store is what configures the purchases SDK.
+   */
+  const offer = usePlanOffer(identity.kind !== "unknown");
   useBillingLifecycle(focused ? identity.id : null);
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
@@ -118,41 +121,14 @@ export function CloudPanel({
   );
 
   /*
-   * Ask the server what this reader holds, and the store what is on sale.
-   *
-   * What is on sale is asked either way. The plans have to draw for somebody
-   * who has never signed in - App Review reads a price list behind a sign-in
-   * wall as registration required in order to buy - and neither the store's
-   * offering nor `/billing/plans` is about a person. Only the balance is, and
-   * asking for that without an account is a 401 for nothing.
+   * Ask the server what this reader holds. Only the balance is about a
+   * person, and asking for it without an account is a 401 for nothing; what
+   * is on sale is `usePlanOffer`'s, above, and asked either way.
    */
   React.useEffect(() => {
-    /*
-     * Not before the stored session and the Keychain have been read. Two
-     * reasons, and the second is the one that bites: `unknown` is not
-     * "nobody", so acting on it would ask the anonymous route about a reader
-     * who has an account; and the account store is what configures the
-     * purchases SDK, so asking the store for its offering first throws and
-     * leaves the cards with no prices until something else re-runs this.
-     */
-    if (identity.kind === "unknown") return;
-    void loadOffering();
-    if (hasIdentity) {
-      void refresh();
-      return;
-    }
-    void loadPlanPreview();
-  }, [identity.kind, hasIdentity, refresh, loadOffering, loadPlanPreview]);
-
-  /** The store package behind each plan, keyed exactly. See `planForPackage`. */
-  const packages = React.useMemo(() => {
-    const out: Partial<Record<PlanId, PurchasesPackage>> = {};
-    for (const pkg of offering?.availablePackages ?? []) {
-      const plan = planForPackage(pkg.identifier);
-      if (plan) out[plan] = pkg;
-    }
-    return out;
-  }, [offering]);
+    if (hasIdentity) void refresh();
+  }, [hasIdentity, refresh]);
+  const { packages } = offer;
 
   /**
    * Report what the store did, and nothing else. Closing the management sheet
@@ -332,10 +308,12 @@ export function CloudPanel({
           key="plans"
           subtitle="Monthly Neurons for Samwell's cloud brains. No account needed."
           packages={packages}
-          catalogue={catalogue}
-          modelCounts={modelCounts}
+          catalogue={offer.catalogue}
+          modelCounts={offer.modelCounts}
           busy={checkout.preparing ?? busy}
-          loading={loading}
+          ready={offer.ready}
+          failed={offer.failed}
+          onRetry={offer.retry}
           onChoose={startPurchase}
           onRestore={startRestore}
           surface="background"
@@ -415,7 +393,7 @@ export function CloudPanel({
     );
   }
 
-  if (status === "none" || (status === "unavailable" && PURCHASES_ENABLED)) {
+  if (PURCHASES_ENABLED && (status === "none" || status === "unavailable")) {
     return (
       /* The fragment and the key are not decoration: see the branch above. */
       <>
@@ -423,14 +401,16 @@ export function CloudPanel({
           key="plans"
           subtitle="Each one opens up the brains he can think with."
           packages={packages}
-          catalogue={catalogue}
-          modelCounts={modelCounts}
+          catalogue={offer.catalogue}
+          modelCounts={offer.modelCounts}
           /* `preparing` first, the same as the branch above: the checkout
              asks the server before it opens the store sheet, and without this
              the button went quiet for that round trip and invited a second
              tap. */
           busy={checkout.preparing ?? busy}
-          loading={loading}
+          ready={offer.ready}
+          failed={offer.failed}
+          onRetry={offer.retry}
           onChoose={startPurchase}
           onRestore={startRestore}
           surface="background"
@@ -440,7 +420,9 @@ export function CloudPanel({
     );
   }
 
-  if (status === "unavailable") {
+  // Reached with `none` only when this build cannot sell: no carousel of
+  // prices that will never come.
+  if (status === "unavailable" || status === "none") {
     return (
       <Card className="gap-3 p-4">
         <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
@@ -549,7 +531,6 @@ export function CloudPanel({
           modelCounts={modelCounts}
           testStore={REVENUECAT_TEST_STORE}
           busy={busy}
-          loading={loading}
           onClose={() => setManageVisible(false)}
           onChoose={onChoose}
           onRestore={onRestore}

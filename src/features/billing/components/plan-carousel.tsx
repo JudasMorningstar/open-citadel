@@ -1,7 +1,12 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import type { PurchasesPackage } from "react-native-purchases";
-import { useAnimatedReaction, useSharedValue } from "react-native-reanimated";
+import Animated, {
+    FadeIn,
+    FadeOut,
+    useAnimatedReaction,
+    useSharedValue,
+} from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
 import {
@@ -15,7 +20,10 @@ import { GoldButton } from "@/components/ui/gold-button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
+import { easing, motion } from "@/constants/theme";
 import { PlanCard } from "@/features/billing/components/plan-card";
+import { PlanCarouselSkeleton } from "@/features/billing/components/plan-carousel-skeleton";
+import { PlanOfferFailed } from "@/features/billing/components/plan-offer-failed";
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
 import { PlanSlide } from "@/features/billing/components/plan-slide";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
@@ -81,7 +89,15 @@ export type PlanCarouselProps = {
   /** How many models each plan opens up. */
   modelCounts: Record<PlanId, number>;
   busy: PlanId | "restore" | "manage" | null;
-  loading: boolean;
+  /**
+   * Everything the cards say is in hand. Until then the run is its skeleton,
+   * so the cards arrive whole rather than filling in piece by piece. See
+   * `usePlanOffer`.
+   */
+  ready?: boolean;
+  /** The prices could not be had. The run gives way to a way to ask again. */
+  failed?: boolean;
+  onRetry?: () => void;
   onChoose: (plan: PlanId, packageToBuy: PurchasesPackage) => void;
   onSelectionChange?: (plan: PlanId) => void;
   onRestore?: () => void;
@@ -172,7 +188,9 @@ export function PlanCarousel({
   catalogue,
   modelCounts,
   busy,
-  loading,
+  ready = true,
+  failed = false,
+  onRetry,
   onChoose,
   onSelectionChange,
   onRestore,
@@ -251,6 +269,14 @@ export function PlanCarousel({
     [packages],
   );
 
+  /*
+   * Whether this run ever waited. Only then do the cards dissolve in over the
+   * skeleton; a run whose answers were already cached (the usual case, see
+   * `prefetchPlanOffer`) simply draws, with no entrance replayed on every
+   * visit to the panel.
+   */
+  const [waited] = React.useState(!ready);
+
   const bleedStyle = React.useMemo(
     () => ({ marginHorizontal: -bleed }),
     [bleed],
@@ -265,30 +291,52 @@ export function PlanCarousel({
   return (
     <View className="gap-4">
       <View style={bleedStyle}>
-        <Carousel
-          variant="default"
-          align="center"
-          itemSize={CARD_WIDTH}
-          defaultIndex={initialIndex}
-          onIndexChange={handleIndexChange}
-        >
-          <CarouselEdgeFade initialIndex={initialIndex} surface={surface}>
-            <Carousel.Content style={contentStyle}>
-              {plans.map((plan, index) => (
-                <PlanSlide key={plan.id} index={index}>
-                  <PlanCard
-                    plan={plan}
-                    modelCount={modelCounts[plan.id] ?? 0}
-                    priceLabel={priceFor(plan)}
-                    selected={index === active}
-                    onInfo={() => setInfoPlanId(plan.id)}
-                  />
-                </PlanSlide>
-              ))}
-            </Carousel.Content>
-          </CarouselEdgeFade>
-          <Carousel.Dots className="mt-4 self-center" />
-        </Carousel>
+        {ready ? (
+          <Animated.View
+            entering={
+              waited ? FadeIn.duration(motion.slow).easing(easing) : undefined
+            }
+          >
+            <Carousel
+              variant="default"
+              align="center"
+              itemSize={CARD_WIDTH}
+              defaultIndex={initialIndex}
+              onIndexChange={handleIndexChange}
+            >
+              <CarouselEdgeFade initialIndex={initialIndex} surface={surface}>
+                <Carousel.Content style={contentStyle}>
+                  {plans.map((plan, index) => (
+                    <PlanSlide key={plan.id} index={index}>
+                      <PlanCard
+                        plan={plan}
+                        modelCount={modelCounts[plan.id] ?? 0}
+                        priceLabel={priceFor(plan)}
+                        selected={index === active}
+                        onInfo={() => setInfoPlanId(plan.id)}
+                      />
+                    </PlanSlide>
+                  ))}
+                </Carousel.Content>
+              </CarouselEdgeFade>
+              <Carousel.Dots className="mt-4 self-center" />
+            </Carousel>
+          </Animated.View>
+        ) : failed ? (
+          // In the column rather than bled to the screen edges.
+          <View style={{ marginHorizontal: bleed }}>
+            <PlanOfferFailed onRetry={onRetry} />
+          </View>
+        ) : (
+          /* Out quicker than the cards come in, so for a moment the two
+             overlap and the outline dissolves into the real thing. */
+          <Animated.View exiting={FadeOut.duration(motion.base).easing(easing)}>
+            <PlanCarouselSkeleton
+              cardWidth={CARD_WIDTH}
+              height={contentStyle.height}
+            />
+          </Animated.View>
+        )}
       </View>
 
       {/* One commit, in a fixed place, naming what it will buy. Gold appears
@@ -336,18 +384,12 @@ export function PlanCarousel({
           </Touchable>
         </View>
       ) : null}
-      {showRestore &&
-      onRestore &&
-      (busy === "restore" || (loading && busy === null)) ? (
+      {/* Only the restore's own wait. A background balance check used to
+          show a spinner here too, coming and going under the run on every
+          visit; the skeleton above is the one loading state now. */}
+      {showRestore && onRestore && busy === "restore" ? (
         <View className="items-center">
-          <Spinner
-            size="sm"
-            label={
-              busy === "restore"
-                ? "Looking for your subscription"
-                : "Checking your plan"
-            }
-          />
+          <Spinner size="sm" label="Looking for your subscription" />
         </View>
       ) : null}
 
