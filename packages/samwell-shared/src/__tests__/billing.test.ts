@@ -277,7 +277,7 @@ describe('the model catalogue', () => {
     );
 
     expect(defaults).toEqual({
-      maester: 'openai/gpt-5.6-luna',
+      maester: 'openai/gpt-6-luna-pro',
       grand_maester: 'openai/gpt-5.6-terra',
       archmaester: 'anthropic/claude-opus-5',
     });

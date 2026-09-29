@@ -65,7 +65,7 @@ retire() { # <model-id>
 
 echo "Maester"
 register 'z-ai/glm-5.3-flash'              maester
-register 'openai/gpt-5.6-luna'             maester
+register 'openai/gpt-6-luna-pro'           maester
 register 'deepseek/deepseek-v4-flash-0731' maester
 
 echo "Grand Maester"
@@ -82,10 +82,14 @@ register 'moonshotai/kimi-k3'              archmaester
 # Left alone they sit at the migration default - the dearest tier - so an
 # Archmaester would quietly still be offered them. Retired instead.
 #
-# `openai/gpt-5.6-luna` is deliberately NOT here: it is ONBOARDING_MODEL_ID,
+# `openai/gpt-6-luna-pro` must never be retired: it is ONBOARDING_MODEL_ID,
 # and an onboarding turn billed to the reader looks the model up in the whole
 # catalogue, where a missing row answers 503 rather than falling back. It is
 # in the Maester tier above.
+#
+# `openai/gpt-5.6-luna` held that slot, and the onboarding one, before it.
+# Point ONBOARDING_MODEL_ID at the new model before running this, or paid
+# onboarding turns 503 until you do.
 #
 # Safe to run: `deleteCloudModel` promotes a new default if it removes the
 # current one, and a reader holding a retired id is healed on their next
@@ -93,6 +97,7 @@ register 'moonshotai/kimi-k3'              archmaester
 echo "Retiring models from before plans"
 retire 'anthropic/claude-sonnet-4.5'
 retire 'google/gemini-2.5-flash'
+retire 'openai/gpt-5.6-luna'
 
 echo
 echo "Catalogue now:"
