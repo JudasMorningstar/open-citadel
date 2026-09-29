@@ -145,6 +145,16 @@ export async function openDiscoveredShow(show: Pick<DiscoveredShow, "appleId" | 
   return stored.id;
 }
 
+/**
+ * Follows a show found in the directory without opening it first: Samwell
+ * following shows during onboarding, where the reader chose from his picks
+ * rather than from the show's page.
+ */
+export async function followDiscoveredShow(show: Pick<DiscoveredShow, "appleId" | "feedUrl">): Promise<void> {
+  await addShowFromFeed(await resolveFeedUrl(show), "subscribed");
+  invalidatePodcastLibrary();
+}
+
 /** The same, for a feed address or an Apple Podcasts link someone pasted. */
 export async function openPastedShow(input: string): Promise<string> {
   const appleId = appleIdFromLink(input);

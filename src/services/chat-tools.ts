@@ -692,6 +692,10 @@ export const TOOL_STATUS: Record<string, string> = {
   set_up_library: 'Setting up your library…',
   find_free_books: 'Looking through Project Gutenberg…',
   download_free_books: 'Downloading your books…',
+  find_podcasts: 'Looking for podcasts…',
+  follow_podcasts: 'Following those shows…',
+  list_blogs: 'Looking through the blogs…',
+  follow_blogs: 'Following those blogs…',
   finish_onboarding: 'Wrapping up…',
 };
 

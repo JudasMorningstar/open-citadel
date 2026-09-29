@@ -6,6 +6,7 @@ import { ArrowRight, LibraryBig, Send, Square } from '@/components/icons';
 import { GoldButton } from '@/components/ui/gold-button';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, spacing } from '@/constants/theme';
+import { OnboardingLeaveLink } from '@/features/onboarding/components/onboarding-leave-link';
 import { cn } from '@/lib/cn';
 import { asColor } from '@/utils/colors';
 
@@ -46,6 +47,7 @@ export const OnboardingComposer = React.memo(function OnboardingComposer({
   onSend,
   onStop,
   onFinish,
+  canLeave,
   busy,
   bottomInset,
 }: {
@@ -56,6 +58,11 @@ export const OnboardingComposer = React.memo(function OnboardingComposer({
   onSend: () => void;
   onStop: () => void;
   onFinish: () => void;
+  /**
+   * Something is in their library, so the way out shows above the field while
+   * they are still talking. See `OnboardingLeaveLink`.
+   */
+  canLeave: boolean;
   /** A reply is being written. The send corner becomes stop. */
   busy: boolean;
   /** The home indicator, so nothing sits under it. */
@@ -101,47 +108,50 @@ export const OnboardingComposer = React.memo(function OnboardingComposer({
 
   return (
     <View
-      className="flex-row items-end gap-2 border-t border-border bg-background px-3 pt-2"
+      className="border-t border-border bg-background px-3 pt-2"
       style={{ paddingBottom: Math.max(bottomInset, spacing[2]) }}
     >
-      <TextInput
-        className="max-h-[120px] min-h-[40px] flex-1 bg-muted px-3 py-2 text-[15px] text-foreground"
-        style={{ fontFamily: fontFamily.sans }}
-        placeholder="Reply to Samwell…"
-        placeholderTextColor={asColor(mutedForeground)}
-        value={value}
-        onChangeText={onChangeText}
-        multiline
-        editable={!busy}
-        onSubmitEditing={onSend}
-      />
+      {canLeave && <OnboardingLeaveLink onPress={onFinish} disabled={busy} />}
+      <View className="flex-row items-end gap-2">
+        <TextInput
+          className="max-h-[120px] min-h-[40px] flex-1 bg-muted px-3 py-2 text-[15px] text-foreground"
+          style={{ fontFamily: fontFamily.sans }}
+          placeholder="Reply to Samwell…"
+          placeholderTextColor={asColor(mutedForeground)}
+          value={value}
+          onChangeText={onChangeText}
+          multiline
+          editable={!busy}
+          onSubmitEditing={onSend}
+        />
 
-      {/* Send or stop, never both and never neither, exactly as the reading
-          composer does it. While a reply is coming the only useful action is
-          to call it off. */}
-      {busy ? (
-        <Touchable
-          className="h-10 w-10 items-center justify-center bg-surface-tertiary"
-          onPress={onStop}
-          accessibilityRole="button"
-          accessibilityLabel="Stop generating"
-        >
-          <Square size={16} color={asColor(foreground)} fill={asColor(foreground)} />
-        </Touchable>
-      ) : (
-        <Touchable
-          className={cn(
-            'h-10 w-10 items-center justify-center bg-primary',
-            !canSend && 'bg-surface-tertiary',
-          )}
-          onPress={onSend}
-          disabled={!canSend}
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-        >
-          <Send size={16} color={canSend ? asColor(primaryForeground) : asColor(mutedForeground)} />
-        </Touchable>
-      )}
+        {/* Send or stop, never both and never neither, exactly as the reading
+            composer does it. While a reply is coming the only useful action is
+            to call it off. */}
+        {busy ? (
+          <Touchable
+            className="h-10 w-10 items-center justify-center bg-surface-tertiary"
+            onPress={onStop}
+            accessibilityRole="button"
+            accessibilityLabel="Stop generating"
+          >
+            <Square size={16} color={asColor(foreground)} fill={asColor(foreground)} />
+          </Touchable>
+        ) : (
+          <Touchable
+            className={cn(
+              'h-10 w-10 items-center justify-center bg-primary',
+              !canSend && 'bg-surface-tertiary',
+            )}
+            onPress={onSend}
+            disabled={!canSend}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Send size={16} color={canSend ? asColor(primaryForeground) : asColor(mutedForeground)} />
+          </Touchable>
+        )}
+      </View>
     </View>
   );
 });

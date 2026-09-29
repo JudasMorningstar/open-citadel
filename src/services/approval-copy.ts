@@ -1,3 +1,5 @@
+import { approve, stringField, type ApprovalCopy } from '@/services/approval-copy/base';
+import { onboardingApprovalCopy } from '@/services/onboarding-tools/approval';
 import type { PendingApproval } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 
@@ -16,29 +18,12 @@ import { useCompassStore } from '@/stores/compass';
  * ways.
  */
 
-export type ApprovalCopy = {
-  title: string;
-  body: string;
-  confirmLabel: string;
-  destructive: boolean;
-};
-
-function stringField(input: unknown, key: string): string | undefined {
-  if (input && typeof input === 'object' && key in input) {
-    const value = (input as Record<string, unknown>)[key];
-    return typeof value === 'string' ? value : undefined;
-  }
-  return undefined;
-}
+export type { ApprovalCopy } from '@/services/approval-copy/base';
 
 function bookCountFrom(input: unknown): number {
   const titles =
     input && typeof input === 'object' ? (input as { book_titles?: unknown }).book_titles : undefined;
   return Array.isArray(titles) && titles.length > 0 ? titles.length : 1;
-}
-
-function approve(title: string, body: string): ApprovalCopy {
-  return { title, body, confirmLabel: 'APPROVE', destructive: false };
 }
 
 /**
@@ -125,35 +110,9 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
       };
   }
 
-  /*
-   * Onboarding. Both of these are asked by somebody the reader met ninety
-   * seconds ago, so each one names what happens to their files rather than
-   * naming the tool. The Android wording says MOVES because it does, and
-   * finding that out afterwards is the one thing that would break the trust
-   * this whole conversation exists to build.
-   */
-  switch (toolName) {
-    case 'set_up_library':
-      return {
-        title: 'Set up your library?',
-        body:
-          process.env.EXPO_OS === 'ios'
-            ? 'Samwell will ask you to pick your EPUB books, then copy them into the folder Open Citadel keeps. Your originals stay exactly where they are.'
-            : 'Samwell will ask you which folder your books are in, make an Open Citadel folder inside it, and move every EPUB he finds into it. The books stay on your phone, in the new folder.',
-        confirmLabel: 'SET IT UP',
-        destructive: false,
-      };
-    case 'download_free_books': {
-      const count = Array.isArray((input as { gutenberg_ids?: unknown })?.gutenberg_ids)
-        ? (input as { gutenberg_ids: number[] }).gutenberg_ids.length
-        : 0;
-      const what = count === 1 ? 'this book' : count > 1 ? `these ${count} books` : 'these books';
-      return approve(
-        'Download them?',
-        `Samwell will download ${what} from Project Gutenberg into your Open Citadel folder. They are free and public domain.`,
-      );
-    }
-  }
+  // Onboarding's own, which name the shows and blogs being followed.
+  const onboarding = onboardingApprovalCopy(toolName, input);
+  if (onboarding) return onboarding;
 
   if (toolName === 'delete_highlight' || toolName === 'delete_thought') {
     const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';

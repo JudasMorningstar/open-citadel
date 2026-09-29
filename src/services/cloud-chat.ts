@@ -3,10 +3,15 @@ import type { StreamChunk } from '@tanstack/ai/client';
 import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
+  ONBOARDING_FEEDS_PROP,
   downloadFreeBooksTool,
   explainAppTool,
   findFreeBooksTool,
+  findPodcastsTool,
   finishOnboardingTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
   setUpLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
@@ -61,7 +66,11 @@ import { cloudHeaders } from '@/services/cloud-identity';
 import {
   runDownloadFreeBooks,
   runFindFreeBooks,
+  runFindPodcasts,
   runFinishOnboarding,
+  runFollowBlogs,
+  runFollowPodcasts,
+  runListBlogs,
   runSetUpLibrary,
 } from '@/services/onboarding-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
@@ -459,15 +468,16 @@ function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
   if (COMPASS_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your confirmation…';
-  // Both of these touch the reader's own files, and one of them deletes. The
-  // row says so rather than saying "working", because the thing being waited
-  // on is a person deciding whether to let it happen.
+  // Each of these changes what is on the reader's device, and one of them
+  // deletes. The row says so rather than saying "working", because the thing
+  // being waited on is a person deciding whether to let it happen.
   if (ONBOARDING_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your go-ahead…';
   return toolStatus(toolName);
 }
 
 /**
- * Onboarding's tools: the library, the free books, and the way out.
+ * Onboarding's tools: the library, the free books, a few podcasts and blogs,
+ * and the way out.
  *
  * Nothing from the reading or Compass catalogues, and that is structural
  * rather than a matter of taste. This is the only conversation where the model
@@ -483,6 +493,10 @@ function createOnboardingClientTools(onFinished: () => void) {
     setUpLibraryTool.client(async () => runSetUpLibrary()),
     findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
     downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+    findPodcastsTool.client(async (input) => runFindPodcasts(input)),
+    followPodcastsTool.client(async (input) => runFollowPodcasts(input)),
+    listBlogsTool.client(async () => runListBlogs()),
+    followBlogsTool.client(async (input) => runFollowBlogs(input)),
     finishOnboardingTool.client(async () => {
       const result = await runFinishOnboarding();
       // The turn is over the moment this returns. See `finished` in
@@ -954,8 +968,8 @@ export async function sendCloudChatTurn({
     connection: xhrHttpStream(endpointFor(mode, baseUrl, metered), {
       headers,
     }),
-    forwardedProps:
-      mode === 'onboarding' && !metered
+    forwardedProps: {
+      ...(mode === 'onboarding' && !metered
         ? // The free route reads none of these. The model is the server's
           // choice because the house is paying for it, and there is no
           // thinking budget to honour because nobody has been shown the
@@ -967,7 +981,11 @@ export async function sendCloudChatTurn({
             // One word. The server maps it to a reasoning effort and a coupled
             // reply budget, so a deep think cannot starve the answer.
             thinkingBudget: cloudThinkingBudget,
-          },
+          }),
+      // This build can follow podcasts and blogs, so the server offers them.
+      // On both onboarding routes; see `ONBOARDING_FEEDS_PROP`.
+      ...(mode === 'onboarding' ? { [ONBOARDING_FEEDS_PROP]: true } : {}),
+    },
     tools:
       mode === 'onboarding'
         ? createOnboardingClientTools(endConversation)

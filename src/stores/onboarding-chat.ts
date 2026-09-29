@@ -13,6 +13,9 @@ import {
 import { sendCloudChatTurn } from '@/services/cloud-chat';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { hasLibrary } from '@/services/library-setup';
+import { libraryHasSomething } from '@/services/onboarding-tools/library';
+import { onLibraryReady } from '@/services/onboarding-tools/library-ready';
+import { clearShortlists } from '@/services/onboarding-tools/shortlist';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -95,19 +98,20 @@ type OnboardingChatState = {
    */
   metered: boolean;
 
-  /** Resolve or create the session. Safe to call more than once. */
   /**
-   * Their library exists, whatever the conversation does next.
+   * Something is in their library, whatever the conversation does next.
    *
-   * Set by the tools that make it, and read by the composer so the way out of
+   * Set by the tools that put it there (books moved in or downloaded, a show
+   * or a blog followed), and read by the composer so the way out of
    * onboarding never depends on the model remembering to call
    * `finish_onboarding`. It is NOT a second copy of "onboarding is over": that
    * still lives in `settings.onboarding` and is still what the router reads.
-   * This is a different fact — the books are on the device — and the composer
-   * derives one decision from the two of them.
+   * This is a different fact, and the composer draws a different way out from
+   * each.
    */
   libraryReady: boolean;
   markLibraryReady: () => void;
+  /** Resolve or create the session. Safe to call more than once. */
   start: () => Promise<void>;
   send: (text: string) => Promise<void>;
   stop: () => void;
@@ -189,15 +193,11 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
          * gone: the Android folder picker backgrounds the app, and being
          * killed there is ordinary. Without this the reader comes back to a
          * library that exists and a conversation with no way out of it.
-         *
-         * Only on resume. On a fresh start this would be true for anyone
-         * reinstalling, and the composer would offer them the exit before
-         * Samwell had said a word.
          */
         set({
           sessionId: existing.id,
           messages: readMessages(existing.id),
-          libraryReady: await hasLibrary(),
+          libraryReady: await libraryHasSomething(),
         });
       } else {
         const id = uuid();
@@ -239,7 +239,17 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
           createdAt: ts,
         });
 
-        set({ sessionId: id, messages: readMessages(id) });
+        /*
+         * Seeded on a fresh start too, which it once could not be: it used to
+         * swap the text field for the exit, so somebody reinstalling would
+         * have been offered the way out before Samwell said a word. Now it
+         * only adds a link over the field, and the link does not draw until
+         * they have said something. Without it, somebody who already had a
+         * library, declined podcasts and blogs, and got a goodbye with no
+         * `finish_onboarding` had no way out at all.
+         */
+        clearShortlists();
+        set({ sessionId: id, messages: readMessages(id), libraryReady: await libraryHasSomething() });
       }
 
       const { cloudBaseUrl } = useSettingsStore.getState();
@@ -382,3 +392,7 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
     cloudAbort?.abort();
   },
 }));
+
+// The tools that fill the library say so through this rather than importing
+// the store, which reaches them through `cloud-chat`.
+onLibraryReady(() => useOnboardingChatStore.getState().markLibraryReady());

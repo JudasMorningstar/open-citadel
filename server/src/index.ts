@@ -10,8 +10,9 @@ import { logger } from 'hono/logger';
 import {
   COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
-  ONBOARDING_CLIENT_TOOL_DEFINITIONS,
-  ONBOARDING_SYSTEM_PROMPT,
+  onboardingClientToolDefinitions,
+  onboardingSystemPrompt,
+  readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_JOURNEY_TOOL_PROMPT,
@@ -158,12 +159,12 @@ function readMode(body: RunAgentInput): SamwellMode {
  * re-sent on every request, so they are part of what the reader pays for -
  * and one mode-to-prompts decision is one chance to keep the two agreeing.
  */
-function personaPromptsFor(mode: SamwellMode): string[] {
+function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean): string[] {
   // Compass names search_journey in its own prompt, since Compass only
   // ever runs here. The reading persona is shared with the on-device
   // engine, so the journey paragraph is added on this route alone.
   if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT];
-  if (mode === 'onboarding') return [ONBOARDING_SYSTEM_PROMPT];
+  if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
   return [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT, SAMWELL_APP_GUIDE_TOOL_PROMPT];
 }
 
@@ -781,6 +782,9 @@ app.post('/chat/http', async (c) => {
   }
 
   const mode = readMode(body);
+  // Onboarding's podcasts and blogs, for a build that can follow them. See
+  // `ONBOARDING_FEEDS_PROP`.
+  const onboardingFeeds = readOnboardingFeeds(body.forwardedProps);
 
   /*
    * Onboarding is on the house, on this route as much as on the free one.
@@ -956,7 +960,7 @@ app.post('/chat/http', async (c) => {
       ) +
       // The persona and the book grounding are re-sent by the server on every
       // request; the client never sends them, so the estimate adds them.
-      [...personaPromptsFor(mode), ...sessionSystemPrompts].reduce(
+      [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts].reduce(
         (sum, text) => sum + estimateTextTokens(text),
         0,
       );
@@ -1091,12 +1095,12 @@ app.post('/chat/http', async (c) => {
      * separate structured-output route, and everything unstable about it came
      * from that separation rather than from anything Compass does.
      */
-    systemPrompts: [...personaPromptsFor(mode), ...sessionSystemPrompts],
+    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
     tools:
       mode === 'compass'
         ? COMPASS_CLIENT_TOOL_DEFINITIONS
         : mode === 'onboarding'
-          ? ONBOARDING_CLIENT_TOOL_DEFINITIONS
+          ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
           : SAMWELL_CLIENT_TOOL_DEFINITIONS,
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,

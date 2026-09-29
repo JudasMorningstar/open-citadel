@@ -1,14 +1,22 @@
 import { toolDefinition } from '@tanstack/ai/client';
 import { z } from 'zod';
 
+import {
+  findPodcastsTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
+  ONBOARDING_FEED_TOOL_NAMES,
+} from './onboarding-follow-tools';
 import { explainAppTool } from './tools';
 
 /**
- * The four things Samwell can do while setting somebody up.
+ * The things Samwell can do while setting somebody up.
  *
- * All four execute on the device, because all four touch the device: a folder,
- * the reader's own files, a download, and the flag that says onboarding is
- * over. The server only defines the shapes and never sees a filename.
+ * All of them execute on the device, because all of them touch the device: a
+ * folder, the reader's own files, a download, a followed show or blog, and the
+ * flag that says onboarding is over. The server only defines the shapes and
+ * never sees a filename.
  *
  * This is a deliberately tiny catalogue. Onboarding is the one conversation
  * where the model has never met the person and cannot be steered by anything
@@ -140,6 +148,12 @@ export const ONBOARDING_TOOL_DEFINITIONS = [
   setUpLibraryTool,
   findFreeBooksTool,
   downloadFreeBooksTool,
+  // Podcasts and blogs, the Library's other two sides. See
+  // `onboarding-follow-tools`.
+  findPodcastsTool,
+  followPodcastsTool,
+  listBlogsTool,
+  followBlogsTool,
   finishOnboardingTool,
   /*
    * The same tool reading chat carries, and the same guide behind it.
@@ -152,17 +166,30 @@ export const ONBOARDING_TOOL_DEFINITIONS = [
   explainAppTool,
 ] as const;
 
-export const ONBOARDING_CLIENT_TOOL_DEFINITIONS = ONBOARDING_TOOL_DEFINITIONS.map((tool) =>
-  tool.client(),
+const ALL_CLIENT_TOOLS = ONBOARDING_TOOL_DEFINITIONS.map((tool) => tool.client());
+const BOOKS_ONLY_CLIENT_TOOLS = ALL_CLIENT_TOOLS.filter(
+  (tool) => !ONBOARDING_FEED_TOOL_NAMES.has(tool.name),
 );
 
 /**
- * The two that touch the reader's files, and so must be confirmed first.
+ * What the route sends, for the build on the other end. One from before
+ * podcasts and blogs has no code to run their tools, so it is never offered
+ * them. See `ONBOARDING_FEEDS_PROP`.
+ */
+export function onboardingClientToolDefinitions({ feeds }: { feeds: boolean }) {
+  return feeds ? ALL_CLIENT_TOOLS : BOOKS_ONLY_CLIENT_TOOLS;
+}
+
+/**
+ * The ones that change what is on the reader's device, and so must be
+ * confirmed first.
  *
  * `set_up_library` deletes EPUBs from their storage on Android once it has
  * copied them, and `download_free_books` writes new files into a folder of
  * theirs. Neither is undoable from a conversation, and both are being asked
- * for by a model that has known the person for about ninety seconds.
+ * for by a model that has known the person for about ninety seconds. The two
+ * follows are undoable, but they are still choices made in the reader's name,
+ * and the card is where they see which shows and blogs those are.
  *
  * Read by the client to pick the right waiting message; the gate itself is the
  * `needsApproval` flag on the definitions above.
@@ -170,6 +197,8 @@ export const ONBOARDING_CLIENT_TOOL_DEFINITIONS = ONBOARDING_TOOL_DEFINITIONS.ma
 export const ONBOARDING_APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
   'set_up_library',
   'download_free_books',
+  'follow_podcasts',
+  'follow_blogs',
 ]);
 
 export const ONBOARDING_TOOL_NAMES: ReadonlySet<string> = new Set(

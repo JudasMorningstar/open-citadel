@@ -3,8 +3,9 @@ import { openRouterText } from '@tanstack/ai-openrouter';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
-  ONBOARDING_CLIENT_TOOL_DEFINITIONS,
-  ONBOARDING_SYSTEM_PROMPT,
+  onboardingClientToolDefinitions,
+  onboardingSystemPrompt,
+  readOnboardingFeeds,
   resolveContextTokens,
 } from 'samwell-shared';
 
@@ -51,6 +52,7 @@ type RunInput = {
   threadId?: string;
   runId?: string;
   messages?: unknown[];
+  forwardedProps?: Record<string, unknown>;
 };
 
 /** Same share of the window the metered route uses. See CONTEXT_BUDGET_RATIO. */
@@ -104,6 +106,9 @@ onboardingRoutes.post('/chat', async (c) => {
     .filter((m) => m?.role === 'system' && typeof m.content === 'string' && m.content.trim())
     .map((m) => m.content as string);
   const conversationMessages = rawMessages.filter((m) => m?.role !== 'system');
+  // Podcasts and blogs only for a build that can follow them. See
+  // `ONBOARDING_FEEDS_PROP`.
+  const feeds = readOnboardingFeeds(body.forwardedProps);
 
   const modelId = await getOnboardingModelId();
   const knownModels = await listCloudModels();
@@ -117,8 +122,8 @@ onboardingRoutes.post('/chat', async (c) => {
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
     }),
     messages: conversationMessages as any,
-    systemPrompts: [ONBOARDING_SYSTEM_PROMPT, ...sessionSystemPrompts],
-    tools: ONBOARDING_CLIENT_TOOL_DEFINITIONS,
+    systemPrompts: [onboardingSystemPrompt({ feeds }), ...sessionSystemPrompts],
+    tools: onboardingClientToolDefinitions({ feeds }),
     threadId: body.threadId,
     runId: body.runId ?? `onboarding-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     middleware: [

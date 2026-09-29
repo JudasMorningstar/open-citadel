@@ -11,6 +11,7 @@ export * from './journal';
 export * from './limits';
 export * from './models';
 export * from './onboarding';
+export * from './onboarding-follow-tools';
 export * from './onboarding-tools';
 export * from './persona';
 export * from './tags';
