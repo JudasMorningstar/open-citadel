@@ -82,13 +82,13 @@ register 'openai/gpt-6-luna-pro'           maester
 register 'deepseek/deepseek-v4-flash-0731' maester
 
 echo "Grand Maester"
-register 'anthropic/claude-sonnet-5'       grand_maester
+register 'anthropic/claude-sonnet-5.5'     grand_maester
 register 'openai/gpt-5.6-terra'            grand_maester
 register 'deepseek/deepseek-v4-pro-0813'   grand_maester
 
 echo "Archmaester"
-register 'anthropic/claude-opus-5'         archmaester
-register 'openai/gpt-5.6-sol'              archmaester
+register 'anthropic/claude-opus-5.5'       archmaester
+register 'openai/gpt-6-sol'                archmaester
 register 'moonshotai/kimi-k3'              archmaester
 
 # Rows carried over from before plans existed that are NOT in the nine above.
@@ -111,6 +111,10 @@ echo "Retiring models from before plans"
 retire 'anthropic/claude-sonnet-4.5'
 retire 'google/gemini-2.5-flash'
 retire 'openai/gpt-5.6-luna'
+# Replaced by their newer versions in the same tier, 2026-09-29.
+retire 'anthropic/claude-sonnet-5'
+retire 'anthropic/claude-opus-5'
+retire 'openai/gpt-5.6-sol'
 
 echo
 echo "Catalogue now:"
