@@ -493,10 +493,10 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..54a0a0e65a7c435621b850ee1d0f2948
  }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt b/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a72858541417817a6e8302
+index 0000000000000000000000000000000000000000..68e0662d733092cda95dbd09de1e5e35d3714d43
 --- /dev/null
 +++ b/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,245 @@
 +package com.reactnativereadium.reader.tts
 +
 +import android.media.AudioAttributes
@@ -565,8 +565,6 @@ index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a7285854141781
 +    private var requestStarted: Boolean = false
 +    private var audioTrack: AudioTrack? = null
 +    private var trackSampleRate: Int = 0
-+    /** Cumulative frames written to the current [audioTrack] — see its use in [provideAudioChunk]. */
-+    private var framesWritten: Long = 0
 +
 +    /**
 +     * Runs every [AudioTrack.write] in order, off whatever thread calls
@@ -657,24 +655,6 @@ index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a7285854141781
 +            listener?.onStart(TtsEngine.RequestId(id))
 +        }
 +
-+        if (isLast) {
-+            val finishedId = id
-+            // Register before the write is even queued: a short final chunk
-+            // can reach and drain past this frame count on `writeQueue`
-+            // before this method returns to set the marker any later.
-+            track.setNotificationMarkerPosition((framesWritten + samples.size).toInt())
-+            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-+                override fun onMarkerReached(t: AudioTrack) {
-+                    if (activeRequestId == finishedId) {
-+                        activeRequestId = null
-+                        listener?.onDone(TtsEngine.RequestId(finishedId))
-+                    }
-+                }
-+
-+                override fun onPeriodicNotification(t: AudioTrack) {}
-+            })
-+        }
-+        framesWritten += samples.size
 +        // See `writeQueue`'s own doc: this is the call that must not block
 +        // the thread `provideAudioChunk` was called on. Re-checks
 +        // `activeRequestId` once it actually runs — `stop()`/a superseding
@@ -682,8 +662,25 @@ index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a7285854141781
 +        // writing, and a track already flushed for the next utterance should
 +        // not receive this one's leftover audio.
 +        writeQueue.execute {
-+            if (activeRequestId == requestId) {
-+                track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
++            if (activeRequestId != requestId) return@execute
++            track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
++            if (isLast && activeRequestId == requestId) {
++                // Signals "done" the moment this utterance's last byte is
++                // queued, not once the track has actually played it —
++                // `AudioTrack.setNotificationMarkerPosition`, which this used
++                // to wait on, silently never fires for some marker positions
++                // on some devices (an old, well-documented AudioTrack quirk,
++                // and more exposed the longer the same streaming track has
++                // been reused, which is every book after its first page).
++                // When it doesn't fire, the navigator never asks for the next
++                // utterance and the book just stops — no error, nothing to
++                // recover from short of the reader skipping manually. Firing
++                // here loses nothing audible: the next utterance's audio
++                // still queues onto this same continuous track right behind
++                // this one, so playback stays gapless regardless of when JS
++                // is told it may start on it.
++                activeRequestId = null
++                listener?.onDone(TtsEngine.RequestId(requestId))
 +            }
 +        }
 +    }
@@ -708,7 +705,6 @@ index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a7285854141781
 +        }
 +
 +        audioTrack?.release()
-+        framesWritten = 0
 +        trackSampleRate = sampleRate
 +        val minBufferBytes = AudioTrack.getMinBufferSize(
 +            sampleRate,
@@ -744,7 +740,6 @@ index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a7285854141781
 +            it.pause()
 +            it.flush()
 +        }
-+        framesWritten = 0
 +    }
 +}
 diff --git a/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngineProvider.kt b/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngineProvider.kt
