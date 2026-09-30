@@ -40,7 +40,7 @@ import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
-import { TtsSettingsSheet } from "@/components/tts-settings-sheet";
+import { TtsSettingsSheet } from "@/features/tts/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";

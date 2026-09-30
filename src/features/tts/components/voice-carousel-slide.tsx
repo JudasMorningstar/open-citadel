@@ -7,7 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Carousel, useCarouselState } from '@/components/ui/carousel';
-import { VoiceCarouselCard, type VoiceCarouselCardProps } from '@/components/voice-carousel-card';
+import { VoiceCarouselCard, type VoiceCarouselCardProps } from '@/features/tts/components/voice-carousel-card';
 
 const REST_SCALE = 1;
 const AWAY_SCALE = 0.92;

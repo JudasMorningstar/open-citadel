@@ -2,13 +2,13 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { NativeVoicePicker } from '@/components/native-voice-picker';
-import { ReadingSpeedStepper } from '@/components/reading-speed-stepper';
+import { NativeVoicePicker } from '@/features/tts/components/native-voice-picker';
+import { ReadingSpeedStepper } from '@/features/tts/components/reading-speed-stepper';
 import { ThemedText } from '@/components/themed-text';
-import { TtsDownloadCard } from '@/components/tts-download-card';
-import { TtsModeCards } from '@/components/tts-mode-cards';
+import { TtsDownloadCard } from '@/features/tts/components/tts-download-card';
+import { TtsModeCards } from '@/features/tts/components/tts-mode-cards';
 import { Touchable } from '@/components/ui/touchable';
-import { VoiceCarousel } from '@/components/voice-carousel';
+import { VoiceCarousel } from '@/features/tts/components/voice-carousel';
 import {
   AI_VOICES_SUPPORTED,
   DEFAULT_VOICE,

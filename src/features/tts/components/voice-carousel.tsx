@@ -4,9 +4,9 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Carousel } from '@/components/ui/carousel';
-import { useVoicePreview } from '@/components/use-voice-preview';
-import { VoiceCarouselDots } from '@/components/voice-carousel-dots';
-import { VoiceCarouselSlide } from '@/components/voice-carousel-slide';
+import { useVoicePreview } from '@/features/tts/hooks/use-voice-preview';
+import { VoiceCarouselDots } from '@/features/tts/components/voice-carousel-dots';
+import { VoiceCarouselSlide } from '@/features/tts/components/voice-carousel-slide';
 import { KOKORO_VOICES, resolveVoice } from '@/services/device-tts/catalogue';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';

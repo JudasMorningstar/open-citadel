@@ -1,4 +1,4 @@
-import { TtsSettingsPanel } from '@/components/tts-settings-panel';
+import { TtsSettingsPanel } from '@/features/tts/components/tts-settings-panel';
 import { SettingsSection } from '@/features/settings/components/settings-section';
 
 /** Text-to-speech: the voice pack's download state, reading speed, and voice. */

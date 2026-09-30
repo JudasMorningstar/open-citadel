@@ -3,9 +3,9 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { AudioLines, ChevronUp } from '@/components/icons';
-import { DeviceVoiceSheet } from '@/components/device-voice-sheet';
+import { DeviceVoiceSheet } from '@/features/tts/components/device-voice-sheet';
 import { ThemedText } from '@/components/themed-text';
-import { useDeviceVoices } from '@/components/use-device-voices';
+import { useDeviceVoices } from '@/features/tts/hooks/use-device-voices';
 import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Touchable } from '@/components/ui/touchable';

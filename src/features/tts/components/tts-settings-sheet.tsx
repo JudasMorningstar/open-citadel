@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { PageFade } from '@/components/scroll-fades';
-import { TtsSettingsPanel } from '@/components/tts-settings-panel';
+import { TtsSettingsPanel } from '@/features/tts/components/tts-settings-panel';
 import { Sheet } from '@/components/ui/sheet';
 
 export interface TtsSettingsSheetProps {

@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { DeviceVoiceItem } from '@/components/device-voice-item';
+import { DeviceVoiceItem } from '@/features/tts/components/device-voice-item';
 import { PageFade } from '@/components/scroll-fades';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { ThemedText } from '@/components/themed-text';
