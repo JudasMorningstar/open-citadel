@@ -22,6 +22,12 @@ type SquareArtworkProps = {
   recyclingKey?: string;
   /** Resolved `--color-surface-tertiary`, for the empty mark. */
   placeholderColor?: string;
+  /**
+   * Fade the picture in as it loads, which suits a list filling in. Off for
+   * artwork that has to be there the moment it is (the player's, growing out
+   * of the mini player's): a fade there reads as a ghost of it.
+   */
+  fadeIn?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -37,7 +43,16 @@ const FILL = { width: '100%' as const, height: '100%' as const };
  * on decode), so a shelf of forty shows costs forty thumbnails rather than
  * forty posters.
  */
-function SquareArtworkBase({ uri, fallbackIcon: Fallback, monogram, size, recyclingKey, placeholderColor, style }: SquareArtworkProps) {
+function SquareArtworkBase({
+  uri,
+  fallbackIcon: Fallback,
+  monogram,
+  size,
+  recyclingKey,
+  placeholderColor,
+  fadeIn = true,
+  style,
+}: SquareArtworkProps) {
   const tokens = useThemeTokens();
   const letters = { fontFamily: fontFamily.serifMedium, fontSize: Math.round(size * 0.34), lineHeight: Math.round(size * 0.42) };
   return (
@@ -48,7 +63,7 @@ function SquareArtworkBase({ uri, fallbackIcon: Fallback, monogram, size, recycl
           style={FILL}
           contentFit="cover"
           placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-          transition={motion.slow}
+          transition={fadeIn ? motion.slow : 0}
           recyclingKey={recyclingKey}
           cachePolicy="memory-disk"
         />

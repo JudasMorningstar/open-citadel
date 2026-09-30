@@ -46,6 +46,7 @@ import { queryClient } from "@/lib/query-client";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
+    playerTransition,
     fadeTransition,
     hubTransition,
     sideTransition,
@@ -268,13 +269,15 @@ export default function RootLayout() {
   const screenTransitions = useMemo(() => {
     const fade = fadeTransition();
     if (reduceMotion) {
-      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, fade };
+      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, player: fade, fade };
     }
     return {
       hub: hubTransition({ scrim: scrimValue }),
       side: sideTransition({ side: 1, scrim: scrimValue }),
       sideEdge: sideTransition({ side: 1, scrim: scrimValue, edgeOnly: true }),
       drawer: drawerTransition({ scrim: scrimValue }),
+      // The player grows out of the mini player (see `playerTransition`).
+      player: playerTransition({ scrim: scrimValue }),
       // Onboarding's own, and it is a fade in both branches: the first screen
       // anyone sees has nowhere to slide in from. It belongs in this memo
       // rather than being built inline at the call site for the reason spelled
@@ -371,10 +374,10 @@ export default function RootLayout() {
                     options={screenTransitions.drawer}
                   />
                   {/* Podcasts. A show and an episode are places you go into, so
-                  they come in from the side like a chat. The player, Explore and
-                  a "View all" list rise from the bottom: the player out of the
-                  mini player that sits there, the other two over whatever
-                  opened them, like the books side's lists. */}
+                  they come in from the side like a chat. The player grows out
+                  of the mini player's artwork and shrinks back into it.
+                  Explore and a "View all" list rise from the bottom over
+                  whatever opened them, like the books side's lists. */}
                   <TransitionStack.Screen
                     name="podcasts/show/[id]"
                     options={screenTransitions.side}
@@ -385,7 +388,7 @@ export default function RootLayout() {
                   />
                   <TransitionStack.Screen
                     name="podcasts/player"
-                    options={screenTransitions.drawer}
+                    options={screenTransitions.player}
                   />
                   <TransitionStack.Screen
                     name="podcasts/explore"

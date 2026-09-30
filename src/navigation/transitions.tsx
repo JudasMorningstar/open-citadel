@@ -263,6 +263,58 @@ export function drawerTransition({ scrim }: { scrim: SharedValue<string> }): Scr
 }
 
 /**
+ * The tag shared by the mini player's artwork and the full player's, which is
+ * what the player grows out of and shrinks back into.
+ */
+export const NOW_PLAYING_ART = 'now-playing-art';
+
+/**
+ * Tap-driven open: settles with no overshoot. The close is finger-driven, so
+ * it carries the release velocity and lands a little faster.
+ */
+const PLAYER_OPEN = { duration: 280, dampingRatio: 1 } as const;
+const PLAYER_CLOSE = { duration: 240, dampingRatio: 0.86 } as const;
+
+/**
+ * The full player, grown out of the mini player.
+ *
+ * The mini player's artwork and the player's are one element: on a tap the
+ * small square grows into the large one while the rest of the player opens
+ * around it, and dragging the player down shrinks it back into the card it
+ * came from. That is the mini player and the player read as one object,
+ * which a drawer rising over the card never quite did: the card vanished
+ * under a screen that came from the bottom edge, not from it.
+ *
+ * Square: the mask keeps no corner radius, like everything else here. The
+ * screen underneath recedes by its own covered phase (`RECEDE_SCALE` and the
+ * scrim), so the reveal's own background scale is turned off rather than
+ * doubled.
+ *
+ * With nothing to grow from (the player opened with no mini player on
+ * screen), the link never completes and the reveal returns nothing; the
+ * drawer's rise takes over, so the player still arrives from where the mini
+ * player would have been.
+ */
+export function playerTransition({ scrim }: { scrim: SharedValue<string> }): ScreenTransitionConfig {
+  const drawer = drawerTransition({ scrim });
+  const rise = drawer.screenStyleInterpolator!;
+  return {
+    ...drawer,
+    navigationMaskEnabled: true,
+    transitionSpec: { open: PLAYER_OPEN, close: PLAYER_CLOSE },
+    screenStyleInterpolator: (args) => {
+      'worklet';
+      const reveal = args.bounds({ id: NOW_PLAYING_ART }).navigation.reveal({
+        borderRadius: 0,
+        borderContinuous: false,
+        backgroundScale: 1,
+      });
+      return reveal.content ? reveal : rise(args);
+    },
+  };
+}
+
+/**
  * The Reduce Motion substitute for all of the above. Spatial motion is exactly
  * what that setting asks us to drop, so every screen cross-fades in place and
  * the dismiss gesture goes with it — the header buttons and the system back

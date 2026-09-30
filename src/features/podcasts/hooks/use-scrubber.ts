@@ -32,6 +32,8 @@ export function useScrubber(
   duration: SharedValue<number>,
   onSeek: (seconds: number) => void,
   thumbSize: number,
+  /** Off while the player is still opening: the scrubber draws, but takes no touches yet. */
+  enabled: boolean,
 ) {
   const reduceMotion = useReducedMotion();
   const width = useSharedValue(0);
@@ -68,6 +70,7 @@ export function useScrubber(
   };
 
   const pan = Gesture.Pan()
+    .enabled(enabled)
     .activeOffsetX([-6, 6])
     .failOffsetY([-12, 12])
     .onStart((e) => {
@@ -81,15 +84,20 @@ export function useScrubber(
     .onFinalize((_e, success) => {
       if (!success && dragging.get()) letGo();
     });
-  const tap = Gesture.Tap().onEnd((e) => {
-    dragging.set(true);
-    grab(e.x);
-    release();
-  });
+  const tap = Gesture.Tap()
+    .enabled(enabled)
+    .onEnd((e) => {
+      dragging.set(true);
+      grab(e.x);
+      release();
+    });
 
   const trackStyle = useAnimatedStyle(() => ({ transform: [{ scaleY: 1 + held.get() * (HELD_TRACK_SCALE - 1) }] }));
   const fillStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: fraction.get() }] }));
   const thumbStyle = useAnimatedStyle(() => ({
+    // Hidden until the track has been measured, or it would draw at the
+    // start for a frame and then jump to where the episode is.
+    opacity: width.get() > 0 ? 1 : 0,
     transform: [
       { translateX: fraction.get() * width.get() - thumbSize / 2 },
       { scale: 1 + held.get() * (HELD_THUMB_SCALE - 1) },

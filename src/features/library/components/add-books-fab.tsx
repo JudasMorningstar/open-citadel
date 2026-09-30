@@ -1,11 +1,10 @@
 import React from 'react';
 import { useCSSVariable } from 'uniwind';
 
-import { fabPosition } from '@/components/fab-placement';
+import { FabLift } from '@/components/fab-lift';
 import { FolderPlus, LibraryBig, Plus, type LucideIcon } from '@/components/icons';
 import { ScreenFab } from '@/components/screen-fab';
 import { Fab } from '@/components/ui/fab';
-import { useFabBottom } from '@/hooks/use-fab-bottom';
 import type { AddBooksKey, AddBooksOption } from '@/features/library/utils/add-books-menu';
 import { asColor } from '@/utils/colors';
 
@@ -22,8 +21,6 @@ type AddBooksFabProps = {
  */
 export function AddBooksFab({ options, onSelect }: AddBooksFabProps) {
   const [primary, primaryForeground] = useCSSVariable(['--color-primary', '--color-primary-foreground']);
-  const bottom = useFabBottom();
-  const style = React.useMemo(() => fabPosition(bottom), [bottom]);
   const gold = asColor(primary);
 
   if (options.length === 1) {
@@ -32,21 +29,25 @@ export function AddBooksFab({ options, onSelect }: AddBooksFabProps) {
   }
 
   return (
-    <Fab.Group
-      layout="menu"
-      appearance="wells"
-      // Square, like everything else here; the panel's corner is a number, not a theme token.
-      menuRadius={0}
-      placement="bottom-right"
-      haptics
-      style={style}
-      icon={<Plus size={24} color={asColor(primaryForeground)} strokeWidth={1.8} />}
-      accessibilityLabel="Add books"
-    >
-      {options.map(({ key, label }) => {
-        const Icon = ICONS[key];
-        return <Fab.Action key={key} icon={<Icon size={18} color={gold} />} label={label} onPress={() => onSelect(key)} />;
-      })}
-    </Fab.Group>
+    <FabLift>
+      {(position) => (
+        <Fab.Group
+          layout="menu"
+          appearance="wells"
+          // Square, like everything else here; the panel's corner is a number, not a theme token.
+          menuRadius={0}
+          placement="bottom-right"
+          haptics
+          style={position}
+          icon={<Plus size={24} color={asColor(primaryForeground)} strokeWidth={1.8} />}
+          accessibilityLabel="Add books"
+        >
+          {options.map(({ key, label }) => {
+            const Icon = ICONS[key];
+            return <Fab.Action key={key} icon={<Icon size={18} color={gold} />} label={label} onPress={() => onSelect(key)} />;
+          })}
+        </Fab.Group>
+      )}
+    </FabLift>
   );
 }

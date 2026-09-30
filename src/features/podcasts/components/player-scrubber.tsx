@@ -14,13 +14,15 @@ type PlayerScrubberProps = {
   position: SharedValue<number>;
   duration: SharedValue<number>;
   onSeek: (seconds: number) => void;
+  /** Takes touches. False while the player is still opening. */
+  live: boolean;
 };
 
 /** Where the episode is, and the way to move it. The behaviour is `useScrubber`'s. */
-export function PlayerScrubber({ position, duration, onSeek }: PlayerScrubberProps) {
+export function PlayerScrubber({ position, duration, onSeek, live }: PlayerScrubberProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
-  const scrubber = useScrubber(position, duration, onSeek, THUMB);
+  const scrubber = useScrubber(position, duration, onSeek, THUMB, live);
 
   return (
     <View className="gap-2">
