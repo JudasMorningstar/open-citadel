@@ -2,7 +2,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 
 import { blogKeys, type BlogSection } from '@/query-manager/blogs/keys';
 import { openDiscoveredBlog } from '@/services/blogs/actions';
-import { listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
+import { listAskableArticles, listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
 import { followedFeedUrls, getBlog, listFollowedBlogs } from '@/services/blogs/blogs';
 import type { ArticleItem, Blog, BlogItem } from '@/services/blogs/records';
 
@@ -22,7 +22,7 @@ export const HOME_LATEST_LIMIT = 8;
 /** A long list's cap: nobody scrolls further, and the rows are held in memory. */
 const LONG_LIST_LIMIT = 500;
 
-const HOME_SHELVES: ArticleShelf[] = ['continue', 'latest', 'saved'];
+const HOME_SHELVES: ArticleShelf[] = ['continue', 'latest', 'queue', 'favorites', 'finished'];
 
 export type BlogsHomeData = {
   blogs: BlogItem[];
@@ -62,6 +62,16 @@ export function createBlogSectionQueryOptions<TData = BlogSectionData>(
         ? { articles: [], blogs: await listFollowedBlogs() }
         : { articles: await listShelf(section, LONG_LIST_LIMIT), blogs: [] },
   } satisfies UseQueryOptions<BlogSectionData, Error, TData>;
+}
+
+/** Every post, for Samwell's post picker. */
+export function createAskableArticlesQueryOptions<TData = ArticleItem[]>(options?: Options<ArticleItem[], TData>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.askable(),
+    queryFn: () => listAskableArticles(LONG_LIST_LIMIT),
+  } satisfies UseQueryOptions<ArticleItem[], Error, TData>;
 }
 
 export function createBlogQueryOptions(id: string, options?: Options<Blog | null>) {

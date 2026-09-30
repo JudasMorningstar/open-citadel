@@ -3,16 +3,17 @@
  *
  * A post is known by its blog and its link, so a refresh adds what is new and
  * brings the rest up to date (writers fix typos and retitle posts) without
- * touching whether it was read, saved or opened. Posts past the newest
- * `KEEP_PER_BLOG` are let go unless they were saved or opened: a blog that
+ * touching whether it was read, queued or opened. Posts past the newest
+ * `KEEP_PER_BLOG` are let go unless they were kept on purpose: a blog that
  * posts daily would otherwise grow without end. Feeds carry their newest
  * few dozen posts at most, so a post let go never comes back on a refresh,
  * which is what Read You keeps a table of archived links to prevent.
  */
-import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, eq, not, notInArray, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { blogArticles } from '@/db/schema';
+import { keptOnPurpose } from '@/services/blogs/articles';
 import type { ParsedArticle } from '@/services/blogs/feed-parser';
 import { KEEP_PER_BLOG } from '@/services/blogs/records';
 import { chunk, newId, nowIso, yieldToUi } from '@/services/rows';
@@ -76,8 +77,7 @@ async function trimBlog(blogId: string): Promise<void> {
     .where(
       and(
         eq(blogArticles.blogId, blogId),
-        isNull(blogArticles.savedAt),
-        isNull(blogArticles.bookId),
+        not(keptOnPurpose),
         notInArray(blogArticles.id, keep),
       ),
     );

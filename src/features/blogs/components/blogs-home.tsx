@@ -25,8 +25,12 @@ type BlogsHomeProps = {
 
 const articleKey = (article: ArticleItem) => article.id;
 
-/** The shelves, in the order a reader reaches for them: what they are in the middle of, what is new, what they kept. */
-const ORDER: BlogSection[] = ['continue', 'latest', 'blogs', 'saved'];
+/**
+ * The shelves, in the order a reader reaches for them: what they are in the
+ * middle of, what is new, what they kept, and what they have read, the last
+ * three named and ordered as the books' are.
+ */
+const ORDER: BlogSection[] = ['continue', 'latest', 'queue', 'favorites', 'blogs', 'finished'];
 
 /**
  * The blogs side of the Library, laid out the way the podcasts side is:

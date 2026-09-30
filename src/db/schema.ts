@@ -777,8 +777,12 @@ export const blogArticles = sqliteTable(
     fetchedAt: text("fetched_at").notNull(),
     /** Null while unread. */
     readAt: text("read_at"),
-    /** Null unless kept to read later. Saved posts are never tidied away. */
+    /** Null unless in the queue (kept to read later); the column predates the name. */
     savedAt: text("saved_at"),
+    /** Null unless a favorite. */
+    favoritedAt: text("favorited_at"),
+    /** Null until marked finished. A finished post leaves Continue Reading and the queue. */
+    finishedAt: text("finished_at"),
     /** The reader's copy (`books.kind = 'article'`), once opened. Never tidied away either. */
     bookId: text("book_id"),
   },
@@ -786,6 +790,8 @@ export const blogArticles = sqliteTable(
     uniqueIndex("blog_articles_blog_link_idx").on(table.blogId, table.link),
     index("blog_articles_published_idx").on(table.publishedAt),
     index("blog_articles_saved_idx").on(table.savedAt),
+    index("blog_articles_favorited_idx").on(table.favoritedAt),
+    index("blog_articles_finished_idx").on(table.finishedAt),
     index("blog_articles_book_idx").on(table.bookId),
   ],
 );

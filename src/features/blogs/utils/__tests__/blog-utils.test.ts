@@ -5,15 +5,25 @@ import { looksLikeAddress, searchDirectory } from '@/features/blogs/utils/explor
 import { articleMeta } from '@/features/blogs/utils/format';
 
 describe('articleMenu', () => {
-  it('offers saving and reading in the state the post is in', () => {
-    const fresh = articleMenu({ savedAt: null, readAt: null }, { blogLink: true }).map((r) => r.key);
-    expect(fresh).toEqual(['open', 'chat', 'save', 'read', 'original', 'share', 'blog']);
-    const kept = articleMenu({ savedAt: 'x', readAt: 'y' }, { blogLink: false }).map((r) => r.key);
-    expect(kept).toEqual(['open', 'chat', 'unsave', 'unread', 'original', 'share']);
+  const FRESH = { savedAt: null, favoritedAt: null, finishedAt: null, readAt: null };
+
+  it('offers what a book offers, in the state the post is in', () => {
+    const fresh = articleMenu(FRESH, { blogLink: true }).map((r) => r.key);
+    expect(fresh).toEqual(['open', 'chat', 'favorite', 'queue', 'finish', 'read', 'original', 'share', 'blog']);
+    const kept = articleMenu({ savedAt: 'x', favoritedAt: 'x', finishedAt: null, readAt: 'y' }, { blogLink: false }).map(
+      (r) => r.key,
+    );
+    expect(kept).toEqual(['open', 'chat', 'unfavorite', 'dequeue', 'finish', 'unread', 'original', 'share']);
+  });
+
+  it('keeps a finished post off the queue', () => {
+    const keys = articleMenu({ ...FRESH, finishedAt: 'x', readAt: 'x' }, { blogLink: false }).map((r) => r.key);
+    expect(keys).not.toContain('queue');
+    expect(keys).toContain('unfinish');
   });
 
   it('writes its labels without em dashes', () => {
-    for (const row of articleMenu({ savedAt: null, readAt: null }, { blogLink: true })) {
+    for (const row of articleMenu(FRESH, { blogLink: true })) {
       expect(row.label).not.toContain('—');
     }
   });

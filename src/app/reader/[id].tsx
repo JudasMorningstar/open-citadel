@@ -69,6 +69,21 @@ const FOOTER_CONTROLS_HEIGHT = spacing[16];
 
 const isAndroid = process.env.EXPO_OS === "android";
 
+/** A locator passed as a route param, or null when there is none to read. */
+function parseLocatorParam(param: string | undefined): Locator | null {
+  if (!param) return null;
+  try {
+    return JSON.parse(param) as Locator;
+  } catch {
+    // A link written before the router decoded params for us.
+    try {
+      return JSON.parse(decodeURIComponent(param)) as Locator;
+    } catch {
+      return null;
+    }
+  }
+}
+
 /**
  * The reading area's placeholder: full-measure serif lines in the reader's own
  * gutters, ending mid-line the way a page does.
@@ -304,27 +319,24 @@ export default function ReaderScreen() {
     return () => closeBook();
   }, [id]);
 
-  // When opened from the timeline with a locator param, offer a way back
-  // to saved progress — but only if the highlight is on a different page.
+  // Where a link asked to open (a highlight on the timeline, a passage in a
+  // chat), when it asked for somewhere rather than the saved position. The
+  // router hands the param over decoded; decoding it again threw on any `%`
+  // in the passage's stored context ("15% a month"), and the reader quietly
+  // opened at the saved position instead.
+  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
+
+  // When opened at a jump, offer a way back to saved progress — but only if
+  // the jump is on a different page.
   const didSetJumpRef = useRef(false);
   useEffect(() => {
     if (!locatorParam || !savedLocator || didSetJumpRef.current) return;
-    try {
-      const jumpLoc = JSON.parse(decodeURIComponent(locatorParam)) as Locator;
-      const jumpPage = jumpLoc.locations?.position;
-      const savedPage = savedLocator.locations?.position;
-      if (
-        jumpPage !== undefined &&
-        savedPage !== undefined &&
-        jumpPage === savedPage
-      )
-        return;
-    } catch {
-      // parse failed — show banner anyway
-    }
+    const jumpPage = jumpLocator?.locations?.position;
+    const savedPage = savedLocator.locations?.position;
+    if (jumpPage !== undefined && savedPage !== undefined && jumpPage === savedPage) return;
     didSetJumpRef.current = true;
     setPreJumpLocator(savedLocator);
-  }, [locatorParam, savedLocator]);
+  }, [locatorParam, jumpLocator, savedLocator]);
 
   // Navigate back only after the re-render with leaving=true has committed,
   // so the native SurfaceView is gone before the slide animation begins.
@@ -785,16 +797,10 @@ export default function ReaderScreen() {
     [],
   );
 
-  const initialLocation = useMemo(() => {
-    if (locatorParam) {
-      try {
-        return JSON.parse(decodeURIComponent(locatorParam)) as Locator;
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return savedLocator || undefined;
-  }, [locatorParam, savedLocator]);
+  const initialLocation = useMemo(
+    () => jumpLocator ?? savedLocator ?? undefined,
+    [jumpLocator, savedLocator],
+  );
 
   // The header zone is a transparent tap strip above the reading area.
   // ReadiumView sits BELOW this zone so its native touch handling is

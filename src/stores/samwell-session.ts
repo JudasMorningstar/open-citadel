@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { CompassCheckinDraft, GoalProposal } from 'samwell-shared';
 
+import type { BookKind } from '@/db/schema';
+
 export type SamwellMode = 'chat' | 'compass';
 
 /** What the current Compass conversation has proposed, if anything. */
@@ -14,8 +16,8 @@ type SamwellSessionStore = {
   mode: SamwellMode;
   /** What is typed but not yet sent. */
   draft: string;
-  /** The book a not-yet-created chat will be grounded in. */
-  pendingBook: { id: string; title: string } | null;
+  /** The book, or blog post, a not-yet-created chat will be grounded in. */
+  pendingBook: { id: string; title: string; kind: BookKind } | null;
 
   /** The Compass conversation in progress, and the proposal it has reached. */
   compassDraft: CompassDraft;

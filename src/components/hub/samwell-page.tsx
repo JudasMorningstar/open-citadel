@@ -27,6 +27,7 @@ import {
     CalendarDays,
     History,
     ListTodo,
+    Newspaper,
     TrendingUp,
 } from "@/components/icons";
 import { DeferredBody } from "@/components/navigation/deferred-body";
@@ -40,6 +41,8 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { contentColumn, spacing } from "@/constants/theme";
+import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-sheet";
+import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
@@ -331,10 +334,23 @@ export function SamwellPage() {
     : pendingBook
       ? (allBooks.find((b) => b.id === pendingBook.id)?.coverUrl ?? null)
       : null;
-  // Once a session exists, its book is fixed context — the button is only
-  // worth showing then if there's a book to display; a bookless session's
-  // button would just be inert with nothing to say.
-  const showBookButton = !activeSession || activeSession.bookId != null;
+  // A chat holds one book or one blog post, and each has its own tool. Once
+  // a session exists, what it holds is fixed context, so only the tool for
+  // that is worth showing then; a bookless session's would be inert with
+  // nothing to say.
+  const attachedKind = activeSession
+    ? activeSession.bookKind
+    : (pendingBook?.kind ?? null);
+  const showBookButton = !activeSession || attachedKind === "book";
+  const showPostButton = !activeSession || attachedKind === "article";
+  const attachedBook = attachedKind === "book" ? displayedBookTitle : null;
+  const attachedPost = attachedKind === "article" ? displayedBookTitle : null;
+  const pickPost = React.useCallback(
+    (post: { id: string; title: string; kind: "article" }) =>
+      setSession({ pendingBook: post }),
+    [setSession],
+  );
+  const postPicker = useArticlePicker(pickPost);
 
   // `isGenerating` alone drives the activity indicator; it must never show
   // just because the model isn't ready, since there is nothing to wait for
@@ -524,9 +540,9 @@ export function SamwellPage() {
                     icon: BookOpen,
                     label: "Book",
                     lead: true,
-                    detail: displayedBookTitle ?? "None yet",
-                    image: displayedBookCover,
-                    active: displayedBookTitle != null,
+                    detail: attachedBook ?? "None yet",
+                    image: attachedBook ? displayedBookCover : null,
+                    active: attachedBook != null,
                     onPress:
                       activeSession || isGenerating || chat.switching
                         ? undefined
@@ -535,7 +551,31 @@ export function SamwellPage() {
                     // a chat has started, its book is fixed context.
                     onLongPress:
                       activeSession ||
-                      !pendingBook ||
+                      pendingBook?.kind !== "book" ||
+                      isGenerating ||
+                      chat.switching
+                        ? undefined
+                        : () => setSession({ pendingBook: null }),
+                  } satisfies ToolboxItem,
+                ]
+              : []),
+            // The book's sibling for a blog post: picking one attaches it the
+            // same way, in place of any book.
+            ...(showPostButton
+              ? [
+                  {
+                    id: "post",
+                    icon: Newspaper,
+                    label: "Blog post",
+                    detail: attachedPost ?? "None yet",
+                    active: attachedPost != null,
+                    onPress:
+                      activeSession || isGenerating || chat.switching
+                        ? undefined
+                        : fromToolbox(postPicker.setVisible),
+                    onLongPress:
+                      activeSession ||
+                      pendingBook?.kind !== "article" ||
                       isGenerating ||
                       chat.switching
                         ? undefined
@@ -637,8 +677,11 @@ export function SamwellPage() {
       fromToolbox,
       // Chat
       showBookButton,
+      showPostButton,
       displayedBookCover,
-      displayedBookTitle,
+      attachedBook,
+      attachedPost,
+      postPicker.setVisible,
       activeSession,
       isGenerating,
       chat.switching,
@@ -839,11 +882,13 @@ export function SamwellPage() {
           <BookPickerSheet
             visible={showBookPicker}
             onSelect={(bookId, bookTitle) => {
-              setSession({ pendingBook: { id: bookId, title: bookTitle } });
+              setSession({ pendingBook: { id: bookId, title: bookTitle, kind: 'book' } });
               setShowBookPicker(false);
             }}
             onClose={() => setShowBookPicker(false)}
           />
+
+          <ArticlePickerSheet {...postPicker.sheet} />
 
           <ChatHistorySheet
             visible={showHistory}

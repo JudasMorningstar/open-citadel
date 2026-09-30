@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions, chatSuggestions } from '@/db/schema';
+import { books, chatMessages, chatSessions, chatSuggestions, type BookKind } from '@/db/schema';
 import { isToolCallMessage } from '@/services/chat-transcript';
 
 /**
@@ -35,6 +35,8 @@ export type ChatSession = {
   id: string;
   bookId: string | null;
   bookTitle: string | null;
+  /** A book, or a blog post's reader copy; null without one. */
+  bookKind: BookKind | null;
   title: string;
   contextText: string | null;
   contextLocator: string | null;
@@ -69,6 +71,7 @@ export function listSessions(kind: SessionKind): ChatSession[] {
       id: chatSessions.id,
       bookId: chatSessions.bookId,
       bookTitle: books.title,
+      bookKind: books.kind,
       title: chatSessions.title,
       contextText: chatSessions.contextText,
       contextLocator: chatSessions.contextLocator,
@@ -87,6 +90,7 @@ export function listSessions(kind: SessionKind): ChatSession[] {
     id: row.id,
     bookId: row.bookId ?? null,
     bookTitle: row.bookTitle ?? null,
+    bookKind: row.bookKind ?? null,
     title: row.title,
     contextText: row.contextText ?? null,
     contextLocator: row.contextLocator ?? null,

@@ -17,7 +17,7 @@ import { refreshAllBlogs } from '@/services/blogs/refresh';
 /** What the blogs side draws: nothing for one frame, the welcome, or the shelves. */
 export type BlogsPageView = 'loading' | 'welcome' | 'home';
 
-const EMPTY: BlogsHomeData = { blogs: [], shelves: { continue: [], latest: [], saved: [] } };
+const EMPTY: BlogsHomeData = { blogs: [], shelves: { continue: [], latest: [], queue: [], favorites: [], finished: [] } };
 
 /**
  * The blogs side of the Library: which view it shows, and what its doors,
@@ -55,8 +55,8 @@ export function useBlogsPage() {
     [queryClient, router],
   );
 
-  // Nothing kept here yet: no blog followed, and no post saved or opened.
-  const empty = home.blogs.length === 0 && home.shelves.saved.length === 0 && home.shelves.continue.length === 0;
+  // Nothing kept here yet: no blog followed, and no post on any shelf.
+  const empty = home.blogs.length === 0 && Object.values(home.shelves).every((shelf) => shelf.length === 0);
   const view: BlogsPageView = data === undefined ? 'loading' : empty ? 'welcome' : 'home';
 
   return {

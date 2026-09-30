@@ -21,6 +21,8 @@ export const blogKeys = {
   followedFeeds: () => [...blogKeys.library(), 'followed-feeds'] as const,
   blog: (id: string) => [...blogKeys.library(), 'blog', id] as const,
   blogArticles: (id: string, filter: BlogArticleFilter) => [...blogKeys.blog(id), 'articles', filter] as const,
+  /** Every post, for picking one to ask Samwell about. */
+  askable: () => [...blogKeys.library(), 'askable'] as const,
 
   /** A blog found in Explore, fetched and stored: resolves to its id. */
   discovered: (feedUrl: string) => [...blogKeys.all, 'discovered', feedUrl] as const,

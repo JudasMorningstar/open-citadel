@@ -1,8 +1,9 @@
 /**
- * Posts: the lists the Blogs side draws, one post, and marking one read or
- * saved. Lists never carry a post's HTML; only opening one reads it.
+ * Posts: the lists the Blogs side draws, one post, and marking one read,
+ * queued, a favorite or finished. Lists never carry a post's HTML; only
+ * opening one reads it.
  */
-import { and, desc, eq, getTableColumns, gt, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gt, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { blogArticles, blogs, readingProgress } from '@/db/schema';
@@ -11,9 +12,11 @@ import { nowIso } from '@/services/rows';
 
 /**
  * `latest`: every followed blog's posts, newest first. `continue`: posts
- * opened and left part-read. `saved`: kept to read later, latest kept first.
+ * opened and left part-read. `queue`: kept to read later, in the order they
+ * were added. `favorites`: latest first. `finished`: most recently finished
+ * first.
  */
-export type ArticleShelf = 'latest' | 'continue' | 'saved';
+export type ArticleShelf = 'latest' | 'continue' | 'queue' | 'favorites' | 'finished';
 export type BlogArticleFilter = 'all' | 'unread';
 
 const { contentHtml: _html, ...ITEM_COLUMNS } = getTableColumns(blogArticles);
@@ -22,6 +25,16 @@ const ITEM = { ...ITEM_COLUMNS, blogTitle: blogs.title, blogImageUrl: blogs.imag
 /** Read far enough to be under way, and not so far it is finished. */
 const STARTED = 0.02;
 const FINISHED = 0.95;
+
+/**
+ * A post kept on purpose: queued, a favorite, finished, or opened (a
+ * highlight lives on the opened copy). Tidying a blog's old posts away, and
+ * letting go of a preview nobody followed, both leave these alone.
+ */
+export const keptOnPurpose: SQL = sql`(${blogArticles.savedAt} is not null
+  or ${blogArticles.favoritedAt} is not null
+  or ${blogArticles.finishedAt} is not null
+  or ${blogArticles.bookId} is not null)`;
 
 function select(where: SQL | undefined, order: SQL[], limit: number) {
   return db
@@ -38,12 +51,17 @@ export async function listShelf(shelf: ArticleShelf, limit: number): Promise<Art
   switch (shelf) {
     case 'latest':
       return select(eq(blogs.state, 'subscribed'), [desc(blogArticles.publishedAt)], limit);
-    case 'saved':
-      return select(isNotNull(blogArticles.savedAt), [desc(blogArticles.savedAt)], limit);
+    case 'queue':
+      return select(isNotNull(blogArticles.savedAt), [asc(blogArticles.savedAt)], limit);
+    case 'favorites':
+      return select(isNotNull(blogArticles.favoritedAt), [desc(blogArticles.favoritedAt)], limit);
+    case 'finished':
+      return select(isNotNull(blogArticles.finishedAt), [desc(blogArticles.finishedAt)], limit);
     case 'continue':
       return select(
         and(
           isNotNull(blogArticles.bookId),
+          isNull(blogArticles.finishedAt),
           gt(readingProgress.percentage, STARTED),
           lt(readingProgress.percentage, FINISHED),
         ),
@@ -51,6 +69,15 @@ export async function listShelf(shelf: ArticleShelf, limit: number): Promise<Art
         limit,
       );
   }
+}
+
+/**
+ * Every post there is to ask Samwell about: those being read first, the most
+ * recently read at the top, then the rest, newest first.
+ */
+export async function listAskableArticles(limit: number): Promise<ArticleItem[]> {
+  const unopened = sql`${readingProgress.updatedAt} is null`;
+  return select(undefined, [unopened, desc(readingProgress.updatedAt), desc(blogArticles.publishedAt)], limit);
 }
 
 export async function listBlogArticles(blogId: string, filter: BlogArticleFilter, limit: number): Promise<ArticleItem[]> {
@@ -77,10 +104,35 @@ export async function setArticleRead(id: string, read: boolean): Promise<void> {
     .where(eq(blogArticles.id, id));
 }
 
-export async function setArticleSaved(id: string, saved: boolean): Promise<void> {
+/** Into the queue, at its end, or out of it. */
+export async function setArticleQueued(id: string, queued: boolean): Promise<void> {
   await db
     .update(blogArticles)
-    .set({ savedAt: saved ? nowIso() : null })
+    .set({ savedAt: queued ? nowIso() : null })
+    .where(eq(blogArticles.id, id));
+}
+
+export async function setArticleFavorite(id: string, favorite: boolean): Promise<void> {
+  await db
+    .update(blogArticles)
+    .set({ favoritedAt: favorite ? nowIso() : null })
+    .where(eq(blogArticles.id, id));
+}
+
+/**
+ * Finished, as a book is: it leaves Continue Reading and the queue, and
+ * counts as read. Unfinishing puts it back where its progress says, but not
+ * back in the queue, as a book's does not.
+ */
+export async function setArticleFinished(id: string, finished: boolean): Promise<void> {
+  const at = nowIso();
+  await db
+    .update(blogArticles)
+    .set(
+      finished
+        ? { finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` }
+        : { finishedAt: null },
+    )
     .where(eq(blogArticles.id, id));
 }
 
