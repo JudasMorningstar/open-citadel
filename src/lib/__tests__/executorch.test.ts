@@ -7,10 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('react-native-blob-util', () => ({
   default: { fs: { dirs: { DocumentDir: '/docs', SDCardDir: '/external' } } },
 }));
-vi.mock('@/lib/executorch', () => ({ getExecuTorch: () => null }));
-vi.mock('@/services/device-llm/catalogue', () => ({ registryModel: () => null }));
+// `executorch.ts` also imports TurboModuleRegistry for `isExecuTorchAvailable`,
+// unused by `cachePath` — stubbed so importing the real module doesn't pull in
+// react-native's Flow-syntax entry point, which vitest cannot parse.
+vi.mock('react-native', () => ({ TurboModuleRegistry: { get: () => null } }));
 
-const { cachePath } = await import('../files');
+const { cachePath } = await import('../executorch');
 
 /** ExecuTorch's fetcher, as published: the file `cachePath` mirrors. */
 const FETCHER = readFileSync(
@@ -31,8 +33,9 @@ const libraryDjb2 = (() => {
 const URL = 'https://huggingface.co/software-mansion/react-native-executorch-gemma-4/resolve/v0.10.0/e2b/xnnpack/model.pte';
 
 describe('cachePath', () => {
-  // A mismatch reads every downloaded brain as missing. If one of these fails
-  // after a library upgrade, update `cachePath` to match the fetcher.
+  // A mismatch reads every downloaded brain (or voice pack) as missing. If one
+  // of these fails after a library upgrade, update `cachePath` to match the
+  // fetcher — every catalogue (`device-llm`, `device-tts`) depends on it.
   it("still matches the fetcher's naming", () => {
     expect(FETCHER).toContain('return `${RNE_DIRECTORY}/${djb2(urlWithoutQuery)}_${basename}`;');
     expect(FETCHER).toContain("const urlWithoutQuery = url.split('?')[0]!;");

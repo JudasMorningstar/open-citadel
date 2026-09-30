@@ -19,6 +19,8 @@ type ReaderHeaderProps = {
   onBookmarkToggle?: () => void;
   onContents?: () => void;
   onTTSToggle?: () => void;
+  /** Long-press: quick access to voice/rate settings without leaving the book. */
+  onTTSLongPress?: () => void;
   onToggle?: () => void;
 };
 
@@ -54,6 +56,7 @@ export function ReaderHeader({
   onBookmarkToggle,
   onContents,
   onTTSToggle,
+  onTTSLongPress,
   onToggle,
 }: ReaderHeaderProps) {
   const [primary, foreground, mutedForeground] = useCSSVariable([
@@ -122,8 +125,14 @@ export function ReaderHeader({
         <IconButton onPress={onContents} label="Contents">
           <List size={20} color={asColor(foreground)} strokeWidth={2} />
         </IconButton>
-        {/* Gold only while it is reading aloud. */}
-        <IconButton onPress={onTTSToggle} label={isTTSActive ? 'Stop reading aloud' : 'Read aloud'}>
+        {/* Gold only while it is reading aloud. Long-press opens voice/rate
+            settings without leaving the book — the same reason a long-press
+            reveals a context menu anywhere else. */}
+        <IconButton
+          onPress={onTTSToggle}
+          onLongPress={onTTSLongPress}
+          label={isTTSActive ? 'Stop reading aloud' : 'Read aloud'}
+        >
           <AudioLines
             size={20}
             strokeWidth={2}

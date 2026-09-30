@@ -76,6 +76,14 @@
       "expo-sqlite",
       "expo-document-picker",
       "expo-file-system",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       "./plugins/withCoreDesugaring",
       "./plugins/withCleartextTraffic",
       ["./plugins/withGradleVersion", "8.13"],
