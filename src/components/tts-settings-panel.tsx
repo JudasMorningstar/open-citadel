@@ -52,6 +52,9 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
 
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
+  const ttsNaturalVoice = useSettingsStore((s) => s.ttsNaturalVoice);
+  const ttsPhoneVoice = useSettingsStore((s) => s.ttsPhoneVoice);
+  const ttsPhoneVoiceLanguage = useSettingsStore((s) => s.ttsPhoneVoiceLanguage);
   const isDownloaded = useTtsStore((s) => s.isDownloaded);
   const downloadProgress = useTtsStore((s) => s.downloadProgress);
   const loadError = useTtsStore((s) => s.loadError);
@@ -71,10 +74,10 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
   const nativeNote = NATIVE_SPEED_SUPPORTED ? null : 'Reading speed cannot be changed with a phone voice.';
 
   const selectAi = () => {
-    if (mode !== 'ai') void setTtsVoice(DEFAULT_VOICE);
+    if (mode !== 'ai') void setTtsVoice(ttsNaturalVoice ?? DEFAULT_VOICE);
   };
   const selectNative = () => {
-    if (mode !== 'native') void setTtsVoice(DEVICE_VOICE);
+    if (mode !== 'native') void setTtsVoice(ttsPhoneVoice || DEVICE_VOICE, ttsPhoneVoiceLanguage);
   };
   const selectPhoneVoice = React.useCallback(
     (identifier: string, language: string) => {

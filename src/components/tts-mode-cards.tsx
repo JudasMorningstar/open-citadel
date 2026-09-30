@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { Smartphone, Sparkles } from '@/components/icons';
+import { Smartphone, ZodiacPisces } from '@/components/icons';
 import { ModeCard } from '@/components/mode-card';
 import type { VoiceMode } from '@/services/device-tts/catalogue';
 
@@ -29,8 +29,8 @@ export function TtsModeCards({ mode, aiSupported, aiDownloaded, onSelectAi, onSe
     <View className="flex-row gap-3" accessibilityRole="radiogroup">
       <ModeCard
         active={mode === 'ai'}
-        icon={Sparkles}
-        label="AI voices"
+        icon={ZodiacPisces}
+        label="Natural voices"
         description={aiDescription}
         status={aiStatus}
         disabled={!aiSupported}
