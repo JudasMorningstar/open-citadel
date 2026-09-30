@@ -33,12 +33,14 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
+import { TtsSettingsSheet } from "@/features/tts/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, slideDownPastEdge, slideUpFromEdge, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
@@ -150,6 +152,7 @@ export default function ReaderScreen() {
   const router = useRouter();
   const readerRef = useRef<ReadiumViewRef>(null);
   const insets = useSafeAreaInsets();
+  const { onSynthesisRequest, onSynthesisCancel } = useKokoroTtsBridge(readerRef);
 
   const {
     currentBook,
@@ -204,6 +207,7 @@ export default function ReaderScreen() {
   const [leaveTo, setLeaveTo] = useState<"back" | "hub" | null>(null);
   const leaving = leaveTo !== null;
   const [showToc, setShowToc] = useState(false);
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
 
@@ -626,13 +630,13 @@ export default function ReaderScreen() {
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
 
-    // Page-turn: only call goTo when the utterance crosses a virtual page boundary.
-    // Calling goTo on every utterance causes webview reflows that compete with audio.
-    const newPosition = event.locator.locations?.position;
-    const currentPosition = currentLocatorRef.current?.locations?.position;
-    if (newPosition === undefined || newPosition !== currentPosition) {
-      readerRef.current?.goTo(event.locator);
-    }
+    // No goTo here: the native side (HybridReadiumView.swift's
+    // `manager.onUtterance`) turns the page itself now, and waits for that
+    // to finish before Kokoro's audio starts. A JS round trip had no way to
+    // signal "the page actually turned" back to the native TTS engine, so
+    // calling goTo from here could only ever race the audio, not sequence
+    // before it. currentLocatorRef still updates from the native
+    // onLocationChange event this navigation fires either way.
   }, []);
 
   const handleTTSToggle = useCallback(() => {
@@ -966,6 +970,8 @@ export default function ReaderScreen() {
             onTTSStateChange={handleTTSStateChange}
             onTTSUtterance={handleTTSUtterance}
             onTTSError={handleTTSError}
+            onTTSSynthesisRequest={onSynthesisRequest}
+            onTTSSynthesisCancel={onSynthesisCancel}
           />
         )}
 
@@ -1035,6 +1041,7 @@ export default function ReaderScreen() {
             setShowToc(true);
           }}
           onTTSToggle={handleTTSToggle}
+          onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
       </Animated.View>
@@ -1222,6 +1229,11 @@ export default function ReaderScreen() {
         onUpdateBookmarkNote={updateBookmarkNote}
         onClose={() => setShowToc(false)}
       />
+
+      {/* Long-press on the header's read-aloud button: voice/rate settings
+          without leaving the book. Same panel Settings uses, so the two
+          never disagree about what "the voice" currently is. */}
+      <TtsSettingsSheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} />
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (

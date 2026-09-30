@@ -26,6 +26,7 @@ export const fontFamily = {
   sansMedium: 'Manrope_500Medium',
   sansSemiBold: 'Manrope_600SemiBold',
   sansBold: 'Manrope_700Bold',
+  mono: 'JetBrainsMono_400Regular',
 } as const;
 
 // ── Typography: Type scale ───────────────────────────────────────────
@@ -90,6 +91,11 @@ export const typography = {
     lineHeight: 16,
     letterSpacing: 1.1,
     textTransform: 'uppercase' as const,
+  },
+  mono: {
+    fontFamily: fontFamily.mono,
+    fontSize: 11,
+    lineHeight: 15,
   },
 } as const;
 
