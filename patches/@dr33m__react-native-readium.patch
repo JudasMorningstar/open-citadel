@@ -42,58 +42,6 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
  
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
-diff --git a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
-index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894cfc5dd53d 100644
---- a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
-+++ b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
-@@ -6,6 +6,8 @@
- 
- package com.reactnativereadium.reader
- 
-+import android.content.Intent
-+import android.net.Uri
- import android.os.Bundle
- import android.view.*
- import android.view.accessibility.AccessibilityManager
-@@ -26,6 +28,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
- import org.readium.r2.navigator.epub.EpubNavigatorFactory
- import org.readium.r2.shared.publication.Locator
- import org.readium.r2.shared.publication.Publication
-+import org.readium.r2.shared.util.AbsoluteUrl
- import org.readium.r2.navigator.preferences.Theme
- 
- data class SelectionAction(
-@@ -35,6 +38,22 @@ data class SelectionAction(
- 
- class EpubReaderFragment : VisualReaderFragment() {
- 
-+    /*
-+     * Open Citadel: links out of the book (a blog post's "Read the original",
-+     * a footnote's source) go to the phone's browser. Readium drops an
-+     * external link when no listener is given, which left them doing nothing.
-+     */
-+    private val externalLinkListener = object : EpubNavigatorFragment.Listener {
-+        override fun onExternalLinkActivated(url: AbsoluteUrl) {
-+            val context = context ?: return
-+            runCatching {
-+                context.startActivity(
-+                    Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-+                )
-+            }
-+        }
-+    }
-+
-     override lateinit var model: ReaderViewModel
-     override lateinit var navigator: Navigator
-     private lateinit var publication: Publication
-@@ -128,6 +147,7 @@ class EpubReaderFragment : VisualReaderFragment() {
-             navigatorFactory.createFragmentFactory(
-               initialLocator = model.initialLocation,
-               initialPreferences = userPreferences,
-+              listener = externalLinkListener,
-               configuration = EpubNavigatorFragment.Configuration {
-                 when {
-                   suppressNativeSelectionMenu -> selectionActionModeCallback = object : ActionMode.Callback {
 diff --git a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 index 67d86a62e7b8a80070aa55f8a259079649b37aaf..c7b23d977883266012604dd7d84d8dc26ece6995 100644
 --- a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
@@ -201,6 +149,58 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..4a703674e46ef1f8c779dca934c47c0b
  
    private fun applyTTSDecoration(locator: Locator) {
      if (!isNavigatorReady) return
+diff --git a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
+index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894cfc5dd53d 100644
+--- a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
++++ b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
+@@ -6,6 +6,8 @@
+ 
+ package com.reactnativereadium.reader
+ 
++import android.content.Intent
++import android.net.Uri
+ import android.os.Bundle
+ import android.view.*
+ import android.view.accessibility.AccessibilityManager
+@@ -26,6 +28,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
+ import org.readium.r2.navigator.epub.EpubNavigatorFactory
+ import org.readium.r2.shared.publication.Locator
+ import org.readium.r2.shared.publication.Publication
++import org.readium.r2.shared.util.AbsoluteUrl
+ import org.readium.r2.navigator.preferences.Theme
+ 
+ data class SelectionAction(
+@@ -35,6 +38,22 @@ data class SelectionAction(
+ 
+ class EpubReaderFragment : VisualReaderFragment() {
+ 
++    /*
++     * Open Citadel: links out of the book (a blog post's "Read the original",
++     * a footnote's source) go to the phone's browser. Readium drops an
++     * external link when no listener is given, which left them doing nothing.
++     */
++    private val externalLinkListener = object : EpubNavigatorFragment.Listener {
++        override fun onExternalLinkActivated(url: AbsoluteUrl) {
++            val context = context ?: return
++            runCatching {
++                context.startActivity(
++                    Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++                )
++            }
++        }
++    }
++
+     override lateinit var model: ReaderViewModel
+     override lateinit var navigator: Navigator
+     private lateinit var publication: Publication
+@@ -128,6 +147,7 @@ class EpubReaderFragment : VisualReaderFragment() {
+             navigatorFactory.createFragmentFactory(
+               initialLocator = model.initialLocation,
+               initialPreferences = userPreferences,
++              listener = externalLinkListener,
+               configuration = EpubNavigatorFragment.Configuration {
+                 when {
+                   suppressNativeSelectionMenu -> selectionActionModeCallback = object : ActionMode.Callback {
 diff --git a/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt b/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt
 index a2a697646e1c8384b1d246877c06fdbb577ec352..fdb30de5b76bf52b3e6d786f3270a5b45761dd91 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt
@@ -220,10 +220,12 @@ index a2a697646e1c8384b1d246877c06fdbb577ec352..fdb30de5b76bf52b3e6d786f3270a5b4
      }
  }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-index 687dea2..2839fc8 100644
+index 687dea2ec24b6e0338716e2a56d95c990fa53196..54a0a0e65a7c435621b850ee1d0f2948966f8994 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-@@ -3,2 +3,7 @@ package com.reactnativereadium.reader
+@@ -1,6 +1,11 @@
+ package com.reactnativereadium.reader
+ 
  import android.app.Application
 +import android.app.ActivityManager
 +import android.content.Context
@@ -231,14 +233,21 @@ index 687dea2..2839fc8 100644
 +import com.reactnativereadium.reader.tts.KokoroTtsEngineProvider
 +import com.reactnativereadium.reader.tts.KokoroTtsPreferences
  import kotlinx.coroutines.CoroutineScope
-@@ -13,5 +18,5 @@ import org.readium.navigator.media.tts.AndroidTtsNavigator
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.flow.distinctUntilChanged
+@@ -11,15 +16,33 @@ import kotlinx.coroutines.launch
+ import org.readium.navigator.media.common.MediaNavigator
+ import org.readium.navigator.media.tts.AndroidTtsNavigator
  import org.readium.navigator.media.tts.AndroidTtsNavigatorFactory
 +import org.readium.navigator.media.tts.TtsEngine
  import org.readium.navigator.media.tts.TtsNavigator
  import org.readium.navigator.media.tts.TtsNavigatorFactory
 -import org.readium.navigator.media.tts.android.AndroidTtsEngine
  import org.readium.navigator.media.tts.android.AndroidTtsPreferences
-@@ -22,2 +27,20 @@ import org.readium.r2.shared.util.Language
+ import org.readium.r2.shared.ExperimentalReadiumApi
+ import org.readium.r2.shared.publication.Locator
+ import org.readium.r2.shared.publication.Publication
+ import org.readium.r2.shared.util.Language
  
 +private const val SYSTEM_VOICE = "system-voice"
 +
@@ -259,7 +268,11 @@ index 687dea2..2839fc8 100644
 +
 +
  @OptIn(ExperimentalReadiumApi::class)
-@@ -29,6 +52,12 @@ class TTSManager(
+ class TTSManager(
+     private val application: Application,
+@@ -27,14 +50,38 @@ class TTSManager(
+     private val scope: CoroutineScope,
+     private val onStateChange: (isPlaying: Boolean, isPaused: Boolean, rate: Float) -> Unit,
      private val onUtterance: (locator: Locator, text: String) -> Unit,
 -    private val onError: (message: String) -> Unit
 +    private val onError: (message: String) -> Unit,
@@ -275,7 +288,7 @@ index 687dea2..2839fc8 100644
 +    private var engine: KokoroTtsEngine? = null
 +    private var latestSynthesisRequestId: String? = null
      private var observeJob: Job? = null
-@@ -36,3 +65,21 @@ class TTSManager(
+     private var currentRate: Float = 1.0f
  
 -    fun isRunning(): Boolean = navigator != null
 +    fun isRunning(): Boolean = navigator != null || systemNavigator != null
@@ -298,7 +311,11 @@ index 687dea2..2839fc8 100644
 +    private fun usesKokoro(voice: String?): Boolean =
 +        !needsSystemVoice() && (voice == null || KokoroTtsEngine.VOICES.any { it.id == voice })
  
-@@ -46,6 +93,7 @@ class TTSManager(
+     override fun onStopRequested() {
+         stop()
+@@ -44,10 +91,11 @@ class TTSManager(
+         rate: Float? = null,
+         language: String? = null,
          voice: String? = null,
 -        fromLocator: Locator? = null
 +        fromLocator: Locator? = null,
@@ -308,7 +325,11 @@ index 687dea2..2839fc8 100644
              // Already running, just play
 +            systemNavigator?.play()
              navigator?.play()
-@@ -57,4 +105,50 @@ class TTSManager(
+             return
+         }
+@@ -55,8 +103,54 @@ class TTSManager(
+         rate?.let { currentRate = it.coerceIn(0.25f, 4.0f) }
+ 
          try {
 +            if (!usesKokoro(voice)) {
 +                val ttsFactory = systemFactory ?: TtsNavigatorFactory(application, publication)?.also {
@@ -360,7 +381,11 @@ index 687dea2..2839fc8 100644
 +                )
 +                val f = TtsNavigatorFactory(application, publication, provider)
                  if (f == null) {
-@@ -67,9 +161,2 @@ class TTSManager(
+                     onError("TTS is not available for this publication")
+                     return
+@@ -65,21 +159,14 @@ class TTSManager(
+                 f
+             }
  
 -            val voicesMap: Map<Language, AndroidTtsEngine.Voice.Id> =
 -                if (voice != null && language != null) {
@@ -370,7 +395,7 @@ index 687dea2..2839fc8 100644
 -                }
 -
              val navigatorResult = ttsFactory.createNavigator(
-@@ -77,7 +164,7 @@ class TTSManager(
+                 listener = this,
                  initialLocator = fromLocator,
 -                initialPreferences = AndroidTtsPreferences(
 +                initialPreferences = KokoroTtsPreferences(
@@ -381,46 +406,66 @@ index 687dea2..2839fc8 100644
 +                    voice = voice,
 +                ),
              )
-@@ -94,3 +181,2 @@ class TTSManager(
+ 
+             if (navigatorResult.isFailure) {
+@@ -92,13 +179,12 @@ class TTSManager(
+             observeNavigator(ttsNavigator)
+ 
              ttsNavigator.play()
 -
          } catch (e: Exception) {
-@@ -100,3 +186,3 @@ class TTSManager(
+             onError("Failed to start TTS: ${e.message}")
+         }
+     }
  
 -    private fun observeNavigator(ttsNavigator: AndroidTtsNavigator) {
 +    private fun <S : TtsEngine.Settings, P : TtsEngine.Preferences<P>, F : TtsEngine.Error, V : TtsEngine.Voice> observeNavigator(ttsNavigator: TtsNavigator<S, P, F, V>) {
          observeJob?.cancel()
-@@ -129,2 +215,3 @@ class TTSManager(
+         observeJob = scope.launch {
+             // Observe playback state
+@@ -127,10 +213,12 @@ class TTSManager(
+     }
+ 
      fun pause() {
 +        systemNavigator?.pause()
          navigator?.pause()
-@@ -133,2 +220,3 @@ class TTSManager(
+     }
+ 
      fun resume() {
 +        systemNavigator?.play()
          navigator?.play()
-@@ -140,2 +228,6 @@ class TTSManager(
+     }
+ 
+@@ -138,6 +226,10 @@ class TTSManager(
+         observeJob?.cancel()
+         observeJob = null
          navigator?.close()
 +        systemNavigator?.close()
 +        systemNavigator = null
 +        engine = null
 +        latestSynthesisRequestId = null
          navigator = null
-@@ -147,4 +239,5 @@ class TTSManager(
+         onStateChange(false, false, currentRate)
+     }
+@@ -145,20 +237,42 @@ class TTSManager(
+     fun setRate(rate: Float) {
+         currentRate = rate.coerceIn(0.25f, 4.0f)
          navigator?.submitPreferences(
 -            AndroidTtsPreferences(speed = currentRate.toDouble())
 +            KokoroTtsPreferences(speed = currentRate.toDouble()),
          )
 +        systemNavigator?.submitPreferences(AndroidTtsPreferences(speed = currentRate.toDouble()))
      }
-@@ -152,2 +245,3 @@ class TTSManager(
+ 
      fun skipNext() {
 +        systemNavigator?.skipToNextUtterance()
          navigator?.skipToNextUtterance()
-@@ -156,2 +250,3 @@ class TTSManager(
+     }
+ 
      fun skipPrevious() {
 +        systemNavigator?.skipToPreviousUtterance()
          navigator?.skipToPreviousUtterance()
-@@ -159,4 +254,23 @@ class TTSManager(
+     }
  
 +    /** Answers an `onSynthesisRequest` with one chunk of synthesized audio. */
 +    fun provideAudioChunk(requestId: String, samples: FloatArray, sampleRate: Int, isLast: Boolean) {
@@ -444,17 +489,20 @@ index 687dea2..2839fc8 100644
          stop()
 +        systemFactory = null
          factory = null
+     }
+ }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt b/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..a8b03d2ccf0a729641fed3efd5c305352aaf9168
+index 0000000000000000000000000000000000000000..31d452fbb6a4b18be8a72858541417817a6e8302
 --- /dev/null
 +++ b/android/src/main/java/com/reactnativereadium/reader/tts/KokoroTtsEngine.kt
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,250 @@
 +package com.reactnativereadium.reader.tts
 +
 +import android.media.AudioAttributes
 +import android.media.AudioFormat
 +import android.media.AudioTrack
++import java.util.concurrent.Executors
 +import kotlinx.coroutines.flow.MutableStateFlow
 +import kotlinx.coroutines.flow.StateFlow
 +import org.readium.navigator.media.tts.TtsEngine
@@ -508,12 +556,39 @@ index 0000000000000000000000000000000000000000..a8b03d2ccf0a729641fed3efd5c30535
 +    private val settingsMutable = MutableStateFlow(preferences.toSettings())
 +    override val settings: StateFlow<KokoroTtsSettings> = settingsMutable
 +
++    // `@Volatile`: read from `writeQueue`'s thread (the check in the queued
++    // write below), written from whatever thread calls `speak`/`stop` — a
++    // plain `var` gives no guarantee the write sees a stop that already
++    // happened.
++    @Volatile
 +    private var activeRequestId: String? = null
 +    private var requestStarted: Boolean = false
 +    private var audioTrack: AudioTrack? = null
 +    private var trackSampleRate: Int = 0
 +    /** Cumulative frames written to the current [audioTrack] — see its use in [provideAudioChunk]. */
 +    private var framesWritten: Long = 0
++
++    /**
++     * Runs every [AudioTrack.write] in order, off whatever thread calls
++     * [provideAudioChunk].
++     *
++     * That thread is JS's: `provideAudioChunk` is a synchronous Nitro method,
++     * called straight from `HybridReadiumView.ttsProvideAudioChunk` with no
++     * Promise in between, so whatever blocks in here blocks the JS thread.
++     * `AudioTrack.write(..., WRITE_BLOCKING)` blocks until the track's buffer
++     * has room, which — once that buffer is as full as streaming playback
++     * keeps it — is roughly "however long until the audio already queued has
++     * finished playing." With the write on the calling thread, that pinned
++     * JS for the same stretch: every native→JS call that thread needed to
++     * dispatch also had to wait its turn, including the pause state-change
++     * `TTSManager.observeNavigator` sends to `onTTSStateChange` and the tap
++     * that asked for it in the first place — which is what made pause look
++     * like it was waiting for the sentence to finish. `AudioTrack`'s own
++     * write/control split (one thread writes, another calls
++     * play/pause/flush) is the documented way to use it concurrently, so
++     * moving only the write here needs no lock around the rest of this class.
++     */
++    private val writeQueue = Executors.newSingleThreadExecutor()
 +
 +    override fun submitPreferences(preferences: KokoroTtsPreferences) {
 +        this.preferences = preferences
@@ -556,6 +631,10 @@ index 0000000000000000000000000000000000000000..a8b03d2ccf0a729641fed3efd5c30535
 +        stopPlayback()
 +        audioTrack?.release()
 +        audioTrack = null
++        // Safe to drop queued writes outright: `stopPlayback()` above already
++        // flushed the track they were headed for, and `KokoroTtsEngineProvider`
++        // makes a fresh engine (and so a fresh queue) for the next session.
++        writeQueue.shutdownNow()
 +    }
 +
 +    /**
@@ -580,8 +659,9 @@ index 0000000000000000000000000000000000000000..a8b03d2ccf0a729641fed3efd5c30535
 +
 +        if (isLast) {
 +            val finishedId = id
-+            // Register before writing: a short final chunk can drain while a
-+            // blocking write is still returning to this thread.
++            // Register before the write is even queued: a short final chunk
++            // can reach and drain past this frame count on `writeQueue`
++            // before this method returns to set the marker any later.
 +            track.setNotificationMarkerPosition((framesWritten + samples.size).toInt())
 +            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
 +                override fun onMarkerReached(t: AudioTrack) {
@@ -594,8 +674,18 @@ index 0000000000000000000000000000000000000000..a8b03d2ccf0a729641fed3efd5c30535
 +                override fun onPeriodicNotification(t: AudioTrack) {}
 +            })
 +        }
-+        track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
 +        framesWritten += samples.size
++        // See `writeQueue`'s own doc: this is the call that must not block
++        // the thread `provideAudioChunk` was called on. Re-checks
++        // `activeRequestId` once it actually runs — `stop()`/a superseding
++        // `speak()` can land while this sits behind an earlier chunk still
++        // writing, and a track already flushed for the next utterance should
++        // not receive this one's leftover audio.
++        writeQueue.execute {
++            if (activeRequestId == requestId) {
++                track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
++            }
++        }
 +    }
 +
 +    /** Answers an in-flight [onSynthesisRequest] that could not be fulfilled. */
@@ -879,7 +969,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..07b7b678794959b7239b4d9be3028c79
    func cleanup() {
 diff --git a/ios/Reader/TTS/KokoroTTSEngine.swift b/ios/Reader/TTS/KokoroTTSEngine.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..74108b12e18d54ac5132b54470fc9deab13265b7
+index 0000000000000000000000000000000000000000..65425970ab5919a226da63c0d1b1b4e26dc2b54f
 --- /dev/null
 +++ b/ios/Reader/TTS/KokoroTTSEngine.swift
 @@ -0,0 +1,226 @@
@@ -1110,7 +1200,7 @@ index 0000000000000000000000000000000000000000..74108b12e18d54ac5132b54470fc9dea
 +    }
 +}
 diff --git a/ios/Reader/TTS/TTSManager.swift b/ios/Reader/TTS/TTSManager.swift
-index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..56dec0c971edda34a00970ea797fbb432af08211 100644
+index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..63835b99b8715d2acef54e2de302287f3874b6e6 100644
 --- a/ios/Reader/TTS/TTSManager.swift
 +++ b/ios/Reader/TTS/TTSManager.swift
 @@ -10,10 +10,19 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
