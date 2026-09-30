@@ -3,6 +3,7 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { TileBadge, type TileBadgeIcon } from '@/components/tile-badge';
 import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, motion } from '@/constants/theme';
@@ -43,7 +44,7 @@ type BookTileProps<B extends TileBook> = {
    * any reason at all. A module-level icon reference and a colour string are
    * both stable, so the memo holds.
    */
-  badgeIcon?: React.ComponentType<{ size?: number; color?: string }>;
+  badgeIcon?: TileBadgeIcon;
   badgeColor?: string;
   /** A grid wraps to two lines; a shelf usually wants one. */
   titleLines?: number;
@@ -72,7 +73,7 @@ function BookTileBase<B extends TileBook>({
   width,
   mutedForeground,
   surfaceTertiary,
-  badgeIcon: BadgeIcon,
+  badgeIcon,
   badgeColor,
   titleLines = 2,
   onPress,
@@ -124,11 +125,7 @@ function BookTileBase<B extends TileBook>({
                 </View>
               )}
               {book.filePath === null && <SyncBadge />}
-              {BadgeIcon && book.filePath !== null ? (
-                <View className="absolute left-2 top-2 rounded-full bg-background">
-                  <BadgeIcon size={22} color={badgeColor} />
-                </View>
-              ) : null}
+              {badgeIcon && book.filePath !== null ? <TileBadge icon={badgeIcon} color={badgeColor} /> : null}
             </View>
           </View>
         </View>

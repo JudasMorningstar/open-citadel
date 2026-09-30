@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions, chatSuggestions, type BookKind } from '@/db/schema';
+import { books, chatMessages, chatSessions, chatSuggestions, highlights, thoughts, type BookKind } from '@/db/schema';
 import { isToolCallMessage } from '@/services/chat-transcript';
 
 /**
@@ -187,6 +187,17 @@ export function removeSession(sessionId: string): void {
   db.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId)).run();
   db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, sessionId)).run();
   db.delete(chatSessions).where(eq(chatSessions.id, sessionId)).run();
+  // A highlight or thought whose chat is gone offers a new one, not this.
+  db.update(highlights).set({ chatSessionId: null }).where(eq(highlights.chatSessionId, sessionId)).run();
+  db.update(thoughts).set({ chatSessionId: null }).where(eq(thoughts.chatSessionId, sessionId)).run();
+}
+
+/**
+ * Whether a session is still there. A highlight or thought may still name a
+ * chat deleted before `removeSession` cleared its links.
+ */
+export function sessionExists(sessionId: string): boolean {
+  return db.select({ id: chatSessions.id }).from(chatSessions).where(eq(chatSessions.id, sessionId)).get() !== undefined;
 }
 
 /**

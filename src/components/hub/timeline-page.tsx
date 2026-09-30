@@ -29,6 +29,9 @@ import { Sheet } from '@/components/ui/sheet';
 import { contentColumn, iconSize, layout } from '@/constants/theme';
 import { db } from '@/db/client';
 import { highlights, thoughts } from '@/db/schema';
+import { sessionExists } from '@/services/chat-sessions';
+import { highlightChatContext } from '@/services/highlight-context';
+import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { fetchAllTags } from '@/stores/reader';
 import { formatDateLabel, useTimelineStore, type TimelineItem } from '@/stores/timeline';
 import { HUB, useHubStore } from '@/stores/hub';
@@ -163,31 +166,12 @@ export function TimelinePage() {
   };
 
   const handleStartChat = async (entry: TimelineItem) => {
-    // Highlights carry the chapter text captured around them at creation, so
-    // the chat sees the progression the passage was lifted from.
-    let contextText = entry.highlightText;
-    if (entry.type === 'highlight') {
-      const row = db
-        .select({ context: highlights.context })
-        .from(highlights)
-        .where(eq(highlights.id, entry.id))
-        .get();
-      if (row?.context) {
-        try {
-          const { before, after } = JSON.parse(row.context) as {
-            before?: string;
-            after?: string;
-          };
-          contextText = `${before ? `…${before}\n\n` : ''}[Highlighted:] ${entry.highlightText}${after ? `\n\n${after}…` : ''}`;
-        } catch {
-          // Bare highlight text is still a valid context.
-        }
-      }
-    }
+    const isThought = entry.type === 'thought';
     const sessionId = await createChatSession({
       bookId: entry.bookId || undefined,
       title: entry.highlightText.slice(0, 60),
-      contextText,
+      contextText: isThought ? undefined : await highlightChatContext(entry.id, entry.highlightText),
+      thoughtText: isThought ? entry.highlightText : undefined,
       contextLocator: entry.highlightLocator ?? undefined,
     });
     // Link the chat back to the entry so it shows View Chat next time
@@ -197,13 +181,15 @@ export function TimelinePage() {
       await db.update(thoughts).set({ chatSessionId: sessionId }).where(eq(thoughts.id, entry.id));
     }
     await loadTimeline();
-    router.push({ pathname: '/chat/[id]', params: { id: sessionId } } as any);
+    await showChatOnSamwellPage(sessionId);
   };
 
+  // The Samwell page is this screen's neighbour on the hub: the chat opens
+  // there, and the pager slides across to it. A chat since deleted is started
+  // again, with its context, rather than opened blank.
   const handleViewChat = (entry: TimelineItem) => {
-    if (entry.chatSessionId) {
-      router.push({ pathname: '/chat/[id]', params: { id: entry.chatSessionId } } as any);
-    }
+    if (entry.chatSessionId && sessionExists(entry.chatSessionId)) void showChatOnSamwellPage(entry.chatSessionId);
+    else void handleStartChat(entry);
   };
 
   const handleDeleteEntry = async (entry: TimelineItem) => {

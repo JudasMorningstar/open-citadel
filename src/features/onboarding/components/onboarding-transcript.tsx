@@ -66,7 +66,7 @@ export function OnboardingTranscript({
     <MessageScroller key={sessionId ?? 'onboarding'} autoScroll className="flex-1">
       {/* `start` only: unlike the hub's transcripts nothing floats over this
           one, so the bottom is an edge content stops at rather than passes
-          behind. Same call `app/chat/[id]` makes for the same reason. */}
+          behind. */}
       <TranscriptFade edges="start">
         <MessageScroller.Viewport>
           <MessageScroller.Content style={transcriptContent}>

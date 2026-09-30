@@ -3,6 +3,7 @@ import React from 'react';
 import { PagedRow } from '@/components/paged-row';
 import { PullToSync } from '@/components/pull-to-sync';
 import { ShelfSection } from '@/components/shelf-section';
+import { FAVORITE_BADGE, type TileBadgeIcon } from '@/components/tile-badge';
 import { layout, revealIn } from '@/constants/theme';
 import { ContinueCard } from '@/features/podcasts/components/continue-card';
 import { EpisodeShelf } from '@/features/podcasts/components/episode-shelf';
@@ -25,6 +26,9 @@ type PodcastsHomeProps = {
 };
 
 const episodeKey = (episode: EpisodeItem) => episode.id;
+
+/** The mark the books' Favorites shelf carries. */
+const SHELF_BADGES: Partial<Record<ListedShelf, TileBadgeIcon>> = { favorites: FAVORITE_BADGE };
 
 /**
  * The podcasts side of the Library, laid out the way the books side is: a
@@ -60,7 +64,13 @@ export function PodcastsHome({
   );
   const renderShelf = (key: ListedShelf) => (
     <ShelfSection key={key} title={SECTION_TITLES[key]} onViewAll={() => onViewAll(key)} entering={reveal(key)}>
-      <EpisodeShelf episodes={shelves[key]} onPress={onOpenEpisode} onLongPress={onEpisodeMenu} onPlay={onPlay} />
+      <EpisodeShelf
+        episodes={shelves[key]}
+        onPress={onOpenEpisode}
+        onLongPress={onEpisodeMenu}
+        onPlay={onPlay}
+        badgeIcon={SHELF_BADGES[key]}
+      />
     </ShelfSection>
   );
 

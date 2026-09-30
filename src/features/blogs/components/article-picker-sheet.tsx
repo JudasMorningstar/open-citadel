@@ -17,6 +17,9 @@ import { monogramOf } from '@/utils/monogram';
 
 const ART = 56;
 const FILL = { flex: 1 } as const;
+const META_TEXT = { fontSize: 12, lineHeight: 16 } as const;
+const TITLE_TEXT = { fontSize: 15, lineHeight: 20 } as const;
+const keyOf = (article: ArticleItem) => article.id;
 
 type ArticlePickerSheetProps = {
   visible: boolean;
@@ -50,10 +53,10 @@ const ArticleOption = React.memo(function ArticleOption({
         placeholderColor={tokens['--color-surface-tertiary']}
       />
       <Item.Content>
-        <Item.Description numberOfLines={1} style={{ fontSize: 12, lineHeight: 16 }}>
+        <Item.Description numberOfLines={1} style={META_TEXT}>
           {articleMeta(article, true)}
         </Item.Description>
-        <Item.Title numberOfLines={2} style={{ fontSize: 15, lineHeight: 20 }}>
+        <Item.Title numberOfLines={2} style={TITLE_TEXT}>
           {article.title}
         </Item.Title>
       </Item.Content>
@@ -117,7 +120,7 @@ export function ArticlePickerSheet({ visible, articles, onSelect, onClose }: Art
             <Sheet.FlatList
               style={FILL}
               data={filtered}
-              keyExtractor={(item) => item.id}
+              keyExtractor={keyOf}
               ItemSeparatorComponent={RowSeparator}
               keyboardShouldPersistTaps="handled"
               renderItem={renderItem}

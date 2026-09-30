@@ -362,10 +362,6 @@ export default function RootLayout() {
                     options={screenTransitions.sideEdge}
                   />
                   <TransitionStack.Screen
-                    name="chat/[id]"
-                    options={screenTransitions.side}
-                  />
-                  <TransitionStack.Screen
                     name="section/[type]"
                     options={screenTransitions.drawer}
                   />

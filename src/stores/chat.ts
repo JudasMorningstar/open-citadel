@@ -97,6 +97,8 @@ interface ChatStore {
     title: string;
     contextText?: string;
     passageText?: string;
+    /** A thought the user wrote down, which the chat is about instead of a passage. */
+    thoughtText?: string;
     contextLocator?: string;
   }): Promise<string>;
   openSession(id: string): Promise<void>;
@@ -638,7 +640,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ sessions: listSessions('reading') });
   },
 
-  async createSession({ bookId, title, contextText, passageText, contextLocator }) {
+  async createSession({ bookId, title, contextText, passageText, thoughtText, contextLocator }) {
     const id = uuid();
     const ts = now();
     // Spoiler boundary: Samwell may only discuss what the user has read.
@@ -680,7 +682,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .run();
 
     // Persist the system message so history is always complete when reloading
-    if (contextText || passageText) {
+    if (thoughtText) {
+      // The user's own words, not a passage from something they read.
+      db.insert(chatMessages)
+        .values({
+          id: uuid(),
+          sessionId: id,
+          role: 'system',
+          content:
+            `The user wrote down this thought of their own:\n\n${thoughtText}\n\n` +
+            'Help them think it through: what it means, where it holds and where it does not, and how it connects to what they read. Be concise and insightful.',
+          createdAt: ts,
+        })
+        .run();
+    } else if (contextText || passageText) {
       const bookRow = bookId
         ? db.select({ title: books.title, author: books.author }).from(books).where(eq(books.id, bookId)).get()
         : null;

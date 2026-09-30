@@ -48,6 +48,8 @@ import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
+import { sessionExists } from "@/services/chat-sessions";
+import { showChatOnSamwellPage } from "@/services/samwell-handoff";
 import { suggestTags } from "@/services/tag-suggest";
 import {
   startMediaSession,
@@ -197,7 +199,10 @@ export default function ReaderScreen() {
   // clearing the highlight to close would unmount the sheet mid-slide.
   // The stale highlight costs nothing — a closed sheet renders no content.
   const [menuOpen, setMenuOpen] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+  // Where the reader is going once it has let go of its native view: back a
+  // screen, or down to the hub (a chat opens on the Samwell page).
+  const [leaveTo, setLeaveTo] = useState<"back" | "hub" | null>(null);
+  const leaving = leaveTo !== null;
   const [showToc, setShowToc] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
@@ -338,13 +343,39 @@ export default function ReaderScreen() {
     setPreJumpLocator(savedLocator);
   }, [locatorParam, jumpLocator, savedLocator]);
 
-  // Navigate back only after the re-render with leaving=true has committed,
-  // so the native SurfaceView is gone before the slide animation begins.
+  // Navigate only after the re-render with leaving=true has committed, so the
+  // native SurfaceView is gone before the slide animation begins.
   useEffect(() => {
-    if (!leaving) return;
-    const id = setTimeout(() => router.back(), 32);
+    if (!leaveTo) return;
+    const id = setTimeout(() => {
+      if (leaveTo === "hub" && router.canDismiss()) router.dismissTo("/");
+      else router.back();
+    }, 32);
     return () => clearTimeout(id);
-  }, [leaving]);
+  }, [leaveTo]);
+
+  // Read-aloud belongs to the book: leaving it, by the back button or for a
+  // chat, stops it.
+  const leave = useCallback(
+    (to: "back" | "hub") => {
+      if (isTTSActive) {
+        readerRef.current?.ttsStop();
+        stopMediaSession();
+      }
+      setLeaveTo(to);
+    },
+    [isTTSActive],
+  );
+
+  // A chat about a passage is made here, with its context, and held on the
+  // Samwell page like every other chat; the reader closes on the way.
+  const openChat = useCallback(
+    async (sessionId: string) => {
+      await showChatOnSamwellPage(sessionId);
+      leave("hub");
+    },
+    [leave],
+  );
 
   const handleLocationChange = useCallback(
     (loc: Locator) => {
@@ -461,9 +492,9 @@ export default function ReaderScreen() {
 
       setChatLoading(false);
       setSelectionEvent(null);
-      router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+      await openChat(sessionId);
     },
-    [currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, router],
+    [currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, openChat],
   );
 
   // Android: the custom SelectionBar drives this from onSelectionChange state.
@@ -496,10 +527,11 @@ export default function ReaderScreen() {
     locator: Locator | null,
     existingChatSessionId?: string | null,
   ) => {
-    // Navigate to existing chat session if one is already linked
-    if (existingChatSessionId) {
+    // Open the chat already linked, unless it has since been deleted: then a
+    // new one is made below, with its context, rather than opened blank.
+    if (existingChatSessionId && sessionExists(existingChatSessionId)) {
       setMenuOpen(false);
-      router.push({ pathname: '/chat/[id]', params: { id: existingChatSessionId } });
+      await openChat(existingChatSessionId);
       return;
     }
 
@@ -523,8 +555,8 @@ export default function ReaderScreen() {
     await updateHighlight(highlightId, { chatSessionId: sessionId });
     setChatLoading(false);
     setMenuOpen(false);
-    router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
-  }, [currentBook, chatLoading, createChatSession, updateHighlight, router]);
+    await openChat(sessionId);
+  }, [currentBook, chatLoading, createChatSession, updateHighlight, openChat]);
 
   const handleChapterPress = useCallback(
     (link: { href: string }) => {
@@ -997,13 +1029,7 @@ export default function ReaderScreen() {
           isBookmarked={isBookmarked}
           isTTSActive={isTTSActive}
           onBookmarkToggle={handleBookmarkToggle}
-          onBack={() => {
-            if (isTTSActive) {
-              readerRef.current?.ttsStop();
-              stopMediaSession();
-            }
-            setLeaving(true);
-          }}
+          onBack={() => leave("back")}
           onContents={() => {
             showHeader();
             setShowToc(true);

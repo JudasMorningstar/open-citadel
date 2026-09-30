@@ -3,6 +3,7 @@ import React from 'react';
 import { PagedRow } from '@/components/paged-row';
 import { PullToSync } from '@/components/pull-to-sync';
 import { ShelfSection } from '@/components/shelf-section';
+import { FAVORITE_BADGE, FINISHED_BADGE, type TileBadgeIcon } from '@/components/tile-badge';
 import { layout, revealIn } from '@/constants/theme';
 import { ArticleContinueCard } from '@/features/blogs/components/article-continue-card';
 import { ArticleShelf } from '@/features/blogs/components/article-shelf';
@@ -24,6 +25,9 @@ type BlogsHomeProps = {
 };
 
 const articleKey = (article: ArticleItem) => article.id;
+
+/** The marks the books' shelves of the same names carry. */
+const SHELF_BADGES: Partial<Record<BlogSection, TileBadgeIcon>> = { favorites: FAVORITE_BADGE, finished: FINISHED_BADGE };
 
 /**
  * The shelves, in the order a reader reaches for them: what they are in the
@@ -57,7 +61,14 @@ export function BlogsHome({
   const shelfContent = (key: BlogSection) => {
     if (key === 'continue') return <PagedRow items={shelves.continue} keyOf={articleKey} renderPage={renderContinue} />;
     if (key === 'blogs') return <BlogShelf blogs={blogs} onPress={onOpenBlog} />;
-    return <ArticleShelf articles={shelves[key]} onPress={onOpenArticle} onLongPress={onArticleMenu} />;
+    return (
+      <ArticleShelf
+        articles={shelves[key]}
+        onPress={onOpenArticle}
+        onLongPress={onArticleMenu}
+        badgeIcon={SHELF_BADGES[key]}
+      />
+    );
   };
   const renderSection = (key: BlogSection) => (
     <ShelfSection

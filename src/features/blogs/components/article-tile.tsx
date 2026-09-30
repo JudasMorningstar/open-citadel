@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { Newspaper } from '@/components/icons';
 import { SquareArtwork } from '@/components/square-artwork';
 import { ThemedText } from '@/components/themed-text';
+import { TileBadge, type TileBadgeIcon } from '@/components/tile-badge';
 import { Touchable } from '@/components/ui/touchable';
 import { articleMeta } from '@/features/blogs/utils/format';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -18,6 +19,8 @@ type ArticleTileProps = {
   width: number;
   onPress: (article: ArticleItem) => void;
   onLongPress: (article: ArticleItem) => void;
+  /** A mark over the picture's corner, for a shelf that flags its posts (Favorites, Have Read). */
+  badgeIcon?: TileBadgeIcon;
 };
 
 /**
@@ -29,7 +32,7 @@ type ArticleTileProps = {
  *
  * Every branch sets its value, because FlashList recycles tiles.
  */
-function ArticleTileBase({ article, width, onPress, onLongPress }: ArticleTileProps) {
+function ArticleTileBase({ article, width, onPress, onLongPress, badgeIcon }: ArticleTileProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
   const art = width - TILE_PADDING * 2;
@@ -60,6 +63,7 @@ function ArticleTileBase({ article, width, onPress, onLongPress }: ArticleTilePr
               <View className="h-full bg-primary" style={{ width: `${fraction * 100}%` }} />
             </View>
           ) : null}
+          {badgeIcon ? <TileBadge icon={badgeIcon} color={tokens['--color-primary']} /> : null}
         </View>
         <View className="gap-1">
           <View className="flex-row items-center gap-2">
