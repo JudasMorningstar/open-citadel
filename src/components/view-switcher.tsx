@@ -8,7 +8,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { easing, motion } from '@/constants/theme';
-import type { LibraryTab } from '@/stores/podcast-prefs';
 
 /**
  * How far a side travels as it changes places. Enough to say which way the
@@ -18,13 +17,12 @@ import type { LibraryTab } from '@/stores/podcast-prefs';
  */
 const SHIFT = 16;
 
-/** The sides, left to right as the switch draws them. */
-const ORDER: LibraryTab[] = ['books', 'podcasts', 'blogs'];
-
-type LibrarySwitcherProps = {
-  tab: LibraryTab;
+type ViewSwitcherProps<K extends string> = {
+  /** The sides, left to right as their switch draws them. */
+  order: readonly K[];
+  value: K;
   /** A side is null until it is first opened; mounted from then on and kept. */
-  sides: Record<LibraryTab, React.ReactNode | null>;
+  sides: Record<K, React.ReactNode | null>;
 };
 
 type SideProps = {
@@ -68,10 +66,11 @@ function Side({ active, startShown, direction, children }: SideProps) {
 }
 
 /**
- * The Library's sides, one over another, trading places.
+ * The sides of a screen with a switch in it, one over another, trading
+ * places: the Library's books, podcasts and blogs, Samwell's chat and Compass.
  *
  * Every side stays mounted once it has been shown, so switching back lands on
- * the same scroll position and never re-reads a shelf. `slow` (250ms) because
+ * the same scroll position and never re-reads a shelf or a conversation. `slow` (250ms) because
  * this is a cross-fade of content, which the house motion scale gives its
  * slowest step to. Opacity and translation only, on the UI thread.
  *
@@ -82,21 +81,21 @@ function Side({ active, startShown, direction, children }: SideProps) {
  *
  * Under Reduce Motion there is no travel: the sides cross-fade in place.
  */
-export function LibrarySwitcher({ tab, sides }: LibrarySwitcherProps) {
-  // Which way the switch last moved, kept with the tab it moved from. Set
+export function ViewSwitcher<K extends string>({ order, value, sides }: ViewSwitcherProps<K>) {
+  // Which way the switch last moved, kept with the side it moved from. Set
   // while rendering (React's pattern for state that follows a prop), so the
-  // sides get it in the same render as the new tab.
-  const [last, setLast] = React.useState({ tab, direction: 1 });
-  const [openedOn] = React.useState(tab);
-  if (last.tab !== tab) {
-    setLast({ tab, direction: ORDER.indexOf(tab) >= ORDER.indexOf(last.tab) ? 1 : -1 });
+  // sides get it in the same render as the new value.
+  const [last, setLast] = React.useState({ value, direction: 1 });
+  const [openedOn] = React.useState(value);
+  if (last.value !== value) {
+    setLast({ value, direction: order.indexOf(value) >= order.indexOf(last.value) ? 1 : -1 });
   }
 
   return (
     <Animated.View className="flex-1">
-      {ORDER.map((key) =>
+      {order.map((key) =>
         sides[key] ? (
-          <Side key={key} active={key === tab} startShown={key === openedOn} direction={last.direction}>
+          <Side key={key} active={key === value} startShown={key === openedOn} direction={last.direction}>
             {sides[key]}
           </Side>
         ) : null,

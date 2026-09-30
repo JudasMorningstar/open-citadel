@@ -40,7 +40,7 @@ import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
-import { easing, motion, spacing } from "@/constants/theme";
+import { easing, motion, slideDownPastEdge, slideUpFromEdge, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
@@ -1007,40 +1007,42 @@ export default function ReaderScreen() {
         />
       </Animated.View>
 
-      {/* TTS controls — float at bottom, animate in/out with header */}
+      {/* TTS controls — float at bottom. They come up from the bottom edge
+          when read-aloud is switched on and go back down past it when it is
+          switched off, as the mini player does (`slideUpFromEdge`); inside
+          that, they follow the header as it hides and shows. */}
       {isTTSActive && (
-        <Animated.View
-          style={[
-            {
-              position: "absolute",
-              left: 0,
-              right: 0,
-              alignItems: "center",
-              justifyContent: "center",
-            },
-            {
-              opacity: headerAnim,
-              bottom: 0,
-              height: ttsControlsZoneHeight,
-              transform: [
-                {
-                  translateY: headerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [60, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
+        <ReanimatedView.View
+          entering={slideUpFromEdge}
+          exiting={slideDownPastEdge}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: ttsControlsZoneHeight }}
           pointerEvents="box-none"
         >
-          <TTSControls
-            isPlaying={ttsState?.isPlaying ?? false}
-            onPlayPause={handleTTSPlayPause}
-            onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
-            onSkipNext={() => readerRef.current?.ttsSkipNext()}
-          />
-        </Animated.View>
+          <Animated.View
+            style={[
+              { flex: 1, alignItems: "center", justifyContent: "center" },
+              {
+                opacity: headerAnim,
+                transform: [
+                  {
+                    translateY: headerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [60, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            pointerEvents="box-none"
+          >
+            <TTSControls
+              isPlaying={ttsState?.isPlaying ?? false}
+              onPlayPause={handleTTSPlayPause}
+              onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
+              onSkipNext={() => readerRef.current?.ttsSkipNext()}
+            />
+          </Animated.View>
+        </ReanimatedView.View>
       )}
 
       {/* Selection bar — appears when user selects text, positioned just below the header */}

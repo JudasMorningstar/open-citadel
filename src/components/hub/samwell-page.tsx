@@ -38,6 +38,7 @@ import {
     type ToolboxItem,
 } from "@/components/samwell/samwell-toolbox";
 import { ThemedText } from "@/components/themed-text";
+import { ViewSwitcher } from "@/components/view-switcher";
 import { contentColumn, spacing } from "@/constants/theme";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
@@ -67,6 +68,9 @@ import { HUB, useHubStore } from "@/stores/hub";
 import { useSamwellSessionStore } from "@/stores/samwell-session";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
+
+/** Chat and Compass, left to right as the switch on the card draws them. */
+const SAMWELL_MODES = ["chat", "compass"] as const;
 
 export function SamwellPage() {
   // Library and Timeline are peer pages of this one, reached by moving the
@@ -223,6 +227,10 @@ export function SamwellPage() {
     (next: string) => setSession({ draft: next }),
     [setSession],
   );
+  // Each mode's body is mounted the first time it is shown and kept from then
+  // on, as the Library's sides are, so switching back lands where it was.
+  const [modesOpened, setModesOpened] = React.useState({ chat: mode === "chat", compass: mode === "compass" });
+  if (!modesOpened[mode]) setModesOpened({ ...modesOpened, [mode]: true });
 
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
@@ -707,38 +715,48 @@ export function SamwellPage() {
               screen's two beats: the content it came for, then the thing to
               type into. */}
           <Reveal index={0} className="flex-1">
-            {mode === "chat" ? (
-              <ChatTranscript
-                sessionId={activeSession?.id ?? null}
-                messages={visibleChatMessages}
-                streamingContent={streamingContent}
-                isGenerating={isGenerating}
-                indicator={indicator}
-                lastStreamedMessageId={lastStreamedMessageId}
-                status={status}
-                pendingUserMessage={chat.pendingUserMessage}
-                contentColumn={contentColumn}
-                floatingClearance={floatingClearance}
-                onNavigateToHighlight={handleNavigateToHighlight}
-                onNavigateToTimeline={handleNavigateToTimeline}
-                onNavigateToBook={handleNavigateToBook}
-              />
-            ) : (
-              <CompassBody
-                conversation={compass}
-                cloudBlocker={readiness.cloudBlocker}
-                /* The same three destinations the status hook takes, so a
-                   missing plan lands on the plans in both tabs. */
-                onOpenSettings={openSamwellSettings}
-                onOpenPlans={openCloudPlans}
-                onOpenAccount={openAccountSettings}
-                onAboutCompass={openAboutCompass}
-                onRetryCloud={refreshPlan}
-                trackableTitles={trackableTitles}
-                contentColumn={contentColumn}
-                floatingClearance={floatingClearance}
-              />
-            )}
+            {/* Chat and Compass trade places the way the Library's sides do,
+                on the switch's own timing: the one leaving steps away, the
+                one arriving steps in from the side the switch moved to. */}
+            <ViewSwitcher
+              order={SAMWELL_MODES}
+              value={mode}
+              sides={{
+                chat: modesOpened.chat ? (
+                  <ChatTranscript
+                    sessionId={activeSession?.id ?? null}
+                    messages={visibleChatMessages}
+                    streamingContent={streamingContent}
+                    isGenerating={isGenerating}
+                    indicator={indicator}
+                    lastStreamedMessageId={lastStreamedMessageId}
+                    status={status}
+                    pendingUserMessage={chat.pendingUserMessage}
+                    contentColumn={contentColumn}
+                    floatingClearance={floatingClearance}
+                    onNavigateToHighlight={handleNavigateToHighlight}
+                    onNavigateToTimeline={handleNavigateToTimeline}
+                    onNavigateToBook={handleNavigateToBook}
+                  />
+                ) : null,
+                compass: modesOpened.compass ? (
+                  <CompassBody
+                    conversation={compass}
+                    cloudBlocker={readiness.cloudBlocker}
+                    /* The same three destinations the status hook takes, so a
+                       missing plan lands on the plans in both tabs. */
+                    onOpenSettings={openSamwellSettings}
+                    onOpenPlans={openCloudPlans}
+                    onOpenAccount={openAccountSettings}
+                    onAboutCompass={openAboutCompass}
+                    onRetryCloud={refreshPlan}
+                    trackableTitles={trackableTitles}
+                    contentColumn={contentColumn}
+                    floatingClearance={floatingClearance}
+                  />
+                ) : null,
+              }}
+            />
           </Reveal>
 
           {/* Floats over the transcript rather than sitting below it, so
