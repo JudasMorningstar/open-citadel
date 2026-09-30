@@ -5,7 +5,8 @@ import { heldPosition } from "@/utils/seek-hold";
 import { saveProgress } from "@/services/podcasts/episode-state";
 import { attachListeners } from "@/services/podcasts/player/events";
 import { startEpisode } from "@/services/podcasts/player/lifecycle";
-import { markStarting, session, store } from "@/services/podcasts/player/session";
+import { markSeeking, markStarting, session, store } from "@/services/podcasts/player/session";
+import { selectPlaying } from "@/stores/podcast-player";
 import { getShow, updateShowSettings } from "@/services/podcasts/shows";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
 
@@ -52,6 +53,11 @@ export function seekTo(seconds: number): void {
     return;
   }
   const target = Math.max(0, seconds);
+  // The native player stops "playing" while it buffers the new place. Kept
+  // as playing (the loader, then Pause) rather than flicking to Play and
+  // back; a seek made while paused shows the loader and stays paused.
+  if (selectPlaying(store())) markStarting();
+  markSeeking();
   // Held until the native player has caught up, so nothing polling it in the
   // meantime draws the old position (see `seek-hold`).
   store().patch({ seekHold: { target, at: Date.now() } });

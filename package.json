@@ -138,7 +138,8 @@
       "react-native-svg": "patches/react-native-svg.patch",
       "@dr33m/react-native-readium": "patches/@dr33m__react-native-readium.patch",
       "react-native-screen-transitions": "patches/react-native-screen-transitions.patch",
-      "expo-modules-core": "patches/expo-modules-core.patch"
+      "expo-modules-core": "patches/expo-modules-core.patch",
+      "@rntp/player": "patches/@rntp__player.patch"
     }
   },
   "expo": {

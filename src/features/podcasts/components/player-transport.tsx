@@ -48,7 +48,7 @@ export function PlayerTransport({ playing, buffering, skipBackSec, skipForwardSe
         accessibilityRole="button"
         accessibilityLabel={playing ? 'Pause' : 'Play'}
       >
-        {buffering && playing ? <Spinner /> : <Icon size={34} color={onGold} fill={onGold} />}
+        {buffering ? <Spinner /> : <Icon size={34} color={onGold} fill={onGold} />}
       </Touchable>
       <Touchable
         className="h-16 w-16 items-center justify-center"

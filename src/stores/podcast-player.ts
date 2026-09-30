@@ -41,6 +41,12 @@ type PodcastPlayerState = {
    */
   starting: boolean;
   /**
+   * A seek was sent and the player is not ready at the new place yet. Shows
+   * the loader whether or not it is playing: a seek made while paused waits
+   * too, and lands back on Play.
+   */
+  seeking: boolean;
+  /**
    * The last seek, until the native player has caught up with it. Read by the
    * position polls, never rendered, so nothing subscribes to it.
    */
@@ -57,6 +63,7 @@ export const usePodcastPlayer = create<PodcastPlayerState>((set) => ({
   isPlaying: false,
   isBuffering: false,
   starting: false,
+  seeking: false,
   seekHold: null,
   speed: 1,
   sleep: null,
@@ -66,8 +73,8 @@ export const usePodcastPlayer = create<PodcastPlayerState>((set) => ({
 
 /** Playing, or about to be: what a play control's icon and the artwork's size follow. */
 export const selectPlaying = (s: PodcastPlayerState) => s.isPlaying || s.starting;
-/** Waiting on the audio (starting, or buffering while playing): what shows a loader in the control. */
-export const selectBusy = (s: PodcastPlayerState) => s.starting || (s.isBuffering && s.isPlaying);
+/** Waiting on the audio (starting, seeking, or buffering while playing): what shows a loader in the control. */
+export const selectBusy = (s: PodcastPlayerState) => s.starting || s.seeking || (s.isBuffering && s.isPlaying);
 
 /** Whether this episode is the one in the player, and whether it is sounding. */
 export function useEpisodePlayback(episodeId: string): 'playing' | 'paused' | 'idle' {

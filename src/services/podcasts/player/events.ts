@@ -10,6 +10,7 @@ import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
 import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
 import {
+  clearSeeking,
   clearStarting,
   finishEpisode,
   persistProgress,
@@ -107,6 +108,7 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
       return;
     case Event.PlaybackError:
       clearStarting();
+      clearSeeking();
       store().patch({ error: "This episode could not be played. Check your connection, or download it first." });
       return;
     default:
@@ -122,18 +124,32 @@ const FOREGROUND_EVENTS = [
   Event.PlaybackError,
 ] as const;
 
+/**
+ * The listeners attached by this runtime, kept outside the module. A hot
+ * reload in development runs this module again with a fresh `session`, and
+ * the old copy's listeners stayed attached, still holding the episode they
+ * were tracking before the reload. Closing the player empties the native
+ * queue, which reports "ended", and an old copy took that as the episode
+ * finishing: it was marked played and dropped out of Continue Listening.
+ * Removing the previous set first leaves one copy listening.
+ */
+const attached = globalThis as { __podcastPlayerListeners?: { remove: () => void }[] };
+
 /** Listens to the native player in the foreground. Once per runtime. */
 export function attachListeners(): void {
   if (session.listenersAttached) return;
   session.listenersAttached = true;
-  for (const type of FOREGROUND_EVENTS) {
-    TrackPlayer.addEventListener(type, ((payload: object) =>
-      void handleEvent({ ...payload, type } as BackgroundEvent)) as never);
-  }
-  // Its own listener: this event's payload has a `type` field of its own, so it
-  // cannot travel through the shared handler's `{ ...payload, type }` shape.
-  // It only clears what the screens show, which nothing in the background draws.
-  TrackPlayer.addEventListener(Event.SleepTimerTriggered, () => store().patch({ sleep: null }));
+  attached.__podcastPlayerListeners?.forEach((listener) => listener.remove());
+  attached.__podcastPlayerListeners = [
+    ...FOREGROUND_EVENTS.map((type) =>
+      TrackPlayer.addEventListener(type, ((payload: object) =>
+        void handleEvent({ ...payload, type } as BackgroundEvent)) as never),
+    ),
+    // Its own listener: this event's payload has a `type` field of its own, so it
+    // cannot travel through the shared handler's `{ ...payload, type }` shape.
+    // It only clears what the screens show, which nothing in the background draws.
+    TrackPlayer.addEventListener(Event.SleepTimerTriggered, () => store().patch({ sleep: null })),
+  ];
 }
 
 /** Android: the same handling while the app is in the background. Module level, before render. */

@@ -40,7 +40,7 @@ export function MiniPlayerControls({
         accessibilityRole="button"
         accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
       >
-        {isBuffering && isPlaying ? (
+        {isBuffering ? (
           <Spinner size="sm" />
         ) : (
           <PlayIcon size={iconSize.default} color={color} fill={color} />
