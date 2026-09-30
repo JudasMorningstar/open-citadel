@@ -35,37 +35,21 @@ export function DeviceVoiceSheet({
 }: DeviceVoiceSheetProps) {
   const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
 
-  const renderRow = React.useCallback(
-    ({ item }: { item: DeviceVoiceRow }) => {
-      if (item.kind === 'header') {
-        return (
-          <View className="bg-popover px-6 py-2">
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-              {item.title}
-            </ThemedText>
-          </View>
-        );
-      }
-      return (
-        <DeviceVoiceItem
-          voice={item.voice}
-          isSelected={item.voice.identifier === selected}
-          isPreviewing={previewing === item.voice.identifier}
-          primary={asColor(primary)}
-          mutedForeground={asColor(mutedForeground)}
-          onSelect={onSelect}
-          onPreview={onPreview}
-        />
-      );
-    },
-    [selected, previewing, primary, mutedForeground, onSelect, onPreview],
-  );
-
   return (
-    // Two detents: it opens at half height so the settings it came from stay
-    // visible, and grows to full only for hunting through a long list.
-    <Sheet visible={visible} onClose={onClose} snapRatios={[0.5, 1]}>
-      <View className="flex-row items-center justify-between px-6 pb-3">
+    // Fixed height, one detent, and a plain `Sheet.ScrollView` rather than
+    // `Sheet.FlatList` — the same shape `PlanInfoSheet` uses, which is the
+    // one other sheet in the app genuinely nested inside another open sheet
+    // (via `stackBehavior="push"`, same as here). FlashList's gesture
+    // registration (`Sheet.FlatList`'s `useBottomSheetScrollableCreator`) is
+    // what every *other* nested-in-a-sheet picker in this codebase avoids —
+    // `Select`'s own sheet presentation isn't used inside a sheet either, in
+    // favour of its plain-`ScrollView` overlay presentation. Scrolling this
+    // list while it sat behind a second, independently-gestured `BottomSheetModal`
+    // is what made the drawer behind it jump/expand and made a plain pan hard
+    // to close: two live gesture recognizers over the same list, not the
+    // detents or the stack behavior.
+    <Sheet visible={visible} onClose={onClose} stackBehavior="push" fixedHeightRatio={0.75}>
+      <View className="flex-row items-center justify-between px-6 pb-3 pt-2">
         <ThemedText type="headlineSm">Select voice</ThemedText>
       </View>
 
@@ -77,15 +61,28 @@ export function DeviceVoiceSheet({
           <VoiceListSkeleton />
         ) : (
           <PageFade edges="both" surface="popover">
-            <Sheet.FlatList
-              data={rows}
-              keyExtractor={(item: DeviceVoiceRow) => item.key}
-              // Headings and voices recycle in separate pools; without this a
-              // heading cell would be re-bound to a voice and keep its styling.
-              getItemType={(item: DeviceVoiceRow) => item.kind}
-              extraData={`${selected}|${previewing}`}
-              renderItem={renderRow}
-            />
+            <Sheet.ScrollView>
+              {rows.map((row) =>
+                row.kind === 'header' ? (
+                  <View key={row.key} className="bg-popover px-6 py-2">
+                    <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+                      {row.title}
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <DeviceVoiceItem
+                    key={row.key}
+                    voice={row.voice}
+                    isSelected={row.voice.identifier === selected}
+                    isPreviewing={previewing === row.voice.identifier}
+                    primary={asColor(primary)}
+                    mutedForeground={asColor(mutedForeground)}
+                    onSelect={onSelect}
+                    onPreview={onPreview}
+                  />
+                ),
+              )}
+            </Sheet.ScrollView>
           </PageFade>
         )}
       </Sheet.Deferred>
