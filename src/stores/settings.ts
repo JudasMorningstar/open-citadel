@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { db } from '@/db/client';
 import { appSettings } from '@/db/schema';
+import { DEVICE_VOICE, isKokoroVoice } from '@/services/device-tts/catalogue';
 import { decideOnboarding } from '@/utils/onboarding-gate';
 
 export type AppTheme = 'dark' | 'light';
@@ -81,6 +82,15 @@ type SettingsState = {
   cloudThinkingBudget: CloudThinkingBudget;
   ttsVoice: string | null;
   ttsVoiceLanguage: string | null;
+  /**
+   * Per-mode memory for the reading voice, so switching between natural and
+   * phone voices comes back to whatever was last picked in each rather than
+   * resetting to a default. `ttsVoice` is only ever the *active* one; these
+   * two are never overwritten by the other mode's choice.
+   */
+  ttsNaturalVoice: string | null;
+  ttsPhoneVoice: string | null;
+  ttsPhoneVoiceLanguage: string | null;
   ttsRate: number;  isLoaded: boolean;
   loadSettings: () => Promise<void>;
   setUsername: (name: string) => Promise<void>;
@@ -119,6 +129,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   cloudThinkingBudget: 'medium',
   ttsVoice: null,
   ttsVoiceLanguage: null,
+  ttsNaturalVoice: null,
+  ttsPhoneVoice: null,
+  ttsPhoneVoiceLanguage: null,
   ttsRate: 1.0,  isLoaded: false,
 
   loadSettings: async () => {
@@ -147,6 +160,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ),
       ttsVoice: map['ttsVoice'] ?? null,
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
+      ttsNaturalVoice: map['ttsNaturalVoice'] ?? null,
+      ttsPhoneVoice: map['ttsPhoneVoice'] ?? null,
+      ttsPhoneVoiceLanguage: map['ttsPhoneVoiceLanguage'] ?? null,
       ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
     });
 
@@ -205,11 +221,29 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (voice === null) {
       await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoice'));
       await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
-    } else {
-      await saveSetting('ttsVoice', voice);
-      if (language) await saveSetting('ttsVoiceLanguage', language);
+      set({ ttsVoice: voice, ttsVoiceLanguage: language });
+      return;
     }
+
+    await saveSetting('ttsVoice', voice);
+    // A voice with no language must not keep the previous voice's, or it
+    // comes back after a restart paired with the wrong one.
+    if (language) await saveSetting('ttsVoiceLanguage', language);
+    else await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
     set({ ttsVoice: voice, ttsVoiceLanguage: language });
+
+    // Remember this choice against its own mode, not the other one's, so
+    // switching modes and back restores it instead of a default.
+    if (isKokoroVoice(voice)) {
+      await saveSetting('ttsNaturalVoice', voice);
+      set({ ttsNaturalVoice: voice });
+    } else {
+      const phoneVoice = voice === DEVICE_VOICE ? '' : voice;
+      await saveSetting('ttsPhoneVoice', phoneVoice);
+      if (language) await saveSetting('ttsPhoneVoiceLanguage', language);
+      else await db.delete(appSettings).where(eq(appSettings.key, 'ttsPhoneVoiceLanguage'));
+      set({ ttsPhoneVoice: phoneVoice, ttsPhoneVoiceLanguage: language });
+    }
   },
 
   setTtsRate: async (rate: number) => {

@@ -27,7 +27,7 @@
 import RNBlobUtil from 'react-native-blob-util';
 import type { llm, LLMModel } from 'react-native-executorch';
 
-import { getExecuTorch } from '@/lib/executorch';
+import { createExclusiveQueue, getExecuTorch } from '@/lib/executorch';
 import type { CatalogueModel } from '@/services/device-llm/catalogue';
 
 export interface Engine {
@@ -83,9 +83,6 @@ let dirty = false;
  * loaded.
  */
 let pristine = false;
-/** Tail of the queue every engine operation waits its turn on. */
-let queue: Promise<unknown> = Promise.resolve();
-
 export function getEngine(): Engine | null {
   return engine;
 }
@@ -228,11 +225,7 @@ export function unloadEngine(): Promise<void> {
  * A failure is handed back to its own caller and does not poison the queue for
  * the next one.
  */
-export function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(fn, fn);
-  queue = run.catch(() => undefined);
-  return run;
-}
+export const exclusive = createExclusiveQueue();
 
 /**
  * Replaces the engine's runner with a fresh one over the same files: the only
