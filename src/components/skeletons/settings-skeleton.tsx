@@ -3,18 +3,12 @@ import { View } from 'react-native';
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
 
 /**
- * Stand-in for the Settings body, section by section.
+ * Stand-in for the part of Settings that mounts once the drawer has landed.
  *
- * Deliberately not a loop over identical rows: these four groups do not share a
- * shape. Profile is a field sunk into a card, Appearance is a card with a
- * switch, Books is an icon beside a wrapped paragraph, and Samwell is a
- * label-and-subtitle over two side-by-side mode cards with a panel under them.
- * A placeholder that drew them all as one row would be describing a screen this
- * app does not have, and the mismatch shows at exactly the moment it dissolves.
- *
- * Only what mounts above the fold is drawn — the sections below are gated on
- * settle and were never part of the first paint, so standing in for them would
- * invent a wait that does not happen.
+ * Drawn in the Samwell section's own shape, a label-and-subtitle over two
+ * side-by-side mode cards with a panel under them, not as generic rows: a
+ * placeholder describing a screen this app does not have shows its mismatch
+ * at exactly the moment it dissolves.
  */
 
 /**
@@ -48,49 +42,15 @@ function ModeCardSkeleton() {
   );
 }
 
+/**
+ * Settings below its first screenful, before the page has landed: the Samwell
+ * section, which is the first thing under the fold and the one a reader
+ * scrolling straight down meets. Profile, Appearance and Books above it are
+ * drawn from the first frame.
+ */
 export function SettingsSkeleton() {
   return (
     <SkeletonGroup label="Loading settings">
-      {/* PROFILE — name field with the rank badge at its end. */}
-      <View className="mt-6 gap-4">
-        <GroupLabel />
-        <View className={`${CARD} p-4`}>
-          {/* `inset`, like the real field: a well sunk into the card rather
-              than a second block sitting on it. */}
-          <View className="flex-row items-center gap-3 bg-inset px-4 py-1.5">
-            <SkeletonBar className="h-9 w-9 rounded" />
-            <SkeletonBar className="h-3.5 flex-1" />
-          </View>
-        </View>
-      </View>
-
-      {/* APPEARANCE — one card, icon and label, switch on the right. */}
-      <Divider />
-      <View className="mt-8 gap-4">
-        <GroupLabel width="w-28" />
-        <View className={`${CARD} flex-row items-center justify-between p-4`}>
-          <View className="flex-row items-center gap-3">
-            <SkeletonBar className="h-9 w-9 rounded" />
-            <SkeletonBar className="h-3.5 w-24" />
-          </View>
-          <SkeletonBar className="h-7 w-12 rounded-full" />
-        </View>
-      </View>
-
-      {/* BOOKS — icon beside a paragraph that wraps to three lines. */}
-      <Divider />
-      <View className="mt-8 gap-4">
-        <GroupLabel width="w-16" />
-        <View className={`${CARD} flex-row items-start gap-3 p-4`}>
-          <SkeletonBar className="h-9 w-9 rounded" />
-          <View className="flex-1 gap-2">
-            <SkeletonBar className="h-3 w-full" />
-            <SkeletonBar className="h-3 w-full" />
-            <SkeletonBar className="h-3 w-2/3" />
-          </View>
-        </View>
-      </View>
-
       {/* SAMWELL — label over a subtitle, then the two mode cards side by side,
           then the engine panel beneath them. */}
       <Divider />

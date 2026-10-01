@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChevronLeft } from "@/components/icons";
 import { ListEmpty } from "@/components/list-empty";
-import { Handover } from "@/components/navigation/handover";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize, layout } from "@/constants/theme";
@@ -23,6 +22,9 @@ import { useShowScreen, type ShowParams } from "@/features/podcasts/hooks/use-sh
 import { useShowSheets } from "@/features/podcasts/hooks/use-show-sheets";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
+import type { EpisodeItem } from "@/services/podcasts/records";
+
+const NO_EPISODES: EpisodeItem[] = [];
 
 /**
  * A show: its hero, and every episode it has published.
@@ -43,8 +45,16 @@ export default function ShowScreen() {
   const sheets = useShowSheets(screen.show, screen.unfollow);
   const renderItem = useEpisodeRowRenderer(episodeActions);
 
-  const empty = screen.resolving ? <EpisodeListSkeleton /> : <ListEmpty text={screen.emptyText} />;
+  // The list is mounted from the first frame with the hero as its header, so
+  // the hero is drawn once and never swapped: a placeholder copy of it,
+  // dissolving onto the list's own, blinked the cover. Only the rows wait
+  // for the slide to land (a list of rows mounting mid-slide froze it), with
+  // their skeleton in their place.
+  const episodes = landed ? screen.episodes : NO_EPISODES;
+  const empty = !landed || screen.resolving ? <EpisodeListSkeleton /> : <ListEmpty text={screen.emptyText} />;
   const header = <ShowListHeader screen={screen} onUnfollow={sheets.openUnfollow} onSettings={sheets.openSettings} />;
+  // Nothing known yet (a show no cache holds, opened from the player): its shape until the read lands.
+  const known = screen.title !== '';
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -54,11 +64,9 @@ export default function ShowScreen() {
         leftLabel="Back"
         onLeftPress={() => router.back()}
       />
-      {/* The list mounts once the slide has landed: mounting it mid-slide is
-          what froze the transition partway. The skeleton holds its shape. */}
-      <Handover ready={landed} skeleton={<ShowPageSkeleton />}>
+      {known ? (
         <ShowEpisodeList
-          episodes={screen.episodes}
+          episodes={episodes}
           renderItem={renderItem}
           header={header}
           empty={empty}
@@ -67,7 +75,9 @@ export default function ShowScreen() {
           refreshing={screen.refreshing}
           onRefresh={screen.refresh}
         />
-      </Handover>
+      ) : (
+        <ShowPageSkeleton />
+      )}
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
       {landed ? (
         <>

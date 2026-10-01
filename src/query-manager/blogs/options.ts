@@ -1,10 +1,12 @@
 import type { UseQueryOptions } from '@tanstack/react-query';
 
+import { queryClient } from '@/lib/query-client';
 import { blogKeys, type BlogSection } from '@/query-manager/blogs/keys';
 import { openDiscoveredBlog } from '@/services/blogs/actions';
 import { listAskableArticles, listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
 import { followedFeedUrls, getBlog, listFollowedBlogs } from '@/services/blogs/blogs';
 import type { ArticleItem, Blog, BlogItem } from '@/services/blogs/records';
+import { sameSet } from '@/utils/sets';
 
 type Options<T, TData = T> = Omit<UseQueryOptions<T, Error, TData>, 'queryKey' | 'queryFn'>;
 
@@ -74,9 +76,27 @@ export function createAskableArticlesQueryOptions<TData = ArticleItem[]>(options
   } satisfies UseQueryOptions<ArticleItem[], Error, TData>;
 }
 
+/** A followed blog already read by the Blogs page or its "View all". Undefined when neither has it. */
+function cachedBlog(id: string): { blog: Blog; at: number } | undefined {
+  for (const key of [blogKeys.home(), blogKeys.section('blogs')]) {
+    const state = queryClient.getQueryState<BlogsHomeData | BlogSectionData>(key);
+    const blog = state?.data?.blogs.find((b) => b.id === id);
+    if (blog) return { blog, at: state!.dataUpdatedAt };
+  }
+  return undefined;
+}
+
+/**
+ * One blog. Seeded from a list that already holds it, so a blog's page opened
+ * from the Library draws its hero in its first frame rather than a few frames
+ * into the slide. Seeded data is as fresh as the list it came from; every
+ * write invalidates both.
+ */
 export function createBlogQueryOptions(id: string, options?: Options<Blog | null>) {
   return {
     ...LIBRARY,
+    initialData: () => cachedBlog(id)?.blog,
+    initialDataUpdatedAt: () => cachedBlog(id)?.at,
     ...options,
     queryKey: blogKeys.blog(id),
     queryFn: () => getBlog(id),
@@ -96,6 +116,12 @@ export function createBlogArticlesQueryOptions(id: string, filter: BlogArticleFi
 export function createFollowedFeedsQueryOptions(options?: Options<Set<string>>) {
   return {
     ...LIBRARY,
+    // A set does not share structure on its own: without this every library
+    // change handed Explore a new one and redrew every tile.
+    structuralSharing: (previous: unknown, next: unknown) => {
+      const before = previous as Set<string> | undefined;
+      return before && sameSet(before, next as Set<string>) ? before : next;
+    },
     ...options,
     queryKey: blogKeys.followedFeeds(),
     queryFn: followedFeedUrls,

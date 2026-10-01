@@ -32,7 +32,7 @@ import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
@@ -44,6 +44,7 @@ import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
 import { queryClient } from "@/lib/query-client";
+import { queryPersistOptions } from "@/lib/query-persist";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
@@ -299,10 +300,12 @@ export default function RootLayout() {
 
   return (
     // The query cache is outermost: it draws nothing, and anything below may
-    // read through it. ThemeTokensProvider wraps everything else, PanelUIProvider
-    // included, so the portal host that sheets present into resolves its tokens
-    // from the same single subscription as the rest of the tree.
-    <QueryClientProvider client={queryClient}>
+    // read through it. Its kept catalogues are read back from storage first
+    // (see `lib/query-persist`), a few milliseconds in which queries wait.
+    // ThemeTokensProvider wraps everything else, PanelUIProvider included, so
+    // the portal host that sheets present into resolves its tokens from the
+    // same single subscription as the rest of the tree.
+    <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
       <ThemeTokensProvider>
         {/* PanelUIProvider owns the gesture handler root every gesture recognizer
           in the app needs, plus PanelUI's own portal/toast host and the keyboard
@@ -434,6 +437,6 @@ export default function RootLayout() {
           </ToastProvider>
         </PanelUIProvider>
       </ThemeTokensProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

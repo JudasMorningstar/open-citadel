@@ -44,7 +44,7 @@ export function PlayerArtwork({ uri, size, playing }: PlayerArtworkProps) {
   return (
     <Transition.Boundary id={NOW_PLAYING_ART}>
       <Animated.View style={[elevation.card, style]}>
-        <PodcastArtwork uri={uri} size={size} placeholderColor={tokens['--color-surface-tertiary']} fadeIn={false} />
+        <PodcastArtwork uri={uri} size={size} placeholderColor={tokens['--color-surface-tertiary']} />
       </Animated.View>
     </Transition.Boundary>
   );

@@ -24,7 +24,7 @@ export function ShowListHeader({ screen, onUnfollow, onSettings }: ShowListHeade
       />
       {show ? (
         <EpisodeListControls
-          count={screen.episodes.length}
+          count={screen.episodeCount}
           filter={screen.filter}
           sort={show.episodeSort}
           onFilter={screen.setFilter}

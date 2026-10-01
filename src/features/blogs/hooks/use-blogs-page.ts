@@ -7,6 +7,7 @@ import { useArticleActions } from '@/features/blogs/hooks/use-article-actions';
 import { useBlogImport } from '@/features/blogs/hooks/use-blog-import';
 import {
   createBlogSectionQueryOptions,
+  createFollowedFeedsQueryOptions,
   createBlogsHomeQueryOptions,
   invalidateBlogLibrary,
   type BlogSection,
@@ -42,7 +43,11 @@ export function useBlogsPage() {
       if (summary.refreshed > 0) invalidateBlogLibrary();
     });
   }, []);
-  const openExplore = React.useCallback(() => router.push('/blogs/explore'), [router]);
+  // Explore's directory is built in; what it reads is which blogs are followed.
+  const openExplore = React.useCallback(() => {
+    void queryClient.prefetchQuery(createFollowedFeedsQueryOptions());
+    router.push('/blogs/explore');
+  }, [queryClient, router]);
   const { mutate, isPending } = pull;
   const refresh = React.useCallback(() => {
     if (!isPending) mutate();

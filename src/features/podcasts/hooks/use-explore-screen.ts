@@ -1,10 +1,11 @@
-import { useRouter } from 'expo-router';
+import { useRouter, type ImperativeRouter } from 'expo-router';
 import React from 'react';
 
 import { useAntennaPodImport } from '@/features/podcasts/hooks/use-antennapod-import';
 import { useExploreCharts, useExploreSearch, useFollowedCheck } from '@/features/podcasts/hooks/use-explore';
 import { looksLikeLink } from '@/features/podcasts/utils/links';
 import { discoveredKey } from '@/features/podcasts/utils/show-tiles';
+import { prefetchDiscoveredShow } from '@/services/podcasts/actions';
 import { appleIdFromLink, type DiscoveredShow, type ExploreGenre } from '@/services/podcasts/discovery';
 import { normalizeFeedUrl } from '@/services/feeds/fetch';
 
@@ -29,6 +30,14 @@ export function discoverParams(show: OpenableShow) {
   return params;
 }
 
+/**
+ * Opens a show Explore found. Its feed starts downloading at the tap, and is
+ * stored behind the hero once the page has landed.
+ */
+export function openDiscoveredShowPage(router: ImperativeRouter, show: OpenableShow): void {
+  prefetchDiscoveredShow(show);
+  router.push({ pathname: '/podcasts/show/[id]', params: discoverParams(show) });
+}
 
 /**
  * Explore's state: the charts, a search as typing pauses, a pasted link, the
@@ -42,13 +51,8 @@ export function useExploreScreen(settled: boolean) {
   const isFollowed = useFollowedCheck();
   const importer = useAntennaPodImport();
 
-  /** Straight to the show's page; its feed is fetched there, behind the hero. */
-  const openShow = React.useCallback(
-    (show: OpenableShow) => {
-      router.push({ pathname: '/podcasts/show/[id]', params: discoverParams(show) });
-    },
-    [router],
-  );
+  /** Straight to the show's page; its feed is stored there, behind the hero. */
+  const openShow = React.useCallback((show: OpenableShow) => openDiscoveredShowPage(router, show), [router]);
   const openLink = React.useCallback(() => {
     const appleId = appleIdFromLink(query);
     openShow({ appleId, feedUrl: appleId ? null : normalizeFeedUrl(query), title: '', author: null, artworkUrl: null });

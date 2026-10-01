@@ -4,6 +4,7 @@ import React from 'react';
 
 import { useAntennaPodImport } from '@/features/podcasts/hooks/use-antennapod-import';
 import { useEpisodeActions } from '@/features/podcasts/hooks/use-episode-actions';
+import { openPodcastExplore } from '@/features/podcasts/hooks/open-podcast-page';
 import { usePodcastHome } from '@/features/podcasts/hooks/use-podcast-home';
 import type { PodcastSection } from '@/features/podcasts/utils/sections';
 import { createPodcastSectionQueryOptions } from '@/query-manager/podcasts';
@@ -36,10 +37,10 @@ export function usePodcastsPage() {
     void refreshAllShows(false);
   }, []);
 
-  const openExplore = React.useCallback(() => router.push('/podcasts/explore'), [router]);
+  const openExplore = React.useCallback(() => openPodcastExplore(router), [router]);
   const startFresh = React.useCallback(() => {
     usePodcastPrefs.getState().set('onboarding', 'fresh');
-    router.push('/podcasts/explore');
+    openPodcastExplore(router);
   }, [router]);
   const refresh = React.useCallback(() => {
     if (!pull.isPending) pull.mutate();

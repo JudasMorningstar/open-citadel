@@ -20,7 +20,8 @@ const ART = 200;
 const TILE_ICON = 20;
 
 type EpisodeHeroProps = {
-  episode: Episode;
+  /** No notes: the hero is drawn from a list's row before the page's read lands. */
+  episode: Omit<Episode, 'description'>;
   showTitle: string;
   artworkUrl: string | null;
   playback: 'playing' | 'paused' | 'idle';
@@ -102,6 +103,10 @@ export function EpisodeHero({
     <View className="gap-5">
       <View className="items-center">
         <View style={elevation.card}>
+          {/* No fade: the cover is the one just tapped, decoded again at this
+              size in a few frames, or one downloading since the tap (see
+              `openEpisodePage`). Fading it in on top read as a blank cover
+              loading in. */}
           <PodcastArtwork uri={artworkUrl} size={ART} placeholderColor={tokens['--color-surface-tertiary']} />
         </View>
       </View>

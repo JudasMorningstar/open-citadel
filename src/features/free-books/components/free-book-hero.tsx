@@ -1,14 +1,13 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 
+import { CoverImage } from '@/components/cover-image';
 import { ProgressOutline } from '@/components/progress-outline';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { elevation, motion } from '@/constants/theme';
+import { elevation } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 const COVER = { width: 150, height: 225 } as const;
 /** The gap between the button and the progress outline around it. */
@@ -42,7 +41,7 @@ export function FreeBookHero({ title, author, coverUrl, actionLabel, actionHint,
     <View className="gap-5 px-6 pb-6 pt-2">
       <View className="items-center">
         <View className="bg-card" style={[COVER, elevation.card]}>
-          <Image source={coverUrl ?? undefined} style={COVER} placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }} transition={motion.slow} />
+          <CoverImage source={coverUrl ?? undefined} style={COVER} />
         </View>
       </View>
       <View className="items-center gap-1">

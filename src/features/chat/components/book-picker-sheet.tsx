@@ -9,16 +9,16 @@ import React, {
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { ChevronRight } from '@/components/icons';
-import { Image } from 'expo-image';
 
+import { CoverImage } from '@/components/cover-image';
 import { PageFade } from '@/components/scroll-fades';
 import { Item } from '@/components/ui/item';
 import { SearchBar } from '@/components/ui/search-bar';
 import { BookListSkeleton } from '@/components/skeletons/book-list-skeleton';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
-import { fontFamily, motion } from '@/constants/theme';
-import { asColor, COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
+import { fontFamily } from '@/constants/theme';
+import { asColor } from '@/utils/colors';
 import { useAllBooks, useBooksStore } from '@/stores/books';
 
 /**
@@ -78,12 +78,10 @@ const BookRow = React.memo(function BookRow({
     <Item className="px-6 py-3" onPress={() => onSelect(book.id, book.title)}>
       <Item.Media variant="image" className="h-[56px] w-[40px]">
         {book.coverUrl ? (
-          <Image
+          <CoverImage
             source={{ uri: book.coverUrl }}
             style={COVER_FILL}
-            placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
             recyclingKey={book.id}
-            transition={motion.slow}
           />
         ) : (
           <ThemedText

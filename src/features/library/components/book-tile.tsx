@@ -1,13 +1,12 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import { ThemedText } from '@/components/themed-text';
 import { TileBadge, type TileBadgeIcon } from '@/components/tile-badge';
 import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
-import { fontFamily, motion } from '@/constants/theme';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
+import { fontFamily } from '@/constants/theme';
 import type { TileBook } from '@/features/library/utils/tile-book';
 
 
@@ -94,11 +93,9 @@ function BookTileBase<B extends TileBook>({
           <View className="shadow-sm" style={{ width: coverWidth }}>
             <View className="aspect-[2/3] overflow-hidden bg-card">
               {book.coverUrl ? (
-                <Image
+                <CoverImage
                   source={{ uri: book.coverUrl }}
                   style={COVER_FILL}
-                  placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-                  transition={motion.slow}
                   recyclingKey={String(book.id)}
                 />
               ) : (

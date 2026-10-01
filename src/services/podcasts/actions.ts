@@ -12,7 +12,7 @@ import { deleteDownloads, deleteIfPlayed, deleteShowDownloads, downloadEpisodes,
 import * as episodeState from "@/services/podcasts/episode-state";
 import * as queue from "@/services/podcasts/queue";
 import { appleIdFromLink, resolveFeedUrl, type DiscoveredShow } from "@/services/podcasts/discovery";
-import { normalizeFeedUrl } from "@/services/feeds/fetch";
+import { fetchFeedEarly, normalizeFeedUrl } from "@/services/feeds/fetch";
 import { addShowFromFeed, refreshShow } from "@/services/podcasts/feed-sync";
 import { finishCurrentAndAdvance, stopPlayback, syncNativeQueue } from "@/services/podcasts/player";
 import * as shows from "@/services/podcasts/shows";
@@ -128,14 +128,32 @@ export async function refreshShowNow(showId: string): Promise<string | null> {
 }
 
 /**
+ * Starts the download behind `openDiscoveredShow` at the tap that opens the
+ * show, so its page, which waits to land before storing the feed, finds the
+ * feed already here rather than starting a round trip then. Nothing for a
+ * show already stored: that opens from the database.
+ */
+export function prefetchDiscoveredShow(show: Pick<DiscoveredShow, "appleId" | "feedUrl">): void {
+  resolveFeedUrl(show)
+    .then(async (feedUrl) => {
+      if (!(await shows.findShowByFeedUrl(feedUrl))) fetchFeedEarly(feedUrl);
+    })
+    .catch(() => {});
+}
+
+/**
  * Opens a show found in Explore: fetches its feed and stores it as a preview,
  * so its page and episodes are real and playable before anyone commits to
  * following it. Returns the stored show's id.
  */
 export async function openDiscoveredShow(show: Pick<DiscoveredShow, "appleId" | "feedUrl">): Promise<string> {
   const feedUrl = await resolveFeedUrl(show);
+  // No library invalidation: a preview is in no list (every shelf, the
+  // Podcasts page and Explore's "Following" draw followed shows, or episodes
+  // someone has played, queued or kept), and the page asks for its own rows.
+  // Re-reading every list on screen here landed just as the page did, and
+  // stalled the slide back out to Explore.
   const stored = await addShowFromFeed(feedUrl, "preview");
-  invalidatePodcastLibrary();
   // A show seen before (a preview kept from last week, or one followed) may be
   // behind its feed: bring it up to date behind the page that is opening.
   const age = stored.lastRefreshAt ? Date.now() - Date.parse(stored.lastRefreshAt) : Infinity;

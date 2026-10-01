@@ -19,6 +19,7 @@ import {
 import type { EpisodeItem, Podcast, ShowItem } from '@/services/podcasts/records';
 import { parseShowNotes, type NoteBlock } from '@/services/podcasts/show-notes';
 import { followedShowKeys, getShow, listSubscribedShows } from '@/services/podcasts/shows';
+import { sameSet } from '@/utils/sets';
 
 type Options<T, TData = T> = Omit<UseQueryOptions<T, Error, TData>, 'queryKey' | 'queryFn'>;
 
@@ -92,17 +93,49 @@ type FollowedKeys = Awaited<ReturnType<typeof followedShowKeys>>;
 export function createFollowedShowsQueryOptions(options?: Options<FollowedKeys>) {
   return {
     ...LIBRARY,
-    // Sets do not share structure; a new answer is a new object either way.
-    structuralSharing: false,
+    // Sets do not share structure on their own, and a new object each read
+    // redrew all of Explore (every tile asks "following?") on every library
+    // change. The last answer is kept while the follows are the same.
+    structuralSharing: (previous: unknown, next: unknown) => {
+      const before = previous as FollowedKeys | undefined;
+      const after = next as FollowedKeys;
+      return before && sameSet(before.feedUrls, after.feedUrls) && sameSet(before.titles, after.titles) ? before : after;
+    },
     ...options,
     queryKey: podcastKeys.followed(),
     queryFn: followedShowKeys,
   } satisfies UseQueryOptions<FollowedKeys>;
 }
 
+/**
+ * A show already read by another query: the Podcasts page lists every
+ * followed show whole, and an episode's page carries its show. Undefined when
+ * neither has it.
+ */
+function cachedShow(id: string): { show: Podcast; at: number } | undefined {
+  const home = queryClient.getQueryState<PodcastHomeData>(podcastKeys.home());
+  const fromHome = home?.data?.shows.find((show) => show.id === id);
+  if (fromHome) return { show: fromHome, at: home!.dataUpdatedAt };
+  for (const [key, data] of queryClient.getQueriesData<EpisodePageData>({ queryKey: podcastKeys.library() })) {
+    if (key[2] !== 'episode' || key.length !== 4) continue;
+    const show = data?.detail?.show;
+    if (show?.id === id) return { show, at: queryClient.getQueryState(key)?.dataUpdatedAt ?? 0 };
+  }
+  return undefined;
+}
+
+/**
+ * One show. Seeded from a cache that already holds it, so a show's page
+ * opened from the Library or an episode draws its hero in its first frame:
+ * the read itself is asynchronous and lands a few frames into the slide,
+ * which swapped a skeleton for the hero mid-slide. Seeded data is as fresh as
+ * the query it came from; every write invalidates both.
+ */
 export function createShowQueryOptions(id: string, options?: Options<Podcast | null>) {
   return {
     ...LIBRARY,
+    initialData: () => cachedShow(id)?.show,
+    initialDataUpdatedAt: () => cachedShow(id)?.at,
     ...options,
     queryKey: podcastKeys.show(id),
     queryFn: () => getShow(id),
@@ -143,10 +176,39 @@ export function createEpisodeQueryOptions(id: string, options?: Options<EpisodeP
   } satisfies UseQueryOptions<EpisodePageData>;
 }
 
-/** An episode as a list row draws it: no notes, with its show's name and artwork. */
+/** The episode rows a library query holds, read by the shape its key says it has. */
+function episodesIn(key: readonly unknown[], data: unknown): EpisodeItem[] {
+  if (data == null) return [];
+  const [, , kind, , part] = key;
+  if (kind === 'home' && key.length === 3) return Object.values((data as PodcastHomeData).shelves).flat();
+  if (kind === 'section') return (data as PodcastSectionData).episodes;
+  if (kind === 'show' && part === 'episodes') return data as EpisodeItem[];
+  return [];
+}
+
+/**
+ * An episode already read as a row of a list: the Podcasts page's shelves, a
+ * "View all", a show's episodes. Whichever list it was tapped in holds it.
+ */
+function cachedEpisodeItem(id: string): { item: EpisodeItem; at: number } | undefined {
+  for (const [key, data] of queryClient.getQueriesData({ queryKey: podcastKeys.library() })) {
+    const item = episodesIn(key, data).find((episode) => episode.id === id);
+    if (item) return { item, at: queryClient.getQueryState(key)?.dataUpdatedAt ?? 0 };
+  }
+  return undefined;
+}
+
+/**
+ * An episode as a list row draws it: no notes, with its show's name and
+ * artwork. Seeded from the list it was tapped in, so an episode's page draws
+ * its hero, cover and all, in its first frame instead of a few frames into
+ * the slide, when the page's own read lands.
+ */
 export function createEpisodeItemQueryOptions(id: string, options?: Options<EpisodeItem | null>) {
   return {
     ...LIBRARY,
+    initialData: () => cachedEpisodeItem(id)?.item,
+    initialDataUpdatedAt: () => cachedEpisodeItem(id)?.at,
     ...options,
     queryKey: podcastKeys.episodeItem(id),
     queryFn: () => getEpisodeItem(id),

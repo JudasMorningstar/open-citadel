@@ -5,6 +5,7 @@ import React from 'react';
 import { looksLikeAddress, searchDirectory } from '@/features/blogs/utils/explore';
 import { backTo } from '@/navigation/navigate';
 import { createFollowedFeedsQueryOptions } from '@/query-manager/blogs';
+import { prefetchDiscoveredBlog } from '@/services/blogs/actions';
 import { BLOG_DIRECTORY, DIRECTORY_BLOGS, type DirectoryBlog } from '@/services/blogs/directory';
 
 /** What Explore shows under its search field. */
@@ -27,8 +28,11 @@ export function useBlogsExplore() {
   const address = looksLikeAddress(term) ? term : null;
 
   const openBlog = React.useCallback(
-    (blog: Pick<DirectoryBlog, 'feedUrl' | 'title'>) =>
-      router.push({ pathname: '/blogs/blog/[id]', params: { id: 'found', feedUrl: blog.feedUrl, title: blog.title } }),
+    (blog: Pick<DirectoryBlog, 'feedUrl' | 'title'>) => {
+      // Its feed downloads from the tap; the page stores it once it has landed.
+      prefetchDiscoveredBlog(blog.feedUrl);
+      router.push({ pathname: '/blogs/blog/[id]', params: { id: 'found', feedUrl: blog.feedUrl, title: blog.title } });
+    },
     [router],
   );
   const openAddress = React.useCallback(() => {

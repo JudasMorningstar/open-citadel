@@ -1,13 +1,11 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import { ChevronRight } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { motion } from '@/constants/theme';
 import type { CatalogBook } from '@/services/gutenberg/records';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 const COVER = { width: 40, height: 60 } as const;
 
@@ -27,11 +25,9 @@ export const CatalogResultRow = React.memo(function CatalogResultRow({ book, mut
       accessibilityLabel={book.title}
     >
       <View className="overflow-hidden bg-card shadow-sm" style={COVER}>
-        <Image
+        <CoverImage
           source={book.coverUrl ?? undefined}
           style={COVER}
-          placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-          transition={motion.slow}
           recyclingKey={String(book.id)}
         />
       </View>

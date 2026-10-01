@@ -3,7 +3,6 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Plus } from "@/components/icons";
-import { Handover } from "@/components/navigation/handover";
 import { fabClearance } from "@/components/fab-placement";
 import { ScreenFab } from "@/components/screen-fab";
 import { layout } from "@/constants/theme";
@@ -58,10 +57,11 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
 
   return (
     <View className="flex-1">
-      {/* Drawn the way the books side boots: the page's shape at once, the
-          shelves once the switch has finished moving and the library is read. */}
-      <Handover ready={landed && page.view === "home"} skeleton={<PodcastsHomeSkeleton />}>
+      {/* The side's shape at once while the library is read; then the Continue
+          card with the side, and the shelves once the switch has finished moving. */}
+      {page.view === "home" ? (
         <PodcastsHome
+          landed={landed}
           home={page.home}
           refreshing={page.pulling}
           bottomPadding={bottomChrome + fabClearance(insets.bottom)}
@@ -72,7 +72,9 @@ export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
           onEpisodeMenu={episodes.openMenu}
           onPlay={episodes.play}
         />
-      </Handover>
+      ) : (
+        <PodcastsHomeSkeleton />
+      )}
       {/* The side's one creative action, the same floating button the books
           side and the Timeline give theirs: find something new to follow. */}
       <ScreenFab icon={Plus} accessibilityLabel="Add a podcast" onPress={page.openExplore} />

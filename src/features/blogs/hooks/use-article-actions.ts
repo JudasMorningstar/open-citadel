@@ -8,7 +8,7 @@ import { showToast } from '@/components/toast/toast-provider';
 import { useOpenArticle } from '@/features/blogs/hooks/use-open-article';
 import type { ArticleAction } from '@/features/blogs/utils/article-menu';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
-import { createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
+import { createBlogArticlesQueryOptions, createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
 import {
   setArticleFavorite,
   setArticleFinished,
@@ -30,7 +30,9 @@ export function useArticleActions() {
 
   const openBlog = React.useCallback(
     (blogId: string) => {
+      // The blog and its posts as the page first lists them, all of them.
       void queryClient.prefetchQuery(createBlogQueryOptions(blogId));
+      void queryClient.prefetchQuery(createBlogArticlesQueryOptions(blogId, 'all'));
       router.push({ pathname: '/blogs/blog/[id]', params: { id: blogId } });
     },
     [queryClient, router],

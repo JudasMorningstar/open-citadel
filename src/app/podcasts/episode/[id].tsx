@@ -10,12 +10,11 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { contentColumn, iconSize, layout } from "@/constants/theme";
-import { ChapterList } from "@/features/podcasts/components/chapter-list";
+import { EpisodeDetails } from "@/features/podcasts/components/episode-details";
+import { EpisodeDetailsSkeleton } from "@/features/podcasts/components/episode-details-skeleton";
 import { EpisodeHero } from "@/features/podcasts/components/episode-hero";
 import { EpisodePageSkeleton } from "@/features/podcasts/components/episode-page-skeleton";
-import { EpisodeSection } from "@/features/podcasts/components/episode-section";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
-import { ShowNotesView } from "@/features/podcasts/components/show-notes-view";
 import { useEpisodeScreen } from "@/features/podcasts/hooks/use-episode-screen";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
@@ -24,20 +23,22 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 /**
  * An episode: its hero and actions, its chapters, and its show notes.
  *
- * The whole page is held back until the screen has settled, behind a
- * skeleton of its shape: the notes can run to a few thousand words, and
- * setting them mid-slide costs frames the slide needs.
+ * The hero is plain views over data read ahead at the tap, so it is drawn
+ * from the first frame and the page looks finished while it is still moving.
+ * Only the chapters and notes wait for the slide to land, behind a skeleton
+ * of their shape: the notes can run to a few thousand words, and setting
+ * them mid-slide froze the transition partway.
  */
 export default function EpisodeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
-  const screen = useEpisodeScreen(id);
+  const screen = useEpisodeScreen(id, landed);
   const miniPlayer = useMiniPlayer(insets.bottom);
   const { episode, hero } = screen;
 
-  const body = episode ? (
+  const page = episode ? (
     <PageFade>
       <ScrollView
         className="flex-1"
@@ -60,25 +61,27 @@ export default function EpisodeScreen() {
             onTogglePlayed={hero.togglePlayed}
           />
         </View>
-        {screen.chapters.length > 0 ? (
-          <EpisodeSection title="Chapters">
-            <ChapterList chapters={screen.chapters} onSelect={screen.playFrom} />
-          </EpisodeSection>
-        ) : null}
-        {screen.notes.length > 0 ? (
-          <EpisodeSection title="Show Notes">
-            <ShowNotesView blocks={screen.notes} onSeek={screen.playFrom} onLink={screen.openLink} />
-          </EpisodeSection>
+        {screen.hasDetails ? (
+          <Handover fill={false} ready={landed} skeleton={<EpisodeDetailsSkeleton />}>
+            <EpisodeDetails
+              chapters={screen.chapters}
+              notes={screen.notes}
+              onSeek={screen.playFrom}
+              onLink={screen.openLink}
+            />
+          </Handover>
         ) : null}
       </ScrollView>
     </PageFade>
-  ) : (
+  ) : null;
+  const gone = (
     <View className="flex-1 items-center justify-center px-10">
       <ThemedText type="bodyMd" color={tokens["--color-muted-foreground"]}>
         This episode is no longer here.
       </ThemedText>
     </View>
   );
+  const body = { loading: <EpisodePageSkeleton />, episode: page, gone }[screen.view];
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -91,11 +94,7 @@ export default function EpisodeScreen() {
         rightLabel="Share"
         onRightPress={screen.share ?? undefined}
       />
-      {/* The page mounts once the slide has landed and the episode has been
-          read: mounting it mid-slide froze the transition partway. */}
-      <Handover ready={landed && screen.loaded} skeleton={<EpisodePageSkeleton />}>
-        {body}
-      </Handover>
+      {body}
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
     </ThemedView>
   );

@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import React from 'react';
 import { Share } from 'react-native';
 
+import { openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import { useEpisode } from '@/features/podcasts/hooks/use-episode';
 import { playOrToggle } from '@/features/podcasts/hooks/use-episode-actions';
 import * as actions from '@/services/podcasts/actions';
@@ -11,15 +12,20 @@ import { playEpisode, seekTo } from '@/services/podcasts/player';
 import { showName } from '@/services/podcasts/records';
 import { useEpisodePlayback, usePodcastPlayer } from '@/stores/podcast-player';
 
+/** What an episode's page draws: its skeleton, the episode, or word that it is gone. */
+export type EpisodeView = 'loading' | 'episode' | 'gone';
+
 /**
  * An episode's page: the episode, its show, chapters and parsed notes, and
  * everything its controls do.
  */
-export function useEpisodeScreen(id: string) {
+export function useEpisodeScreen(id: string, landed: boolean) {
   const router = useRouter();
-  const { detail, chapters, notes, loaded } = useEpisode(id);
+  const { detail, listed, chapters, notes, loaded } = useEpisode(id, landed);
   const playback = useEpisodePlayback(id);
-  const episode = detail?.episode ?? null;
+  // Drawn from the list's row until the page's own read lands; after that the
+  // read is the truth, gone included.
+  const episode = loaded ? (detail?.episode ?? null) : listed;
   const show = detail?.show ?? null;
   const link = episode?.link ?? show?.link ?? null;
 
@@ -42,7 +48,7 @@ export function useEpisodeScreen(id: string) {
   const back = React.useCallback(() => router.back(), [router]);
   const hero = {
     play: () => playOrToggle(id),
-    openShow: () => show && router.push({ pathname: '/podcasts/show/[id]', params: { id: show.id } }),
+    openShow: () => episode && openShowPage(router, episode.podcastId),
     toggleQueue: () =>
       void (episode?.queuePosition == null ? actions.addToQueue([id], 'last') : actions.removeFromQueue([id])),
     download: () => void actions.download([id]),
@@ -51,14 +57,19 @@ export function useEpisodeScreen(id: string) {
     togglePlayed: () => void actions.markPlayed([id], episode?.playState !== 'played'),
   };
 
+  const view: EpisodeView = episode ? 'episode' : loaded ? 'gone' : 'loading';
+
   return {
-    loaded,
+    view,
     episode,
-    showTitle: show ? showName(show) : '',
-    artworkUrl: episode?.imageUrl ?? show?.imageUrl ?? null,
+    showTitle: show ? showName(show) : (listed?.showTitle ?? ''),
+    // The same picture either way, so the cover is not asked for twice.
+    artworkUrl: episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null,
     playback,
     chapters,
     notes,
+    /** Whether there is anything under the hero: chapters or notes. Assumed until the read says. */
+    hasDetails: !loaded || chapters.length > 0 || notes.length > 0,
     playFrom,
     openLink,
     hero,

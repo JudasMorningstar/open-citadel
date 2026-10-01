@@ -48,7 +48,50 @@ async function request(url: string, headers: Record<string, string>, signal?: Ab
   }
 }
 
+/*
+ * Feeds asked for ahead of need: opening a show or a blog found in Explore
+ * starts its download at the tap, and the page that lands a moment later
+ * picks the answer up here instead of asking again. Only the download is
+ * early. Parsing and storing a feed is JS-thread work that waits for the page
+ * to land (see `useShow`), so a slide is never shared with it.
+ *
+ * Each answer is taken once, by the first fetch of that address, and dropped
+ * after a minute if nothing takes it: a page abandoned before it landed.
+ */
+type EarlyBody = { xml: string; validator: string | null; url: string };
+const early = new Map<string, Promise<EarlyBody | null>>();
+const EARLY_KEEP_MS = 60_000;
+
+/** Starts downloading a feed now, for a fetch of the same address soon. */
+export function fetchFeedEarly(url: string): void {
+  if (early.has(url)) return;
+  const body = request(url, { Accept: "application/rss+xml, application/atom+xml, text/html;q=0.9, */*;q=0.5" })
+    .then(async (response) =>
+      response.ok
+        ? { xml: await response.text(), validator: response.headers.get("etag") ?? response.headers.get("last-modified"), url: response.url || url }
+        : null,
+    )
+    // A failed early fetch is no answer: the page's own fetch tries, and says why.
+    .catch(() => null);
+  early.set(url, body);
+  setTimeout(() => {
+    if (early.get(url) === body) early.delete(url);
+  }, EARLY_KEEP_MS);
+}
+
+/** The early download of `url`, if one was started; taken, so it serves one fetch. */
+async function takeEarly(url: string): Promise<EarlyBody | null> {
+  const body = early.get(url);
+  if (!body) return null;
+  early.delete(url);
+  return body;
+}
+
 export async function fetchFeed(url: string, validator?: string | null, signal?: AbortSignal): Promise<FeedFetchResult> {
+  // A conditional fetch (a refresh) wants the server's 304, not an early body.
+  const ahead = validator ? null : await takeEarly(url);
+  if (ahead) return { status: "ok", ...ahead };
+
   const headers: Record<string, string> = {
     Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
   };
@@ -74,6 +117,8 @@ export async function fetchFeed(url: string, validator?: string | null, signal?:
  * where it ended up after redirects.
  */
 export async function fetchPage(url: string, signal?: AbortSignal): Promise<{ body: string; url: string }> {
+  const ahead = await takeEarly(url);
+  if (ahead) return { body: ahead.xml, url: ahead.url };
   const response = await request(url, { Accept: "text/html, application/xhtml+xml, */*;q=0.8" }, signal);
   if (!response.ok) throw new FeedFetchError(describeStatus(response.status));
   return { body: await response.text(), url: response.url || url };

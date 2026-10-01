@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { useChart, useFollowedCheck } from '@/features/podcasts/hooks/use-explore';
-import { discoverParams } from '@/features/podcasts/hooks/use-explore-screen';
+import { openDiscoveredShowPage } from '@/features/podcasts/hooks/use-explore-screen';
 import { discoveredKey, tileFromDiscovered } from '@/features/podcasts/utils/show-tiles';
 import { EXPLORE_GENRES } from '@/services/podcasts/discovery';
 
@@ -20,7 +20,7 @@ export function useGenreScreen(param: string | undefined) {
     (id: string) => {
       const show = byId.get(id);
       if (!show) return;
-      router.push({ pathname: '/podcasts/show/[id]', params: discoverParams(show) });
+      openDiscoveredShowPage(router, show);
     },
     [byId, router],
   );

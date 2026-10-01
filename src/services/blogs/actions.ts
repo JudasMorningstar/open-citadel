@@ -10,7 +10,18 @@ import { invalidateBlogLibrary } from '@/query-manager/blogs/invalidate';
 import { storeDiscoveredBlog } from '@/services/blogs/blogs';
 import { discoverBlog } from '@/services/blogs/discover';
 import { isRefreshDue, refreshBlog } from '@/services/blogs/refresh';
-import { normalizeFeedUrl } from '@/services/feeds/fetch';
+import { fetchFeedEarly, normalizeFeedUrl } from '@/services/feeds/fetch';
+
+/**
+ * Starts the download behind `openDiscoveredBlog` at the tap that opens the
+ * blog, so its page, which waits to land before storing it, finds the feed
+ * already here. Nothing for a blog already stored.
+ */
+export function prefetchDiscoveredBlog(feedUrl: string): void {
+  const url = normalizeFeedUrl(feedUrl);
+  const stored = db.select({ id: blogs.id }).from(blogs).where(eq(blogs.feedUrl, url)).get();
+  if (!stored) fetchFeedEarly(url);
+}
 
 /**
  * A blog from Explore, stored as a preview so its posts can be opened: its id.

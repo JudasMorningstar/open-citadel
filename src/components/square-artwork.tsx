@@ -1,12 +1,11 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import type { LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
-import { fontFamily, motion } from '@/constants/theme';
+import { fontFamily } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 type SquareArtworkProps = {
   uri: string | null;
@@ -22,12 +21,6 @@ type SquareArtworkProps = {
   recyclingKey?: string;
   /** Resolved `--color-surface-tertiary`, for the empty mark. */
   placeholderColor?: string;
-  /**
-   * Fade the picture in as it loads, which suits a list filling in. Off for
-   * artwork that has to be there the moment it is (the player's, growing out
-   * of the mini player's): a fade there reads as a ghost of it.
-   */
-  fadeIn?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -50,7 +43,6 @@ function SquareArtworkBase({
   size,
   recyclingKey,
   placeholderColor,
-  fadeIn = true,
   style,
 }: SquareArtworkProps) {
   const tokens = useThemeTokens();
@@ -58,12 +50,10 @@ function SquareArtworkBase({
   return (
     <View className="overflow-hidden border border-border bg-muted" style={[{ width: size, height: size }, style]}>
       {uri ? (
-        <Image
+        <CoverImage
           source={{ uri, width: size, height: size }}
           style={FILL}
           contentFit="cover"
-          placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-          transition={fadeIn ? motion.slow : 0}
           recyclingKey={recyclingKey}
           cachePolicy="memory-disk"
         />
