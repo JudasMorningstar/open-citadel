@@ -202,10 +202,6 @@ export default function ReaderScreen() {
   // clearing the highlight to close would unmount the sheet mid-slide.
   // The stale highlight costs nothing — a closed sheet renders no content.
   const [menuOpen, setMenuOpen] = useState(false);
-  // Where the reader is going once it has let go of its native view: back a
-  // screen, or down to the hub (a chat opens on the Samwell page).
-  const [leaveTo, setLeaveTo] = useState<"back" | "hub" | null>(null);
-  const leaving = leaveTo !== null;
   const [showToc, setShowToc] = useState(false);
   const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
@@ -347,28 +343,22 @@ export default function ReaderScreen() {
     setPreJumpLocator(savedLocator);
   }, [locatorParam, jumpLocator, savedLocator]);
 
-  // Navigate only after the re-render with leaving=true has committed, so the
-  // native SurfaceView is gone before the slide animation begins.
-  useEffect(() => {
-    if (!leaveTo) return;
-    const id = setTimeout(() => {
-      if (leaveTo === "hub" && router.canDismiss()) router.dismissTo("/");
-      else router.back();
-    }, 32);
-    return () => clearTimeout(id);
-  }, [leaveTo]);
-
   // Read-aloud belongs to the book: leaving it, by the back button or for a
-  // chat, stops it.
+  // chat, stops it. Back a screen, or down to the hub (a chat opens on the
+  // Samwell page). The page stays on screen as it slides away: it used to be
+  // unmounted first, against a white flash from the native view that no
+  // longer happens, and the reader watched the words vanish and a blank page
+  // close.
   const leave = useCallback(
     (to: "back" | "hub") => {
       if (isTTSActive) {
         readerRef.current?.ttsStop();
         stopMediaSession();
       }
-      setLeaveTo(to);
+      if (to === "hub" && router.canDismiss()) router.dismissTo("/");
+      else router.back();
     },
-    [isTTSActive],
+    [isTTSActive, router],
   );
 
   // A chat about a passage is made here, with its context, and held on the
@@ -939,11 +929,11 @@ export default function ReaderScreen() {
           page off the bottom edge. A plain RN parent flexes correctly, and an
           absolute fill inside one cannot get its height wrong.
 
-          Empty while leaving so the native SurfaceView doesn't flash white
-          during the slide animation, and not mounted until the entrance has
-          settled — see the note on `readerMounted`. */}
+          Not mounted until the entrance has settled (see the note on
+          `readerMounted`), and kept through the exit so the page leaves with
+          its words on it. */}
       <View className="flex-1" style={{ marginBottom: footerZoneHeight }}>
-        {leaving || !readerMounted ? null : (
+        {!readerMounted ? null : (
           <ReadiumView
             ref={readerRef}
             style={StyleSheet.absoluteFill}

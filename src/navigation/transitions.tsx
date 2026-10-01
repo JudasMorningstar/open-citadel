@@ -1,4 +1,5 @@
 import {
+  Easing,
   Extrapolation,
   interpolate,
   interpolateColor,
@@ -59,6 +60,20 @@ export type ScreenSide = -1 | 0 | 1;
 const PARALLAX = 0.25;
 
 /**
+ * How much of the scrim a side screen lays over the screen it slides across.
+ *
+ * The full scrim is right for a drawer or a sheet, which covers the page and
+ * means "this is in front now". A side screen is a neighbour arriving, and
+ * the only part of the page beneath it that shows is the strip it has not yet
+ * covered, which is darkest exactly when it is thinnest: at the end of an
+ * open (and the start of a close), while the slide's last few pixels settle.
+ * At the full scrim that strip read as a black bar wiping along the edge.
+ * A third of it still says one page is over another, the way iOS dims under
+ * a push.
+ */
+const SIDE_DIM = 0.33;
+
+/**
  * How far a screen shrinks when a drawer rises over it.
  *
  * A drawer arrives from below and belongs to no side, so there is no sideways
@@ -69,25 +84,27 @@ const PARALLAX = 0.25;
 const RECEDE_SCALE = 0.94;
 
 /**
- * `duration` on these specs is the spring's *perceptual* duration; the real
- * settle is 1.5x it. Every number below is therefore two-thirds of the time it
- * should feel like, and that multiplier is the reason the old 350/400 values
- * ran 525ms and 600ms on screen — half again longer than iOS's own push, which
- * is what made a tap feel like it was waiting on something.
+ * The side screens move on a timing curve, not a spring.
  *
- * Open and close are separate on purpose. A push is tap-driven: no finger was
- * in it, so it settles critically damped with no overshoot. A dismiss is
- * finger-driven and arrives carrying the release velocity, so it gets a little
- * bounce — momentum has to land somewhere or the screen reads as hitting a
- * wall — and it is faster than the open, because an exit is the system
- * responding rather than the user deciding.
+ * They were a spring, and a spring fast enough to feel responsive is a spring
+ * that does most of its travel at once: measured on the emulator, the page
+ * covered 70% of the screen in its first four frames and then crawled the
+ * last 30% for another twelve, the screen beneath showing as a strip creeping
+ * along the edge. A snap then a crawl, both ways, which read as a judder and
+ * a dark band rather than as one page sliding over another. A close also
+ * bounced (a 0.86 damping ratio, there for a flick's momentum) on every tap
+ * of the back button, overshooting its place by a few pixels.
+ *
+ * The standard ease (Material's, the one Android's own screens use) starts
+ * gently, keeps the middle even and finishes at a set time, so the strip
+ * crosses at a steady pace and is gone when the curve ends. The close is a
+ * little faster, an exit being the system responding rather than the user
+ * deciding. A timing curve takes no release velocity, so a swipe back runs
+ * the rest of the way on the same curve from wherever the finger let go.
  */
-
-/** Tap-driven and frequent, so it settles fast and never overshoots. */
-const SIDE_OPEN = { duration: 220, dampingRatio: 1 } as const;
-
-/** Finger-driven, so it keeps the flick's momentum and leaves faster than it came. */
-const SIDE_CLOSE = { duration: 190, dampingRatio: 0.86 } as const;
+const SIDE_EASE = Easing.bezier(0.4, 0, 0.2, 1);
+const SIDE_OPEN = { duration: 400, easing: SIDE_EASE } as const;
+const SIDE_CLOSE = { duration: 340, easing: SIDE_EASE } as const;
 
 /** Reduce Motion collapses every spatial transition to this. */
 const FADE_SPEC = { duration: 150, dampingRatio: 1 } as const;
@@ -187,7 +204,7 @@ export function sideTransition({ side, scrim, edgeOnly }: SideOptions): ScreenTr
               ? covering === 0
                 ? interpolateColor(progress, [1, 2], ['transparent', dim])
                 : 'transparent'
-              : interpolateColor(progress, [0, 1], ['transparent', dim]),
+              : interpolateColor(progress * SIDE_DIM, [0, 1], ['transparent', dim]),
           },
         },
       };
@@ -269,11 +286,13 @@ export function drawerTransition({ scrim }: { scrim: SharedValue<string> }): Scr
 export const NOW_PLAYING_ART = 'now-playing-art';
 
 /**
- * Tap-driven open: settles with no overshoot. The close is finger-driven, so
- * it carries the release velocity and lands a little faster.
+ * Both settle with no overshoot, the close a little faster: a bounce on the
+ * way back into the mini player read as a blip, as it did on the side screens
+ * (see `SIDE_EASE`). A spring's `duration` is its perceptual one; the real
+ * settle runs about half again longer.
  */
 const PLAYER_OPEN = { duration: 280, dampingRatio: 1 } as const;
-const PLAYER_CLOSE = { duration: 240, dampingRatio: 0.86 } as const;
+const PLAYER_CLOSE = { duration: 240, dampingRatio: 1 } as const;
 
 /**
  * The full player, grown out of the mini player.
