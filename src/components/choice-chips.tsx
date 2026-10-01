@@ -1,5 +1,6 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 
 import { RowFade, type FadeSurface } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
@@ -58,6 +59,9 @@ export function ChoiceChips<T extends string | number | null>({
         </View>
       ) : null}
       <RowFade surface={surface}>
+        {/* RNGH's ScrollView, not RN's: in a sheet, the sheet's own drag
+            takes a plain ScrollView's sideways swipe on Android, and the
+            row draws but never moves (the tag rows had the same bug). */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName={cn('gap-2', pad)}>
           {choices.map((choice) => {
             const selected = choice.value === value;

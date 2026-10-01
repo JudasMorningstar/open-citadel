@@ -58,13 +58,18 @@ function FeedTileBase({ id, fallbackIcon, monogram, title, author, artworkUrl, n
           <ThemedText type="headlineSm" numberOfLines={2} style={{ minHeight: 48 }}>
             {title}
           </ThemedText>
-          <ThemedText
-            type={following ? 'labelSm' : 'bodySm'}
-            color={following ? tokens['--color-primary'] : tokens['--color-muted-foreground']}
-            numberOfLines={1}
-          >
-            {following ? 'Following' : (author ?? ' ')}
-          </ThemedText>
+          {/* One height either way: FOLLOWING is set smaller than a name, and a
+              tile changing height when it learns it is followed moved every
+              shelf below it. */}
+          <View className="h-5 justify-center">
+            <ThemedText
+              type={following ? 'labelSm' : 'bodySm'}
+              color={following ? tokens['--color-primary'] : tokens['--color-muted-foreground']}
+              numberOfLines={1}
+            >
+              {following ? 'Following' : (author ?? ' ')}
+            </ThemedText>
+          </View>
         </View>
       </View>
     </Touchable>

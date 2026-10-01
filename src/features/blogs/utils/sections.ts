@@ -3,7 +3,9 @@ import type { BlogSection } from '@/query-manager/blogs';
 export const SECTION_TITLES: Record<BlogSection, string> = {
   continue: 'Continue Reading',
   latest: 'Latest Posts',
-  saved: 'Saved',
+  queue: 'Queue',
+  favorites: 'Favorites',
+  finished: 'Have Read',
   blogs: 'Blogs',
 };
 

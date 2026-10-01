@@ -647,6 +647,33 @@ function SheetDeferred({
 }
 
 /**
+ * LOCAL EDIT (Open Citadel): `Sheet.Deferred` for one region of a sheet's body
+ * rather than the whole of it. The rest of the body (plain cards over data in
+ * memory) is drawn as the sheet rises; only this region (a chart) waits for
+ * the rise to end, behind a placeholder holding its place in the flow. A
+ * region that mounts in a sheet already open (a goal opened inside the
+ * overview) has no rise to wait for and draws at once, with no placeholder
+ * flashing past.
+ */
+function SheetDeferredRegion({
+  skeleton,
+  children,
+}: {
+  skeleton: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const settled = React.useContext(SheetSettledContext);
+  const [settledAtMount] = React.useState(settled);
+
+  if (settledAtMount) return <>{children}</>;
+  return (
+    <Handover skeleton={skeleton} surface="popover" ready={settled} fill={false}>
+      {children}
+    </Handover>
+  );
+}
+
+/**
  * The sheet's scroll region. A drag on the rows scrolls the list; a drag at
  * the top of it hands back to the sheet and drags the sheet itself. Pays the
  * sheet's bottom inset inside the scroll content when the shell has left it
@@ -745,5 +772,6 @@ function SheetFlatList<ItemT>({
 Sheet.ScrollView = SheetScrollView;
 Sheet.FlatList = SheetFlatList;
 Sheet.Deferred = SheetDeferred;
+Sheet.DeferredRegion = SheetDeferredRegion; // LOCAL EDIT (Open Citadel): see SheetDeferredRegion.
 
 export { SheetFlatList, SheetScrollView };

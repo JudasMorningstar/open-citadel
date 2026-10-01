@@ -24,9 +24,15 @@ export function nowPlayingFrom(item: EpisodeItem): NowPlaying {
   };
 }
 
-export function mediaItemFrom(item: EpisodeItem): MediaItem {
+/**
+ * `startAt`, in seconds, is where the native queue starts this item when it
+ * is loaded first (see the `@rntp/player` patch): a seek sent after the load
+ * could land before it on Android and be undone.
+ */
+export function mediaItemFrom(item: EpisodeItem, startAt = 0): MediaItem {
   return {
     mediaId: item.id,
+    startPosition: startAt,
     url: localFileUri(item) ?? item.audioUrl,
     title: item.title,
     artist: item.showTitle,

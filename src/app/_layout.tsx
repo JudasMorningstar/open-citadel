@@ -3,6 +3,7 @@ import "@/global.css";
 // would otherwise bury the dev console. See the module for why.
 import "@/lib/quiet-reanimated-deps-warning";
 
+import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
 import {
     Manrope_400Regular,
     Manrope_500Medium,
@@ -31,7 +32,7 @@ import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
@@ -43,9 +44,11 @@ import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
 import { queryClient } from "@/lib/query-client";
+import { queryPersistOptions } from "@/lib/query-persist";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
+    playerTransition,
     fadeTransition,
     hubTransition,
     sideTransition,
@@ -104,6 +107,7 @@ export default function RootLayout() {
     Manrope_500Medium,
     Manrope_600SemiBold,
     Manrope_700Bold,
+    JetBrainsMono_400Regular,
   });
 
   const [dbReady, setDbReady] = useState(false);
@@ -268,13 +272,15 @@ export default function RootLayout() {
   const screenTransitions = useMemo(() => {
     const fade = fadeTransition();
     if (reduceMotion) {
-      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, fade };
+      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, player: fade, fade };
     }
     return {
       hub: hubTransition({ scrim: scrimValue }),
       side: sideTransition({ side: 1, scrim: scrimValue }),
       sideEdge: sideTransition({ side: 1, scrim: scrimValue, edgeOnly: true }),
       drawer: drawerTransition({ scrim: scrimValue }),
+      // The player grows out of the mini player (see `playerTransition`).
+      player: playerTransition({ scrim: scrimValue }),
       // Onboarding's own, and it is a fade in both branches: the first screen
       // anyone sees has nowhere to slide in from. It belongs in this memo
       // rather than being built inline at the call site for the reason spelled
@@ -294,10 +300,12 @@ export default function RootLayout() {
 
   return (
     // The query cache is outermost: it draws nothing, and anything below may
-    // read through it. ThemeTokensProvider wraps everything else, PanelUIProvider
-    // included, so the portal host that sheets present into resolves its tokens
-    // from the same single subscription as the rest of the tree.
-    <QueryClientProvider client={queryClient}>
+    // read through it. Its kept catalogues are read back from storage first
+    // (see `lib/query-persist`), a few milliseconds in which queries wait.
+    // ThemeTokensProvider wraps everything else, PanelUIProvider included, so
+    // the portal host that sheets present into resolves its tokens from the
+    // same single subscription as the rest of the tree.
+    <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
       <ThemeTokensProvider>
         {/* PanelUIProvider owns the gesture handler root every gesture recognizer
           in the app needs, plus PanelUI's own portal/toast host and the keyboard
@@ -359,10 +367,6 @@ export default function RootLayout() {
                     options={screenTransitions.sideEdge}
                   />
                   <TransitionStack.Screen
-                    name="chat/[id]"
-                    options={screenTransitions.side}
-                  />
-                  <TransitionStack.Screen
                     name="section/[type]"
                     options={screenTransitions.drawer}
                   />
@@ -371,10 +375,10 @@ export default function RootLayout() {
                     options={screenTransitions.drawer}
                   />
                   {/* Podcasts. A show and an episode are places you go into, so
-                  they come in from the side like a chat. The player, Explore and
-                  a "View all" list rise from the bottom: the player out of the
-                  mini player that sits there, the other two over whatever
-                  opened them, like the books side's lists. */}
+                  they come in from the side like a chat. The player grows out
+                  of the mini player's artwork and shrinks back into it.
+                  Explore and a "View all" list rise from the bottom over
+                  whatever opened them, like the books side's lists. */}
                   <TransitionStack.Screen
                     name="podcasts/show/[id]"
                     options={screenTransitions.side}
@@ -385,7 +389,7 @@ export default function RootLayout() {
                   />
                   <TransitionStack.Screen
                     name="podcasts/player"
-                    options={screenTransitions.drawer}
+                    options={screenTransitions.player}
                   />
                   <TransitionStack.Screen
                     name="podcasts/explore"
@@ -433,6 +437,6 @@ export default function RootLayout() {
           </ToastProvider>
         </PanelUIProvider>
       </ThemeTokensProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

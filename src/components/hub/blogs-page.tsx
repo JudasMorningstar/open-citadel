@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { fabClearance } from "@/components/fab-placement";
 import { Plus } from "@/components/icons";
-import { Handover } from "@/components/navigation/handover";
 import { ScreenFab } from "@/components/screen-fab";
 import { layout } from "@/constants/theme";
 import { AddBlogSheet } from "@/features/blogs/components/add-blog-sheet";
@@ -49,8 +48,11 @@ export function BlogsPage({ bottomChrome }: BlogsPageProps) {
 
   return (
     <View className="flex-1">
-      <Handover ready={landed && page.view === "home"} skeleton={<BlogsHomeSkeleton />}>
+      {/* The side's shape at once while the library is read; then the Continue
+          card with the side, and the shelves once the switch has finished moving. */}
+      {page.view === "home" ? (
         <BlogsHome
+          landed={landed}
           home={page.home}
           refreshing={page.pulling}
           bottomPadding={bottomChrome + fabClearance(insets.bottom)}
@@ -60,7 +62,9 @@ export function BlogsPage({ bottomChrome }: BlogsPageProps) {
           onOpenBlog={articles.openBlog}
           onArticleMenu={articles.openMenu}
         />
-      </Handover>
+      ) : (
+        <BlogsHomeSkeleton />
+      )}
       {/* The side's one creative action, the same floating button the other
           sides give theirs: find something new to read. */}
       <ScreenFab icon={Plus} accessibilityLabel="Find blogs" onPress={page.openExplore} />

@@ -15,32 +15,10 @@
 import RNBlobUtil from 'react-native-blob-util';
 import type { LLMModel } from 'react-native-executorch';
 
-import { getExecuTorch } from '@/lib/executorch';
+import { cachePath, getExecuTorch } from '@/lib/executorch';
 import { registryModel, type CatalogueModel } from '@/services/device-llm/catalogue';
 
 const FILE_KEYS = ['modelPath', 'tokenizerPath', 'tokenizerConfigPath'] as const;
-
-/** The same hash ExecuTorch's fetcher names its cached files with. */
-function djb2(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
-  }
-  return h;
-}
-
-/**
- * Where ExecuTorch's `download` keeps `url`, mirrored from its private
- * `cachePathFor`. A test reads the library's source and fails if that ever
- * changes, because a mismatch here reads every downloaded brain as missing.
- */
-export function cachePath(url: string): string {
-  const dirs = RNBlobUtil.fs.dirs;
-  const root = process.env.EXPO_OS === 'android' ? dirs.SDCardDir || dirs.DocumentDir : dirs.DocumentDir;
-  const bare = url.split('?')[0]!;
-  const basename = bare.split('/').pop() || 'model';
-  return `${root}/react-native-executorch/${djb2(bare)}_${basename}`;
-}
 
 /** Every URL an entry downloads. */
 export function remoteUrls(entry: CatalogueModel): string[] {

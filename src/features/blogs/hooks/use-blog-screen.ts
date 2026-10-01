@@ -77,12 +77,15 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
     if (siteUrl) void WebBrowser.openBrowserAsync(siteUrl).catch(() => {});
   }, [siteUrl]);
 
+  const rawDescription = blog?.description ?? null;
+  const description = React.useMemo(() => (rawDescription ? htmlToText(rawDescription) : null), [rawDescription]);
+
   const failed = found !== null && discovered.isError;
   const hero: BlogHeroProps = {
     title,
     host: siteUrl ? hostOf(siteUrl) : null,
     imageUrl: blog?.imageUrl ?? null,
-    description: blog?.description ? htmlToText(blog.description) : null,
+    description,
     following: blog?.state === 'subscribed',
     loading: blogId === null && !failed,
     canFollow: blogId !== null,
@@ -94,11 +97,17 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
     onOpenSite: openSite,
   };
 
+  // The posts are drawn once the slide has landed, never during it. Their read
+  // is held until then too, but opening the blog from a list reads them ahead
+  // at the tap (`useArticleActions`), and a cached answer would otherwise be
+  // drawn into a page still moving.
+  const shown = landed ? articles.data : undefined;
+
   return {
     hero,
-    articles: articles.data ?? NO_ARTICLES,
-    /** Still finding the blog or reading its posts: the list shows its skeleton. */
-    resolving: !failed && articles.data === undefined,
+    articles: shown ?? NO_ARTICLES,
+    /** Still finding the blog, reading its posts or sliding in: the list shows its skeleton. */
+    resolving: !failed && shown === undefined,
     emptyText: filter === 'unread' ? 'Nothing unread here.' : 'No posts yet.',
     canRefresh: blogId !== null,
     refreshing,

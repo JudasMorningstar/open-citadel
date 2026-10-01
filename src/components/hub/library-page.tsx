@@ -7,11 +7,11 @@ import { BooksPage } from "@/components/hub/books-page";
 import { PodcastsPage } from "@/components/hub/podcasts-page";
 import { ChartNoAxesGantt, ZodiacPisces } from "@/components/icons";
 import { ThemedView } from "@/components/themed-view";
+import { ViewSwitcher } from "@/components/view-switcher";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize } from "@/constants/theme";
 import { useLibraryPage } from "@/features/library/hooks/use-library-page";
-import { LibrarySwitcher } from "@/features/library/components/library-switcher";
-import { LibraryTabs } from "@/features/library/components/library-tabs";
+import { LIBRARY_TAB_ORDER, LibraryTabs } from "@/features/library/components/library-tabs";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { asColor } from "@/utils/colors";
@@ -51,7 +51,7 @@ export function LibraryPage() {
         rightLabel="Samwell"
         onRightPress={page.openSamwell}
       />
-      <LibrarySwitcher tab={page.tab} sides={sides} />
+      <ViewSwitcher order={LIBRARY_TAB_ORDER} value={page.tab} sides={sides} />
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
     </ThemedView>
   );

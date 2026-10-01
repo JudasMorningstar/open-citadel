@@ -14,10 +14,12 @@ type PlayerProgressProps = {
   error: string | null;
   onChapters: () => void;
   onSeek: (seconds: number) => void;
+  /** Takes touches. False while the player is still opening. */
+  live: boolean;
 };
 
 /** Where the listener is: the chapter playing (which opens the list), the scrubber, and why playback stopped, if it did. */
-export function PlayerProgress({ chapterTitle, position, duration, error, onChapters, onSeek }: PlayerProgressProps) {
+export function PlayerProgress({ chapterTitle, position, duration, error, onChapters, onSeek, live }: PlayerProgressProps) {
   const tokens = useThemeTokens();
   return (
     <View className="gap-1">
@@ -28,7 +30,7 @@ export function PlayerProgress({ chapterTitle, position, duration, error, onChap
           </ThemedText>
         </Touchable>
       ) : null}
-      <PlayerScrubber position={position} duration={duration} onSeek={onSeek} />
+      <PlayerScrubber position={position} duration={duration} onSeek={onSeek} live={live} />
       {error ? (
         <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
           {error}

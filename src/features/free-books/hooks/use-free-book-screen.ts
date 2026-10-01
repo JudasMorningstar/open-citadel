@@ -45,12 +45,15 @@ export function useFreeBookScreen(params: FreeBookParams) {
   }, [action, download, libraryBookId, openOnGutenberg, openReader]);
 
   const facts = React.useMemo(() => (book ? bookFacts(book) : []), [book]);
+  const title = book?.title ?? params.title ?? '';
 
   return {
+    /** Something to draw: a title known ahead, or the catalog's answer (its failure included). */
+    drawable: title !== '' || detail !== 'loading',
     hero: {
-      title: book?.title ?? params.title ?? '',
+      title,
       author: book?.author ?? params.author ?? null,
-      coverUrl: book?.coverUrl ?? null,
+      coverUrl: params.coverUrl ?? book?.coverUrl ?? null,
       actionLabel: freeBookActionLabel(action),
       actionHint: freeBookActionHint(action, detail),
       ...freeBookActionState(action),

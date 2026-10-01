@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { TileBadge, type TileBadgeIcon } from '@/components/tile-badge';
 import { Touchable } from '@/components/ui/touchable';
 import { PlayChip } from '@/features/podcasts/components/play-chip';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
@@ -18,6 +19,8 @@ type EpisodeTileProps = {
   onPress: (episodeId: string) => void;
   onLongPress: (episode: EpisodeItem) => void;
   onPlay: (episodeId: string) => void;
+  /** A mark over the artwork's corner, for a shelf that flags its episodes (Favorites). */
+  badgeIcon?: TileBadgeIcon;
 };
 
 /**
@@ -28,7 +31,7 @@ type EpisodeTileProps = {
  * (it is square, where a book cover is tall, so there is no ground to leave
  * around it), with how far in the listener is drawn as a gold line under it.
  */
-function EpisodeTileBase({ episode, width, onPress, onLongPress, onPlay }: EpisodeTileProps) {
+function EpisodeTileBase({ episode, width, onPress, onLongPress, onPlay, badgeIcon }: EpisodeTileProps) {
   const tokens = useThemeTokens();
   const art = width - TILE_PADDING * 2;
   const fraction = listenedFraction(episode);
@@ -49,6 +52,7 @@ function EpisodeTileBase({ episode, width, onPress, onLongPress, onPlay }: Episo
               <View className="h-full bg-primary" style={{ width: `${fraction * 100}%` }} />
             </View>
           ) : null}
+          {badgeIcon ? <TileBadge icon={badgeIcon} color={tokens['--color-primary']} /> : null}
         </View>
         <View className="gap-1">
           <ThemedText type="labelSm" color={tokens['--color-muted-foreground']} numberOfLines={1}>

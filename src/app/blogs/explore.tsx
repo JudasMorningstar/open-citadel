@@ -4,12 +4,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChevronDown } from "@/components/icons";
 import { Handover } from "@/components/navigation/handover";
-import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SearchBar } from "@/components/ui/search-bar";
 import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { ExploreResults } from "@/features/blogs/components/explore-results";
+import { ExplorePreview } from "@/features/blogs/components/explore-preview";
 import { ExploreSections } from "@/features/blogs/components/explore-sections";
 import { useBlogsExplore } from "@/features/blogs/hooks/use-blogs-explore";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
@@ -59,8 +59,12 @@ export default function BlogsExploreScreen() {
           />
         ) : (
           // The sections mount when the drawer has finished rising: a list
-          // landing mid-rise is what makes a drawer stagger.
-          <Handover ready={landed} skeleton={<TileGridSkeleton label="Loading blogs" />}>
+          // landing mid-rise is what makes a drawer stagger. Their first
+          // screen stands in meanwhile (the directory ships with the app).
+          <Handover
+            ready={landed}
+            skeleton={<ExplorePreview sections={explore.sections} followed={explore.followed} onOpen={explore.openBlog} />}
+          >
             <ExploreSections
               sections={explore.sections}
               followed={explore.followed}

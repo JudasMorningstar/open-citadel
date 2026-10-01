@@ -6,7 +6,7 @@ import { ensureChapters } from "@/services/podcasts/chapters";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { dequeue, upNextIds } from "@/services/podcasts/queue";
 import { applyCommands, mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
-import { clearStarting, finishEpisode, markStarting, persistProgress, session, store, track } from "@/services/podcasts/player/session";
+import { clearSeeking, clearStarting, finishEpisode, markStarting, persistProgress, session, store, track } from "@/services/podcasts/player/session";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
@@ -56,11 +56,15 @@ export async function startEpisode(episodeId: string, startAt: number | null = n
   }
   applyCommands();
   const upNext = await nativeUpNext(item.id);
+  // Decided before loading, so the queue loads where it starts: where it was
+  // left, or past the intro.
+  const show = await getShow(item.podcastId);
+  const start = startAt ?? resumePosition(item, show?.skipIntroSec ?? 0);
   // Tracked before the native queue changes, so the transition event that
   // loading fires is recognised as this episode rather than read as a skip.
-  track(item, item.positionSec);
-  TrackPlayer.setMediaItems([mediaItemFrom(item), ...upNext], 0);
-  await becomeCurrent(item, startAt);
+  track(item, start);
+  TrackPlayer.setMediaItems([mediaItemFrom(item, start), ...upNext], 0);
+  await becomeCurrent(item, start);
   TrackPlayer.play();
 }
 
@@ -96,6 +100,7 @@ export async function stopPlayback(): Promise<void> {
   if (store().loaded) TrackPlayer.clear();
   session.tracking = null;
   clearStarting();
+  clearSeeking();
   store().patch({ current: null, loaded: false, isPlaying: false, isBuffering: false, sleep: null });
   usePodcastPrefs.getState().set("nowPlayingEpisodeId", null);
   invalidatePodcastLibrary();
@@ -114,6 +119,7 @@ export function releasePlayerForSpeech(): void {
   TrackPlayer.pause();
   session.tracking = null;
   clearStarting();
+  clearSeeking();
   store().patch({
     current: { ...current, positionSec: position },
     loaded: false,

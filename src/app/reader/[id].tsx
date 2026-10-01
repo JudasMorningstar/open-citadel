@@ -33,14 +33,16 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
+import { TtsSettingsSheet } from "@/features/tts/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
-import { easing, motion, spacing } from "@/constants/theme";
+import { easing, motion, slideDownPastEdge, slideUpFromEdge, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
@@ -48,6 +50,8 @@ import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
+import { sessionExists } from "@/services/chat-sessions";
+import { showChatOnSamwellPage } from "@/services/samwell-handoff";
 import { suggestTags } from "@/services/tag-suggest";
 import {
   startMediaSession,
@@ -68,6 +72,21 @@ const PAINT_GRACE_MS = 450;
 const FOOTER_CONTROLS_HEIGHT = spacing[16];
 
 const isAndroid = process.env.EXPO_OS === "android";
+
+/** A locator passed as a route param, or null when there is none to read. */
+function parseLocatorParam(param: string | undefined): Locator | null {
+  if (!param) return null;
+  try {
+    return JSON.parse(param) as Locator;
+  } catch {
+    // A link written before the router decoded params for us.
+    try {
+      return JSON.parse(decodeURIComponent(param)) as Locator;
+    } catch {
+      return null;
+    }
+  }
+}
 
 /**
  * The reading area's placeholder: full-measure serif lines in the reader's own
@@ -133,6 +152,7 @@ export default function ReaderScreen() {
   const router = useRouter();
   const readerRef = useRef<ReadiumViewRef>(null);
   const insets = useSafeAreaInsets();
+  const { onSynthesisRequest, onSynthesisCancel } = useKokoroTtsBridge(readerRef);
 
   const {
     currentBook,
@@ -182,8 +202,8 @@ export default function ReaderScreen() {
   // clearing the highlight to close would unmount the sheet mid-slide.
   // The stale highlight costs nothing — a closed sheet renders no content.
   const [menuOpen, setMenuOpen] = useState(false);
-  const [leaving, setLeaving] = useState(false);
   const [showToc, setShowToc] = useState(false);
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
 
@@ -304,35 +324,52 @@ export default function ReaderScreen() {
     return () => closeBook();
   }, [id]);
 
-  // When opened from the timeline with a locator param, offer a way back
-  // to saved progress — but only if the highlight is on a different page.
+  // Where a link asked to open (a highlight on the timeline, a passage in a
+  // chat), when it asked for somewhere rather than the saved position. The
+  // router hands the param over decoded; decoding it again threw on any `%`
+  // in the passage's stored context ("15% a month"), and the reader quietly
+  // opened at the saved position instead.
+  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
+
+  // When opened at a jump, offer a way back to saved progress — but only if
+  // the jump is on a different page.
   const didSetJumpRef = useRef(false);
   useEffect(() => {
     if (!locatorParam || !savedLocator || didSetJumpRef.current) return;
-    try {
-      const jumpLoc = JSON.parse(decodeURIComponent(locatorParam)) as Locator;
-      const jumpPage = jumpLoc.locations?.position;
-      const savedPage = savedLocator.locations?.position;
-      if (
-        jumpPage !== undefined &&
-        savedPage !== undefined &&
-        jumpPage === savedPage
-      )
-        return;
-    } catch {
-      // parse failed — show banner anyway
-    }
+    const jumpPage = jumpLocator?.locations?.position;
+    const savedPage = savedLocator.locations?.position;
+    if (jumpPage !== undefined && savedPage !== undefined && jumpPage === savedPage) return;
     didSetJumpRef.current = true;
     setPreJumpLocator(savedLocator);
-  }, [locatorParam, savedLocator]);
+  }, [locatorParam, jumpLocator, savedLocator]);
 
-  // Navigate back only after the re-render with leaving=true has committed,
-  // so the native SurfaceView is gone before the slide animation begins.
-  useEffect(() => {
-    if (!leaving) return;
-    const id = setTimeout(() => router.back(), 32);
-    return () => clearTimeout(id);
-  }, [leaving]);
+  // Read-aloud belongs to the book: leaving it, by the back button or for a
+  // chat, stops it. Back a screen, or down to the hub (a chat opens on the
+  // Samwell page). The page stays on screen as it slides away: it used to be
+  // unmounted first, against a white flash from the native view that no
+  // longer happens, and the reader watched the words vanish and a blank page
+  // close.
+  const leave = useCallback(
+    (to: "back" | "hub") => {
+      if (isTTSActive) {
+        readerRef.current?.ttsStop();
+        stopMediaSession();
+      }
+      if (to === "hub" && router.canDismiss()) router.dismissTo("/");
+      else router.back();
+    },
+    [isTTSActive, router],
+  );
+
+  // A chat about a passage is made here, with its context, and held on the
+  // Samwell page like every other chat; the reader closes on the way.
+  const openChat = useCallback(
+    async (sessionId: string) => {
+      await showChatOnSamwellPage(sessionId);
+      leave("hub");
+    },
+    [leave],
+  );
 
   const handleLocationChange = useCallback(
     (loc: Locator) => {
@@ -449,9 +486,9 @@ export default function ReaderScreen() {
 
       setChatLoading(false);
       setSelectionEvent(null);
-      router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+      await openChat(sessionId);
     },
-    [currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, router],
+    [currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, openChat],
   );
 
   // Android: the custom SelectionBar drives this from onSelectionChange state.
@@ -484,10 +521,11 @@ export default function ReaderScreen() {
     locator: Locator | null,
     existingChatSessionId?: string | null,
   ) => {
-    // Navigate to existing chat session if one is already linked
-    if (existingChatSessionId) {
+    // Open the chat already linked, unless it has since been deleted: then a
+    // new one is made below, with its context, rather than opened blank.
+    if (existingChatSessionId && sessionExists(existingChatSessionId)) {
       setMenuOpen(false);
-      router.push({ pathname: '/chat/[id]', params: { id: existingChatSessionId } });
+      await openChat(existingChatSessionId);
       return;
     }
 
@@ -511,8 +549,8 @@ export default function ReaderScreen() {
     await updateHighlight(highlightId, { chatSessionId: sessionId });
     setChatLoading(false);
     setMenuOpen(false);
-    router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
-  }, [currentBook, chatLoading, createChatSession, updateHighlight, router]);
+    await openChat(sessionId);
+  }, [currentBook, chatLoading, createChatSession, updateHighlight, openChat]);
 
   const handleChapterPress = useCallback(
     (link: { href: string }) => {
@@ -582,13 +620,13 @@ export default function ReaderScreen() {
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
 
-    // Page-turn: only call goTo when the utterance crosses a virtual page boundary.
-    // Calling goTo on every utterance causes webview reflows that compete with audio.
-    const newPosition = event.locator.locations?.position;
-    const currentPosition = currentLocatorRef.current?.locations?.position;
-    if (newPosition === undefined || newPosition !== currentPosition) {
-      readerRef.current?.goTo(event.locator);
-    }
+    // No goTo here: the native side (HybridReadiumView.swift's
+    // `manager.onUtterance`) turns the page itself now, and waits for that
+    // to finish before Kokoro's audio starts. A JS round trip had no way to
+    // signal "the page actually turned" back to the native TTS engine, so
+    // calling goTo from here could only ever race the audio, not sequence
+    // before it. currentLocatorRef still updates from the native
+    // onLocationChange event this navigation fires either way.
   }, []);
 
   const handleTTSToggle = useCallback(() => {
@@ -785,16 +823,10 @@ export default function ReaderScreen() {
     [],
   );
 
-  const initialLocation = useMemo(() => {
-    if (locatorParam) {
-      try {
-        return JSON.parse(decodeURIComponent(locatorParam)) as Locator;
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return savedLocator || undefined;
-  }, [locatorParam, savedLocator]);
+  const initialLocation = useMemo(
+    () => jumpLocator ?? savedLocator ?? undefined,
+    [jumpLocator, savedLocator],
+  );
 
   // The header zone is a transparent tap strip above the reading area.
   // ReadiumView sits BELOW this zone so its native touch handling is
@@ -897,11 +929,11 @@ export default function ReaderScreen() {
           page off the bottom edge. A plain RN parent flexes correctly, and an
           absolute fill inside one cannot get its height wrong.
 
-          Empty while leaving so the native SurfaceView doesn't flash white
-          during the slide animation, and not mounted until the entrance has
-          settled — see the note on `readerMounted`. */}
+          Not mounted until the entrance has settled (see the note on
+          `readerMounted`), and kept through the exit so the page leaves with
+          its words on it. */}
       <View className="flex-1" style={{ marginBottom: footerZoneHeight }}>
-        {leaving || !readerMounted ? null : (
+        {!readerMounted ? null : (
           <ReadiumView
             ref={readerRef}
             style={StyleSheet.absoluteFill}
@@ -928,6 +960,8 @@ export default function ReaderScreen() {
             onTTSStateChange={handleTTSStateChange}
             onTTSUtterance={handleTTSUtterance}
             onTTSError={handleTTSError}
+            onTTSSynthesisRequest={onSynthesisRequest}
+            onTTSSynthesisCancel={onSynthesisCancel}
           />
         )}
 
@@ -991,56 +1025,53 @@ export default function ReaderScreen() {
           isBookmarked={isBookmarked}
           isTTSActive={isTTSActive}
           onBookmarkToggle={handleBookmarkToggle}
-          onBack={() => {
-            if (isTTSActive) {
-              readerRef.current?.ttsStop();
-              stopMediaSession();
-            }
-            setLeaving(true);
-          }}
+          onBack={() => leave("back")}
           onContents={() => {
             showHeader();
             setShowToc(true);
           }}
           onTTSToggle={handleTTSToggle}
+          onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
       </Animated.View>
 
-      {/* TTS controls — float at bottom, animate in/out with header */}
+      {/* TTS controls — float at bottom. They come up from the bottom edge
+          when read-aloud is switched on and go back down past it when it is
+          switched off, as the mini player does (`slideUpFromEdge`); inside
+          that, they follow the header as it hides and shows. */}
       {isTTSActive && (
-        <Animated.View
-          style={[
-            {
-              position: "absolute",
-              left: 0,
-              right: 0,
-              alignItems: "center",
-              justifyContent: "center",
-            },
-            {
-              opacity: headerAnim,
-              bottom: 0,
-              height: ttsControlsZoneHeight,
-              transform: [
-                {
-                  translateY: headerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [60, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
+        <ReanimatedView.View
+          entering={slideUpFromEdge}
+          exiting={slideDownPastEdge}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: ttsControlsZoneHeight }}
           pointerEvents="box-none"
         >
-          <TTSControls
-            isPlaying={ttsState?.isPlaying ?? false}
-            onPlayPause={handleTTSPlayPause}
-            onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
-            onSkipNext={() => readerRef.current?.ttsSkipNext()}
-          />
-        </Animated.View>
+          <Animated.View
+            style={[
+              { flex: 1, alignItems: "center", justifyContent: "center" },
+              {
+                opacity: headerAnim,
+                transform: [
+                  {
+                    translateY: headerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [60, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            pointerEvents="box-none"
+          >
+            <TTSControls
+              isPlaying={ttsState?.isPlaying ?? false}
+              onPlayPause={handleTTSPlayPause}
+              onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
+              onSkipNext={() => readerRef.current?.ttsSkipNext()}
+            />
+          </Animated.View>
+        </ReanimatedView.View>
       )}
 
       {/* Selection bar — appears when user selects text, positioned just below the header */}
@@ -1188,6 +1219,11 @@ export default function ReaderScreen() {
         onUpdateBookmarkNote={updateBookmarkNote}
         onClose={() => setShowToc(false)}
       />
+
+      {/* Long-press on the header's read-aloud button: voice/rate settings
+          without leaving the book. Same panel Settings uses, so the two
+          never disagree about what "the voice" currently is. */}
+      <TtsSettingsSheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} />
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (

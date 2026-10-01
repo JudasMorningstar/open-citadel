@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { prefetchFirstShelves } from '@/features/free-books/hooks/use-catalog-shelves';
 import { useLibraryBoot } from '@/features/library/hooks/use-library-boot';
 import { useOpenReader } from '@/features/library/hooks/use-open-reader';
 import { addBooksMenu, type AddBooksKey } from '@/features/library/utils/add-books-menu';
@@ -77,7 +78,10 @@ export function useBooksLibrary() {
   // iOS picks EPUBs with the document picker and copies them into the owned
   // folder; Android points the app at a folder once.
   const addBooks = React.useCallback(() => void useBooksStore.getState().importBooks(), []);
-  const openFreeBooks = React.useCallback(() => router.push('/free-books/explore'), [router]);
+  const openFreeBooks = React.useCallback(() => {
+    prefetchFirstShelves();
+    router.push('/free-books/explore');
+  }, [router]);
   const onAddBooks = React.useCallback(
     (key: AddBooksKey) => (key === 'files' ? addBooks() : openFreeBooks()),
     [addBooks, openFreeBooks],

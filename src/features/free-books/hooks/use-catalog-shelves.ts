@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import React from 'react';
 import type { ViewToken } from 'react-native';
 
+import { queryClient } from '@/lib/query-client';
 import { createShelfPreviewQueryOptions } from '@/query-manager/gutenberg';
 import type { CatalogBook, CatalogPage } from '@/services/gutenberg/records';
 import { CATALOG_SHELVES, type CatalogShelf } from '@/services/gutenberg/shelves';
@@ -38,6 +39,16 @@ function shelfState(result: { data?: CatalogPage; isError: boolean }): ShelfStat
 /** Module level, so the query layer can keep one answer until a shelf actually changes. */
 function combineShelves(results: { data?: CatalogPage; isError: boolean }[]): Record<string, ShelfState> {
   return Object.fromEntries(CATALOG_SHELVES.map((shelf, i) => [shelf.id, shelfState(results[i])]));
+}
+
+/**
+ * The shelves Explore asks for as it lands, asked for at the tap that opens
+ * it instead: the page then lands on books rather than on a round trip.
+ */
+export function prefetchFirstShelves(): void {
+  for (const shelf of CATALOG_SHELVES) {
+    if (FIRST_SHELVES.has(shelf.id)) void queryClient.prefetchQuery(createShelfPreviewQueryOptions(shelf));
+  }
 }
 
 /**

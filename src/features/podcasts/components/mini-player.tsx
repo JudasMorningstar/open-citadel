@@ -1,16 +1,18 @@
 import React from 'react';
 import { View } from 'react-native';
-import Animated, { FadeOutDown, ReduceMotion, withTiming } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
+import Transition from 'react-native-screen-transitions';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { easing, elevation, fontFamily, motion, spacing } from '@/constants/theme';
+import { EDGE_SHADOW_ROOM, elevation, fontFamily, slideDownPastEdge, slideUpFromEdge, spacing } from '@/constants/theme';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
 import { MiniPlayerControls } from '@/features/podcasts/components/mini-player-controls';
 import { MiniPlayerProgress } from '@/features/podcasts/components/mini-player-progress';
 import { useDismissSwipe } from '@/features/podcasts/hooks/use-dismiss-swipe';
+import { NOW_PLAYING_ART } from '@/navigation/transitions';
 import type { NowPlaying } from '@/stores/podcast-player';
 import { asColor } from '@/utils/colors';
 
@@ -23,26 +25,8 @@ export const MINI_PLAYER_CLEARANCE = MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP;
 
 const ART = 44;
 
-/**
- * Rises from where the full player will come from, so the two read as one
- * object: the full player rises out of the bottom edge, and this is what is
- * left of it there. `slow` because it is an arrival, not feedback.
- */
-function riseIn() {
-  'worklet';
-  const config = { duration: motion.slow, easing, reduceMotion: ReduceMotion.System };
-  return {
-    initialValues: { opacity: 0, transform: [{ translateY: 16 }] },
-    animations: {
-      opacity: withTiming(1, config),
-      transform: [{ translateY: withTiming(0, config) }],
-    },
-  };
-}
 /** Screen readers get the swipe as an action. */
 const DISMISS_ACTIONS = [{ name: 'dismiss', label: 'Close the player' }];
-
-const SINK_OUT = FadeOutDown.duration(motion.base).reduceMotion(ReduceMotion.System);
 
 export type MiniPlayerProps = {
   nowPlaying: NowPlaying;
@@ -50,6 +34,12 @@ export type MiniPlayerProps = {
   isBuffering: boolean;
   skipForwardSec: number;
   bottomInset: number;
+  /**
+   * Whether the card slides up as it mounts. Only when playback starts on
+   * this screen: a screen that opens with something already playing has the
+   * card from its first frame, the way it was on the screen before.
+   */
+  arrives: boolean;
   onOpen: () => void;
   onToggle: () => void;
   onSkipForward: () => void;
@@ -62,10 +52,11 @@ export type MiniPlayerProps = {
  *
  * A floating card rather than a bar across the bottom: the app has no tab bar
  * for one to sit on, and the Library's own floating button and Samwell's
- * input card are already cards that float. Tapping it raises the full
- * player; the two controls on it are the two a listener reaches for without
- * looking: pause, and forward past an ad (or, once paused, close). Swiping it
- * down stops playback and puts it away.
+ * input card are already cards that float. Tapping it grows the full player
+ * out of its artwork; the two controls on it are the two a listener reaches
+ * for without looking: pause, and forward past an ad (or, once paused, close). Swiping it
+ * down stops playback and puts it away. It comes and goes by the bottom edge
+ * (`slideUpFromEdge`), and the floating buttons ride with it (`FabLift`).
  *
  * The listening progress is a gold hairline along the card's top edge
  * (`MiniPlayerProgress`), scaled on the UI thread, so a playing episode never
@@ -77,6 +68,7 @@ export function MiniPlayer({
   isBuffering,
   skipForwardSec,
   bottomInset,
+  arrives,
   onOpen,
   onToggle,
   onSkipForward,
@@ -87,18 +79,19 @@ export function MiniPlayer({
     '--color-muted-foreground',
     '--color-surface-tertiary',
   ]);
-  const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset);
+  const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset + EDGE_SHADOW_ROOM);
 
   return (
     <Animated.View
-      entering={riseIn}
-      exiting={SINK_OUT}
+      entering={arrives ? slideUpFromEdge : undefined}
+      exiting={slideDownPastEdge}
       className="absolute left-4 right-4"
       style={{ bottom: bottomInset + MINI_PLAYER_GAP }}
     >
       <GestureDetector gesture={swipe.gesture}>
         <Animated.View style={swipe.style}>
           <Touchable
+            solid
             onPress={onOpen}
             accessibilityRole="button"
             accessibilityLabel={`Now playing: ${nowPlaying.title}. Open the player.`}
@@ -110,11 +103,14 @@ export function MiniPlayer({
               style={[elevation.card, { height: MINI_PLAYER_HEIGHT }]}
             >
               <MiniPlayerProgress positionSec={nowPlaying.positionSec} durationSec={nowPlaying.durationSec} />
-              <PodcastArtwork
-                uri={nowPlaying.artworkUrl}
-                size={ART}
-                placeholderColor={asColor(surfaceTertiary)}
-              />
+              {/* What the full player grows out of (`playerTransition`). */}
+              <Transition.Boundary id={NOW_PLAYING_ART}>
+                <PodcastArtwork
+                  uri={nowPlaying.artworkUrl}
+                  size={ART}
+                  placeholderColor={asColor(surfaceTertiary)}
+                />
+              </Transition.Boundary>
               <View className="flex-1 gap-0.5">
                 <ThemedText type="bodySm" numberOfLines={1} style={{ fontFamily: fontFamily.sansSemiBold }}>
                   {nowPlaying.title}

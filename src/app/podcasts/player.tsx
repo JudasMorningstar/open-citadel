@@ -11,7 +11,6 @@ import { contentColumn, iconSize } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { PlayerArtwork } from "@/features/podcasts/components/player-artwork";
 import { PlayerControls } from "@/features/podcasts/components/player-controls";
-import { PlayerControlsSkeleton } from "@/features/podcasts/components/player-controls-skeleton";
 import { PlayerSheets } from "@/features/podcasts/components/player-sheets";
 import { PlayerTitle } from "@/features/podcasts/components/player-title";
 import { useEpisodeActions } from "@/features/podcasts/hooks/use-episode-actions";
@@ -73,13 +72,10 @@ export default function PlayerScreen() {
             onOpenShow={controls.openShow}
             onToggleFavorite={controls.toggleFavorite}
           />
-          {/* The controls mount once the drawer has landed: mounting the
-              scrubber's gestures and clocks mid-rise is what stalled it. */}
-          {landed ? (
-            <PlayerControls player={player} controls={controls} />
-          ) : (
-            <PlayerControlsSkeleton />
-          )}
+          {/* Drawn from the first frame, with the values they will keep, so
+              nothing is swapped when the player lands: only the scrubber's
+              drag waits for that. */}
+          <PlayerControls player={player} controls={controls} live={landed} />
         </View>
       </View>
       {landed ? (

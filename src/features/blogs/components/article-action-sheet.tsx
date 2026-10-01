@@ -2,14 +2,18 @@ import React from 'react';
 import { View } from 'react-native';
 
 import {
-  BookmarkCheck,
-  BookmarkPlus,
   BookOpen,
+  CheckCheck,
   CircleCheckBig,
+  CircleDot,
+  CircleMinus,
+  Clock,
   ExternalLink,
   Newspaper,
   RotateCcw,
   Share,
+  Star,
+  StarOff,
   ZodiacPisces,
   type LucideIcon,
 } from '@/components/icons';
@@ -24,10 +28,16 @@ const ICONS: Record<ArticleAction, LucideIcon> = {
   open: BookOpen,
   // His mark, wherever a row is him.
   chat: ZodiacPisces,
-  save: BookmarkPlus,
-  unsave: BookmarkCheck,
-  read: CircleCheckBig,
-  unread: RotateCcw,
+  // The book menu's marks for the rows a book has too.
+  favorite: Star,
+  unfavorite: StarOff,
+  queue: Clock,
+  dequeue: CircleMinus,
+  finish: CircleCheckBig,
+  unfinish: RotateCcw,
+  // The unread dot a new post carries in a list.
+  read: CheckCheck,
+  unread: CircleDot,
   original: ExternalLink,
   share: Share,
   blog: Newspaper,

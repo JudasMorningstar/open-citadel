@@ -10,10 +10,17 @@ import type { usePlayerScreen } from '@/features/podcasts/hooks/use-player-scree
 type PlayerControlsProps = {
   player: ReturnType<typeof usePlayerScreen>;
   controls: Controls;
+  /**
+   * False while the player is still opening. The controls are drawn from the
+   * first frame, as they will stay: only the scrubber's drag waits for the
+   * player to land, since that is a behaviour, not something drawn, and
+   * turning it on changes no pixel.
+   */
+  live: boolean;
 };
 
 /** Where the listener is and what they can do: the scrubber, the transport, then speed, sleep, Up Next and chapters. */
-export function PlayerControls({ player, controls }: PlayerControlsProps) {
+export function PlayerControls({ player, controls, live }: PlayerControlsProps) {
   return (
     <View className="gap-8">
       <PlayerProgress
@@ -23,6 +30,7 @@ export function PlayerControls({ player, controls }: PlayerControlsProps) {
         error={player.error}
         onChapters={controls.open('chapters')}
         onSeek={controls.seek}
+        live={live}
       />
       <PlayerTransport
         playing={player.isPlaying}

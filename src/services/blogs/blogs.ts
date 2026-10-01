@@ -3,10 +3,11 @@
  * one. A blog opened from Explore and not followed is kept as a `preview`, so
  * its posts can be opened (and highlighted) before deciding.
  */
-import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, not, or, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { blogArticles, blogs, type BlogState } from '@/db/schema';
+import { keptOnPurpose } from '@/services/blogs/articles';
 import type { DiscoveredBlog } from '@/services/blogs/discover';
 import type { Blog, BlogItem } from '@/services/blogs/records';
 import { storeArticles } from '@/services/blogs/store-articles';
@@ -91,14 +92,14 @@ export async function followBlog(id: string): Promise<void> {
 }
 
 /**
- * Stops following. Posts that were saved or opened stay (a highlight lives on
- * the opened copy, and a saved post was kept on purpose); the rest go. The
+ * Stops following. Posts kept on purpose stay (queued, favorites, finished,
+ * or opened, since a highlight lives on the opened copy); the rest go. The
  * blog stays as a preview while it holds any, so they can still be listed.
  */
 export async function unfollowBlog(id: string): Promise<void> {
   db.transaction((tx) => {
     tx.delete(blogArticles)
-      .where(and(eq(blogArticles.blogId, id), isNull(blogArticles.savedAt), isNull(blogArticles.bookId)))
+      .where(and(eq(blogArticles.blogId, id), not(keptOnPurpose)))
       .run();
     tx.update(blogs).set({ state: 'preview', subscribedAt: null }).where(eq(blogs.id, id)).run();
   });
@@ -111,7 +112,7 @@ const PREVIEW_TTL_MS = 7 * 24 * 3600 * 1000;
 
 /**
  * Lets go of previews nobody followed: after a week, unless a post in them
- * was saved or opened. The database does not cascade, so posts go first.
+ * was kept on purpose. The database does not cascade, so posts go first.
  */
 export async function pruneStalePreviews(): Promise<void> {
   const cutoff = new Date(Date.now() - PREVIEW_TTL_MS).toISOString();
@@ -124,8 +125,7 @@ export async function pruneStalePreviews(): Promise<void> {
         or(isNull(blogs.lastRefreshAt), lt(blogs.lastRefreshAt, cutoff)),
         sql`not exists (
           select 1 from ${blogArticles}
-          where ${blogArticles.blogId} = ${blogs.id}
-            and (${blogArticles.savedAt} is not null or ${blogArticles.bookId} is not null)
+          where ${blogArticles.blogId} = ${blogs.id} and ${keptOnPurpose}
         )`,
       ),
     );

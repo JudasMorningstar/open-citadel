@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React from 'react';
@@ -6,8 +5,8 @@ import { Share } from 'react-native';
 
 import { showToast } from '@/components/toast/toast-provider';
 import { downloadWithToast } from '@/features/podcasts/hooks/download-with-toast';
+import { openEpisodePage, openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import type { EpisodeAction } from '@/features/podcasts/utils/episode-menu';
-import { createChaptersQueryOptions, createEpisodeQueryOptions, createShowQueryOptions } from '@/query-manager/podcasts';
 import * as actions from '@/services/podcasts/actions';
 import { playEpisode, togglePlayback } from '@/services/podcasts/player';
 import type { EpisodeItem } from '@/services/podcasts/records';
@@ -30,26 +29,10 @@ export function playOrToggle(episodeId: string): void {
  */
 export function useEpisodeActions() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [menuEpisode, setMenuEpisode] = React.useState<EpisodeItem | null>(null);
 
-  // Each read starts as the press lands, so the page arrives with its content
-  // rather than filling in after the slide.
-  const openEpisode = React.useCallback(
-    (episodeId: string) => {
-      void queryClient.prefetchQuery(createEpisodeQueryOptions(episodeId));
-      void queryClient.prefetchQuery(createChaptersQueryOptions(episodeId));
-      router.push({ pathname: '/podcasts/episode/[id]', params: { id: episodeId } });
-    },
-    [queryClient, router],
-  );
-  const openShow = React.useCallback(
-    (showId: string) => {
-      void queryClient.prefetchQuery(createShowQueryOptions(showId));
-      router.push({ pathname: '/podcasts/show/[id]', params: { id: showId } });
-    },
-    [queryClient, router],
-  );
+  const openEpisode = React.useCallback((episodeId: string) => openEpisodePage(router, episodeId), [router]);
+  const openShow = React.useCallback((showId: string) => openShowPage(router, showId), [router]);
   const openMenu = React.useCallback((episode: EpisodeItem) => setMenuEpisode(episode), []);
   const closeMenu = React.useCallback(() => setMenuEpisode(null), []);
   const play = React.useCallback((episodeId: string) => playOrToggle(episodeId), []);

@@ -159,11 +159,29 @@ export async function searchShows(term: string, signal?: AbortSignal): Promise<D
     }));
 }
 
+/**
+ * Feed addresses already looked up, by Apple id: a show's address is looked up
+ * at the tap that opens it (`prefetchDiscoveredShow`) and again as its page
+ * lands, and the second is answered here. A failed lookup is not kept.
+ */
+const lookedUp = new Map<string, Promise<string>>();
+
 /** The feed behind an Apple id, or behind a pasted Apple Podcasts link. */
-export async function resolveFeedUrl(show: Pick<DiscoveredShow, "appleId" | "feedUrl">): Promise<string> {
-  if (show.feedUrl) return show.feedUrl;
-  if (!show.appleId) throw new Error("This show has no feed address.");
-  const json = (await getJson(`https://itunes.apple.com/lookup?id=${show.appleId}`)) as {
+export function resolveFeedUrl(show: Pick<DiscoveredShow, "appleId" | "feedUrl">): Promise<string> {
+  if (show.feedUrl) return Promise.resolve(show.feedUrl);
+  const appleId = show.appleId;
+  if (!appleId) return Promise.reject(new Error("This show has no feed address."));
+  let found = lookedUp.get(appleId);
+  if (!found) {
+    found = lookUpFeedUrl(appleId);
+    found.catch(() => lookedUp.delete(appleId));
+    lookedUp.set(appleId, found);
+  }
+  return found;
+}
+
+async function lookUpFeedUrl(appleId: string): Promise<string> {
+  const json = (await getJson(`https://itunes.apple.com/lookup?id=${appleId}`)) as {
     results?: SearchResult[];
   };
   const feedUrl = json.results?.[0]?.feedUrl;

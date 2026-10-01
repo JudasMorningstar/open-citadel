@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChevronLeft } from "@/components/icons";
 import { ListEmpty } from "@/components/list-empty";
-import { Handover } from "@/components/navigation/handover";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize, layout } from "@/constants/theme";
@@ -36,8 +35,13 @@ export default function BlogScreen() {
   const actions = useArticleActions();
   const renderItem = useArticleRowRenderer(actions, { withBlog: false });
 
+  // The list is mounted from the first frame with the hero as its header, so
+  // the hero is drawn once and never swapped. The posts wait for the slide
+  // to land (their read is held until then), with their skeleton in place.
   const empty = screen.resolving ? <ArticleListSkeleton /> : <ListEmpty text={screen.emptyText} />;
   const header = <BlogHero {...screen.hero} />;
+  // Nothing known yet (an address typed into Explore): its shape until the read lands.
+  const known = screen.hero.title !== '';
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -47,7 +51,7 @@ export default function BlogScreen() {
         leftLabel="Back"
         onLeftPress={() => router.back()}
       />
-      <Handover ready={landed} skeleton={<BlogPageSkeleton />}>
+      {known ? (
         <BlogArticleList
           articles={screen.articles}
           renderItem={renderItem}
@@ -58,7 +62,9 @@ export default function BlogScreen() {
           refreshing={screen.refreshing}
           onRefresh={screen.refresh}
         />
-      </Handover>
+      ) : (
+        <BlogPageSkeleton />
+      )}
       {landed ? <ArticleActionSheet {...actions.sheet} blogLink={false} /> : null}
     </ThemedView>
   );

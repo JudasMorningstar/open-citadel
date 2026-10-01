@@ -7,6 +7,7 @@ import { useArticleActions } from '@/features/blogs/hooks/use-article-actions';
 import { useBlogImport } from '@/features/blogs/hooks/use-blog-import';
 import {
   createBlogSectionQueryOptions,
+  createFollowedFeedsQueryOptions,
   createBlogsHomeQueryOptions,
   invalidateBlogLibrary,
   type BlogSection,
@@ -17,7 +18,7 @@ import { refreshAllBlogs } from '@/services/blogs/refresh';
 /** What the blogs side draws: nothing for one frame, the welcome, or the shelves. */
 export type BlogsPageView = 'loading' | 'welcome' | 'home';
 
-const EMPTY: BlogsHomeData = { blogs: [], shelves: { continue: [], latest: [], saved: [] } };
+const EMPTY: BlogsHomeData = { blogs: [], shelves: { continue: [], latest: [], queue: [], favorites: [], finished: [] } };
 
 /**
  * The blogs side of the Library: which view it shows, and what its doors,
@@ -42,7 +43,11 @@ export function useBlogsPage() {
       if (summary.refreshed > 0) invalidateBlogLibrary();
     });
   }, []);
-  const openExplore = React.useCallback(() => router.push('/blogs/explore'), [router]);
+  // Explore's directory is built in; what it reads is which blogs are followed.
+  const openExplore = React.useCallback(() => {
+    void queryClient.prefetchQuery(createFollowedFeedsQueryOptions());
+    router.push('/blogs/explore');
+  }, [queryClient, router]);
   const { mutate, isPending } = pull;
   const refresh = React.useCallback(() => {
     if (!isPending) mutate();
@@ -55,8 +60,8 @@ export function useBlogsPage() {
     [queryClient, router],
   );
 
-  // Nothing kept here yet: no blog followed, and no post saved or opened.
-  const empty = home.blogs.length === 0 && home.shelves.saved.length === 0 && home.shelves.continue.length === 0;
+  // Nothing kept here yet: no blog followed, and no post on any shelf.
+  const empty = home.blogs.length === 0 && Object.values(home.shelves).every((shelf) => shelf.length === 0);
   const view: BlogsPageView = data === undefined ? 'loading' : empty ? 'welcome' : 'home';
 
   return {

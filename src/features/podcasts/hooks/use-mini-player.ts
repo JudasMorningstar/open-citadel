@@ -18,6 +18,10 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
   const isPlaying = usePodcastPlayer(selectPlaying);
   const isBuffering = usePlayerLoader();
   const skipForwardSec = usePodcastPrefs((s) => s.skipForwardSec);
+  // Already playing when this screen opened: the card came with the screen,
+  // so it is simply there. Once it has gone, the next one arrives.
+  const [cameWithScreen, setCameWithScreen] = React.useState(nowPlaying !== null);
+  if (cameWithScreen && !nowPlaying) setCameWithScreen(false);
 
   const onOpen = React.useCallback(() => router.push('/podcasts/player'), [router]);
   const onToggle = React.useCallback(() => void togglePlayback(), []);
@@ -32,6 +36,7 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
       isBuffering,
       skipForwardSec,
       bottomInset,
+      arrives: !cameWithScreen,
       onOpen,
       onToggle,
       onSkipForward,

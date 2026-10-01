@@ -1,0 +1,62 @@
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
+index 7da495f568b686444e13e4a3857911e5641ff7d0..06071f3e482d617d2a591ae93e5a6b00b69a6693 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
+@@ -204,8 +204,16 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   @ReactMethod
+   override fun setMediaItems(data: ReadableArray, startIndex: Double) {
+     val mediaItems = readableArrayToMediaItems(data)
++    // PATCHED (Open Citadel): the start item's `startPosition`, so the queue
++    // loads where it should begin. A separate seekTo is a custom command that
++    // can reach the session before this load does, and the load resets to 0.
++    val startMap = data.getMap(startIndex.toInt())
++    val startPositionMs =
++      if (startMap != null && startMap.hasKey("startPosition") && !startMap.isNull("startPosition"))
++        (startMap.getDouble("startPosition") * 1000).toLong().coerceAtLeast(0)
++      else 0L
+     controller.run { mc ->
+-      mc?.setMediaItems(mediaItems, startIndex.toInt(), 0)
++      mc?.setMediaItems(mediaItems, startIndex.toInt(), startPositionMs)
+       mc?.prepare()
+     }
+     context.emitEvent(QueueChangedEvent())
+diff --git a/lib/typescript/src/interfaces/MediaItem.d.ts b/lib/typescript/src/interfaces/MediaItem.d.ts
+index 3689842ac4d0b39eaf347e4bace291d33f049379..cf089c2121835d7f5892951e8aaa14a6c7132597 100644
+--- a/lib/typescript/src/interfaces/MediaItem.d.ts
++++ b/lib/typescript/src/interfaces/MediaItem.d.ts
+@@ -45,6 +45,15 @@ export interface MediaItem {
+      * Duration in seconds (optional hint for UI).
+      */
+     duration?: number;
++    /**
++     * PATCHED (Open Citadel): where to start this item, in seconds, when it is
++     * the start item of `setMediaItems`. Android only. A `seekTo` sent right
++     * after `setMediaItems` travels as a custom session command, which is not
++     * ordered with the queue change, and was being applied before it: the load
++     * then reset the position to 0 and a resumed episode started over. Passing
++     * the position with the load is media3's own way to start part-way.
++     */
++    startPosition?: number;
+     /**
+      * Whether this is a live stream.
+      *
+diff --git a/src/interfaces/MediaItem.ts b/src/interfaces/MediaItem.ts
+index 8d912aea555d5b15e864c5b76b245cc2e42083d4..1ab5a94957c234d9fb61cab783f23e5806d8de22 100644
+--- a/src/interfaces/MediaItem.ts
++++ b/src/interfaces/MediaItem.ts
+@@ -50,6 +50,15 @@ export interface MediaItem {
+    * Duration in seconds (optional hint for UI).
+    */
+   duration?: number;
++  /**
++   * PATCHED (Open Citadel): where to start this item, in seconds, when it is
++   * the start item of `setMediaItems`. Android only. A `seekTo` sent right
++   * after `setMediaItems` travels as a custom session command, which is not
++   * ordered with the queue change, and was being applied before it: the load
++   * then reset the position to 0 and a resumed episode started over. Passing
++   * the position with the load is media3's own way to start part-way.
++   */
++  startPosition?: number;
+   /**
+    * Whether this is a live stream.
+    *

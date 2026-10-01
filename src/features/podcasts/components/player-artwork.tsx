@@ -1,9 +1,11 @@
 import React from 'react';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Transition from 'react-native-screen-transitions';
 
 import { easing, elevation, motion } from '@/constants/theme';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { NOW_PLAYING_ART } from '@/navigation/transitions';
 
 /** How far the artwork steps back while paused. */
 const PAUSED_SCALE = 0.86;
@@ -21,6 +23,11 @@ type PlayerArtworkProps = {
  *
  * Scale only, on the UI thread, on the house curve at `slow`: a state change
  * the listener caused, not a flourish. Under Reduce Motion it holds still.
+ *
+ * It is also what the player grows out of: tagged the same as the mini
+ * player's artwork (`NOW_PLAYING_ART`), measured at full size around the
+ * paused step-back, and drawn with no fade, since it has to be there the
+ * moment the small one starts growing into it.
  */
 export function PlayerArtwork({ uri, size, playing }: PlayerArtworkProps) {
   const tokens = useThemeTokens();
@@ -35,8 +42,10 @@ export function PlayerArtwork({ uri, size, playing }: PlayerArtworkProps) {
   const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 
   return (
-    <Animated.View style={[elevation.card, style]}>
-      <PodcastArtwork uri={uri} size={size} placeholderColor={tokens['--color-surface-tertiary']} />
-    </Animated.View>
+    <Transition.Boundary id={NOW_PLAYING_ART}>
+      <Animated.View style={[elevation.card, style]}>
+        <PodcastArtwork uri={uri} size={size} placeholderColor={tokens['--color-surface-tertiary']} />
+      </Animated.View>
+    </Transition.Boundary>
   );
 }

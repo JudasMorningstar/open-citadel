@@ -1,12 +1,12 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import { ThemedText } from '@/components/themed-text';
+import { TileBadge, type TileBadgeIcon } from '@/components/tile-badge';
 import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
-import { fontFamily, motion } from '@/constants/theme';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
+import { fontFamily } from '@/constants/theme';
 import type { TileBook } from '@/features/library/utils/tile-book';
 
 
@@ -43,7 +43,7 @@ type BookTileProps<B extends TileBook> = {
    * any reason at all. A module-level icon reference and a colour string are
    * both stable, so the memo holds.
    */
-  badgeIcon?: React.ComponentType<{ size?: number; color?: string }>;
+  badgeIcon?: TileBadgeIcon;
   badgeColor?: string;
   /** A grid wraps to two lines; a shelf usually wants one. */
   titleLines?: number;
@@ -72,7 +72,7 @@ function BookTileBase<B extends TileBook>({
   width,
   mutedForeground,
   surfaceTertiary,
-  badgeIcon: BadgeIcon,
+  badgeIcon,
   badgeColor,
   titleLines = 2,
   onPress,
@@ -93,11 +93,9 @@ function BookTileBase<B extends TileBook>({
           <View className="shadow-sm" style={{ width: coverWidth }}>
             <View className="aspect-[2/3] overflow-hidden bg-card">
               {book.coverUrl ? (
-                <Image
+                <CoverImage
                   source={{ uri: book.coverUrl }}
                   style={COVER_FILL}
-                  placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-                  transition={motion.slow}
                   recyclingKey={String(book.id)}
                 />
               ) : (
@@ -124,11 +122,7 @@ function BookTileBase<B extends TileBook>({
                 </View>
               )}
               {book.filePath === null && <SyncBadge />}
-              {BadgeIcon && book.filePath !== null ? (
-                <View className="absolute left-2 top-2 rounded-full bg-background">
-                  <BadgeIcon size={22} color={badgeColor} />
-                </View>
-              ) : null}
+              {badgeIcon && book.filePath !== null ? <TileBadge icon={badgeIcon} color={badgeColor} /> : null}
             </View>
           </View>
         </View>

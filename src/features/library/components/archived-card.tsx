@@ -1,5 +1,5 @@
 import { SHELF_TILE_WIDTH } from '@/constants/theme';
-import { CircleCheckBig } from '@/components/icons';
+import { FINISHED_BADGE } from '@/components/tile-badge';
 import React from 'react';
 import { ScrollView } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -45,7 +45,7 @@ export const ArchivedCards = React.memo(function ArchivedCards({ books, onBookPr
             mutedForeground={asColor(mutedForeground)}
             surfaceTertiary={asColor(ghostInk)}
             titleLines={1}
-            badgeIcon={CircleCheckBig}
+            badgeIcon={FINISHED_BADGE}
             badgeColor={asColor(primary)}
             onPress={onBookPress}
             onLongPress={onBookLongPress}

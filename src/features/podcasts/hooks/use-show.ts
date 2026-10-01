@@ -62,6 +62,8 @@ export function useShow(id: string | null, preview: ShowPreview | null, filter: 
   return {
     show: show.data ?? null,
     episodes: episodes.data ?? NO_EPISODES,
+    /** The episodes have been read (an empty show included). */
+    episodesLoaded: episodes.data !== undefined,
     resolving,
     error: discovered.error ? discovered.error.message || 'This show could not be loaded.' : null,
     showId,

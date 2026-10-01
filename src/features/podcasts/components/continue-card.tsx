@@ -4,10 +4,10 @@ import { View } from 'react-native';
 import { HERO_CARD_MIN_HEIGHT, HeroCard } from '@/components/hero-card';
 import { Pause, Play } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
-import { Progress } from '@/components/ui/progress';
 import { Touchable } from '@/components/ui/touchable';
+import { ContinueProgress } from '@/features/podcasts/components/continue-progress';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
-import { episodeArtwork, listenedFraction, playLabel } from '@/features/podcasts/utils/format';
+import { episodeArtwork, playLabel } from '@/features/podcasts/utils/format';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
 import { useEpisodePlayback } from '@/stores/podcast-player';
@@ -29,7 +29,8 @@ type ContinueCardProps = {
  */
 export function ContinueCard({ episode, onPress, onLongPress, onPlay }: ContinueCardProps) {
   const tokens = useThemeTokens();
-  const playing = useEpisodePlayback(episode.id) === 'playing';
+  const playback = useEpisodePlayback(episode.id);
+  const playing = playback === 'playing';
   const Icon = playing ? Pause : Play;
   const open = () => onPress(episode.id);
   const menu = () => onLongPress(episode);
@@ -55,7 +56,7 @@ export function ContinueCard({ episode, onPress, onLongPress, onPlay }: Continue
   );
   const bottom = (
     <View className="gap-2">
-      <Progress value={listenedFraction(episode)} minValue={0} maxValue={1} size="sm" />
+      <ContinueProgress episode={episode} live={playback !== 'idle'} />
       <View className="flex-row items-center justify-between gap-3">
         <ThemedText type="labelSm" color={tokens['--color-muted-foreground']} numberOfLines={1} className="flex-1">
           {playing ? 'Playing' : playLabel(episode)}

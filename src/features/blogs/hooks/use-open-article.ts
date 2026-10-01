@@ -7,7 +7,7 @@ import { dismissToast, showToast } from '@/components/toast/toast-provider';
 import { invalidateBlogLibrary } from '@/query-manager/blogs';
 import { openArticleBook } from '@/services/blogs/article-book';
 import type { ArticleItem } from '@/services/blogs/records';
-import { useChatStore } from '@/stores/chat';
+import { askSamwellAbout } from '@/services/samwell-handoff';
 
 const TOAST_KEY = 'open-article';
 /** Opening usually takes a moment; a toast only for a wait long enough to notice. */
@@ -33,7 +33,7 @@ async function withPost<T>(post: OpenablePost, work: () => Promise<T>): Promise<
     // (`useArticleActions`), not on the frame the reader starts to slide in.
     return result;
   } catch (err) {
-    // A chat that failed after the post's copy was made still changed it.
+    // A failure after the post's copy was made still changed it.
     invalidateBlogLibrary();
     showToast({
       key: TOAST_KEY,
@@ -51,31 +51,37 @@ async function withPost<T>(post: OpenablePost, work: () => Promise<T>): Promise<
 
 /**
  * Opening a post in the reader, and starting a chat with Samwell about one.
- * Both make the post's reader copy first (see `openArticleBook`), so a chat
- * started from a list is grounded in the post, and the post it names is one
- * tap from the chat.
+ * Both make the post's reader copy first (see `openArticleBook`): a chat
+ * about a post is grounded in that copy's text.
  */
 export function useOpenArticle() {
   const router = useRouter();
 
+  /** The post's reader copy, made if need be; its book id, or null if it failed (said in a toast). */
+  const prepareArticle = React.useCallback(
+    (post: OpenablePost) => withPost(post, () => openArticleBook(post.id)),
+    [],
+  );
+
   const openArticle = React.useCallback(
     async (post: OpenablePost) => {
-      const bookId = await withPost(post, () => openArticleBook(post.id));
+      const bookId = await prepareArticle(post);
       if (bookId) router.push({ pathname: '/reader/[id]', params: { id: bookId } });
     },
-    [router],
+    [prepareArticle, router],
   );
 
+  // On the Samwell page, as any chat is, with the post waiting as its book.
+  // From a screen above the hub (a blog's page, a shelf's), back down to it.
   const chatAboutArticle = React.useCallback(
     async (post: OpenablePost) => {
-      const sessionId = await withPost(post, async () => {
-        const bookId = await openArticleBook(post.id);
-        return useChatStore.getState().createSession({ bookId, title: post.title.slice(0, 60) });
-      });
-      if (sessionId) router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+      const bookId = await prepareArticle(post);
+      if (!bookId) return;
+      await askSamwellAbout({ id: bookId, title: post.title, kind: 'article' });
+      if (router.canDismiss()) router.dismissTo('/');
     },
-    [router],
+    [prepareArticle, router],
   );
 
-  return { openArticle, chatAboutArticle };
+  return { prepareArticle, openArticle, chatAboutArticle };
 }

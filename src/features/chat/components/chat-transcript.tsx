@@ -1,9 +1,8 @@
 /**
  * The conversation itself.
  *
- * `MessageScroller.Viewport` rather than the virtualized `List`, which is a
- * deliberate difference from `chat/[id].tsx`: bubbles here play an entrance
- * animation, and an entrance on a recycled row fires again every time the row
+ * `MessageScroller.Viewport` rather than the virtualized `List`: bubbles
+ * here play an entrance animation, and an entrance on a recycled row fires again every time the row
  * is reused, so a scroll back up sets the whole transcript animating. Chats
  * are short enough that the virtualization is not worth losing that.
  *

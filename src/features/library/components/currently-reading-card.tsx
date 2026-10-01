@@ -1,11 +1,11 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import { HeroCard } from '@/components/hero-card';
 import { ThemedText } from '@/components/themed-text';
 import { Progress } from '@/components/ui/progress';
-import { fontFamily, motion } from '@/constants/theme';
+import { fontFamily } from '@/constants/theme';
 import { useBookProgress } from '@/features/library/hooks/use-book-progress';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { Book } from '@/stores/books';
@@ -53,7 +53,7 @@ export const CurrentlyReadingCard = React.memo(function CurrentlyReadingCard({
   const menu = () => onLongPress(book);
 
   const media = book.coverUrl ? (
-    <Image source={{ uri: book.coverUrl }} style={COVER_FILL} contentFit="cover" transition={motion.slow} />
+    <CoverImage source={{ uri: book.coverUrl }} style={COVER_FILL} contentFit="cover" />
   ) : (
     <PlainCover title={book.title} ghost={tokens['--color-surface-tertiary']} muted={muted} />
   );

@@ -8,8 +8,13 @@ import { showToast } from '@/components/toast/toast-provider';
 import { useOpenArticle } from '@/features/blogs/hooks/use-open-article';
 import type { ArticleAction } from '@/features/blogs/utils/article-menu';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
-import { createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
-import { setArticleRead, setArticleSaved } from '@/services/blogs/articles';
+import { createBlogArticlesQueryOptions, createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
+import {
+  setArticleFavorite,
+  setArticleFinished,
+  setArticleQueued,
+  setArticleRead,
+} from '@/services/blogs/articles';
 import type { ArticleItem } from '@/services/blogs/records';
 
 /**
@@ -25,7 +30,9 @@ export function useArticleActions() {
 
   const openBlog = React.useCallback(
     (blogId: string) => {
+      // The blog and its posts as the page first lists them, all of them.
       void queryClient.prefetchQuery(createBlogQueryOptions(blogId));
+      void queryClient.prefetchQuery(createBlogArticlesQueryOptions(blogId, 'all'));
       router.push({ pathname: '/blogs/blog/[id]', params: { id: blogId } });
     },
     [queryClient, router],
@@ -48,10 +55,19 @@ export function useArticleActions() {
         case 'chat':
           void chatAboutArticle(article);
           return;
-        case 'save':
-        case 'unsave':
-          void setArticleSaved(article.id, action === 'save').then(invalidateBlogLibrary);
-          showToast({ message: action === 'save' ? 'Saved for later' : 'Removed from Saved' });
+        case 'favorite':
+        case 'unfavorite':
+          void setArticleFavorite(article.id, action === 'favorite').then(invalidateBlogLibrary);
+          showToast({ message: action === 'favorite' ? 'Added to Favorites' : 'Removed from Favorites' });
+          return;
+        case 'queue':
+        case 'dequeue':
+          void setArticleQueued(article.id, action === 'queue').then(invalidateBlogLibrary);
+          showToast({ message: action === 'queue' ? 'Added to Queue' : 'Removed from Queue' });
+          return;
+        case 'finish':
+        case 'unfinish':
+          void setArticleFinished(article.id, action === 'finish').then(invalidateBlogLibrary);
           return;
         case 'read':
         case 'unread':

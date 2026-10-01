@@ -69,6 +69,7 @@ export function useShowScreen(params: ShowParams, landed: boolean) {
 
   return {
     ...data,
+    episodeCount: data.episodesLoaded ? episodes.length : null,
     filter,
     setFilter,
     setSort,
@@ -80,13 +81,19 @@ export function useShowScreen(params: ShowParams, landed: boolean) {
     hero: {
       title,
       author: show?.author ?? preview?.author ?? null,
-      artworkUrl: show?.imageUrl ?? preview?.artworkUrl ?? null,
+      // The cover the page opened with stays for the page. A show from
+      // Explore arrives with Apple's copy; once stored (after the page has
+      // landed) it carries the feed's own, at another address, and switching
+      // reloaded the cover from blank: a flash on every first visit.
+      artworkUrl: preview?.artworkUrl ?? show?.imageUrl ?? null,
       description,
       following: show?.state === 'subscribed',
       loading: data.resolving,
       canFollow: showId !== null,
       refreshError: data.error ?? (show?.lastRefreshFailed ? show.lastRefreshError : null),
-      canPlayLatest: latest !== null,
+      // Held in place while the episodes are read, so the buttons do not
+      // shuffle when they land; pressing it before then does nothing.
+      canPlayLatest: latest !== null || !data.episodesLoaded,
     },
     follow: mutations.follow,
     unfollow: mutations.unfollow,

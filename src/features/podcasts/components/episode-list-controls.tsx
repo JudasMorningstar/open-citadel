@@ -16,7 +16,8 @@ const FILTERS: { value: ShowEpisodeFilter; label: string }[] = [
 ];
 
 type EpisodeListControlsProps = {
-  count: number;
+  /** Null until the episodes have been read, so a count is never shown as 0 first. */
+  count: number | null;
   filter: ShowEpisodeFilter;
   sort: 'newest' | 'oldest';
   onFilter: (filter: ShowEpisodeFilter) => void;
@@ -29,6 +30,7 @@ type EpisodeListControlsProps = {
 /** "Episodes", how many, which ones, and in which order: the head of a show's list. */
 export function EpisodeListControls({ count, filter, sort, onFilter, onSort, newCount, onMarkAllSeen }: EpisodeListControlsProps) {
   const tokens = useThemeTokens();
+  const countText = count === null ? '' : String(count);
   return (
     <View className="gap-3 px-6 pb-2 pt-2">
       <View className="flex-row items-baseline gap-3">
@@ -36,7 +38,7 @@ export function EpisodeListControls({ count, filter, sort, onFilter, onSort, new
           Episodes
         </ThemedText>
         <ThemedText type="labelSm" color={tokens['--color-muted-foreground']}>
-          {String(count)}
+          {countText}
         </ThemedText>
         {newCount > 0 ? (
           <Touchable

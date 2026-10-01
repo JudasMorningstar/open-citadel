@@ -5,11 +5,13 @@ import { View } from 'react-native';
 import { RowFade } from '@/components/scroll-fades';
 import { layout } from '@/constants/theme';
 
-const GAP = 16;
-const PADDING = { paddingHorizontal: layout.gutter };
+const GAP = { width: 16 };
+/** The row's inset. Shared with `ShelvesPreview`, which has to lay its rows out the same. */
+export const SHELF_ROW_PADDING = { paddingHorizontal: layout.gutter };
 
-function Gap() {
-  return <View style={{ width: GAP }} />;
+/** The space between two tiles. Shared with `ShelvesPreview`, as above. */
+export function ShelfGap() {
+  return <View style={GAP} />;
 }
 
 type ShelfRowProps<T> = {
@@ -40,8 +42,8 @@ export function ShelfRow<T>({ items, keyOf, renderTile, extraData }: ShelfRowPro
         keyExtractor={keyOf}
         renderItem={renderItem}
         extraData={extraData}
-        ItemSeparatorComponent={Gap}
-        contentContainerStyle={PADDING}
+        ItemSeparatorComponent={ShelfGap}
+        contentContainerStyle={SHELF_ROW_PADDING}
         showsHorizontalScrollIndicator={false}
       />
     </RowFade>

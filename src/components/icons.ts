@@ -41,6 +41,7 @@ export { default as ChevronUp } from 'lucide-react-native/icons/chevron-up';
 export { default as CircleAlert } from 'lucide-react-native/icons/circle-alert';
 export { default as CircleCheck } from 'lucide-react-native/icons/circle-check';
 export { default as CircleCheckBig } from 'lucide-react-native/icons/circle-check-big';
+export { default as CircleDot } from 'lucide-react-native/icons/circle-dot';
 export { default as CircleMinus } from 'lucide-react-native/icons/circle-minus';
 export { default as CircleStar } from 'lucide-react-native/icons/circle-star';
 export { default as CircleX } from 'lucide-react-native/icons/circle-x';

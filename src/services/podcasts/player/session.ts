@@ -2,7 +2,7 @@
  * The player's in-memory state for this JS runtime: which episode is being
  * tracked for progress, and which ones were let go of on purpose.
  */
-import TrackPlayer from "@rntp/player";
+import TrackPlayer, { PlaybackState } from "@rntp/player";
 
 import { PROGRESS_TICK_SEC } from "@/services/audio-session";
 import { deleteIfPlayed } from "@/services/podcasts/downloads";
@@ -58,6 +58,61 @@ export function clearStarting(): void {
   if (startingTimer) clearTimeout(startingTimer);
   startingTimer = null;
   if (store().starting) store().patch({ starting: false });
+}
+
+/** How often a seek is checked on. */
+const SEEK_POLL_MS = 150;
+/**
+ * Before the first check: the player reports a seek's buffering a moment
+ * after it is sent, so "ready" read sooner is still the place it left.
+ */
+const SEEK_SETTLE_MS = 250;
+let seekTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * A seek was sent: the controls show their loader until the player is ready
+ * at the new place. Polled rather than taken from the state events, because a
+ * seek inside what is already buffered can be over before the player reports
+ * any change at all, and then no event would ever end the wait.
+ *
+ * Once ready, a seek made while playing is playing again: if the native
+ * player never reported the dip, `starting` is cleared here instead of by
+ * its event.
+ */
+export function markSeeking(): void {
+  store().patch({ seeking: true });
+  if (seekTimer) clearInterval(seekTimer);
+  const sentAt = Date.now();
+  seekTimer = setInterval(() => {
+    const waited = Date.now() - sentAt;
+    if (waited < SEEK_SETTLE_MS) return;
+    const state = TrackPlayer.getPlaybackState();
+    if (state === PlaybackState.Buffering && waited < STARTING_TIMEOUT_MS) return;
+    clearSeeking();
+    if (state === PlaybackState.Ready && TrackPlayer.isPlaying()) {
+      store().patch({ isPlaying: true });
+      clearStarting();
+    } else {
+      void settlePausedSeek();
+    }
+  }, SEEK_POLL_MS);
+}
+
+/**
+ * Paused, no progress tick will save the new place, so it is saved here, and
+ * the lists re-read: the Continue Listening card's "left" says where the
+ * listener now is rather than where they last paused.
+ */
+async function settlePausedSeek(): Promise<void> {
+  await persistProgress();
+  invalidatePodcastLibrary();
+}
+
+/** The seek arrived, failed, or the player let go: nothing is waiting on it any more. */
+export function clearSeeking(): void {
+  if (seekTimer) clearInterval(seekTimer);
+  seekTimer = null;
+  if (store().seeking) store().patch({ seeking: false });
 }
 
 /** Starts tracking an episode's progress from `position`. */

@@ -19,5 +19,5 @@ export type ArticleItem = Omit<BlogArticle, 'contentHtml'> & {
 /** A blog as a shelf draws it, with how many posts have come since it was followed and are unread. */
 export type BlogItem = Blog & { newCount: number };
 
-/** How many of a blog's posts are kept, newest first. Saved and opened posts are kept besides. */
+/** How many of a blog's posts are kept, newest first. Posts kept on purpose (`keptOnPurpose`) are kept besides. */
 export const KEEP_PER_BLOG = 200;

@@ -27,6 +27,7 @@ import {
     CalendarDays,
     History,
     ListTodo,
+    Newspaper,
     TrendingUp,
 } from "@/components/icons";
 import { DeferredBody } from "@/components/navigation/deferred-body";
@@ -38,7 +39,10 @@ import {
     type ToolboxItem,
 } from "@/components/samwell/samwell-toolbox";
 import { ThemedText } from "@/components/themed-text";
+import { ViewSwitcher } from "@/components/view-switcher";
 import { contentColumn, spacing } from "@/constants/theme";
+import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-sheet";
+import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
@@ -67,6 +71,9 @@ import { HUB, useHubStore } from "@/stores/hub";
 import { useSamwellSessionStore } from "@/stores/samwell-session";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
+
+/** Chat and Compass, left to right as the switch on the card draws them. */
+const SAMWELL_MODES = ["chat", "compass"] as const;
 
 export function SamwellPage() {
   // Library and Timeline are peer pages of this one, reached by moving the
@@ -223,6 +230,10 @@ export function SamwellPage() {
     (next: string) => setSession({ draft: next }),
     [setSession],
   );
+  // Each mode's body is mounted the first time it is shown and kept from then
+  // on, as the Library's sides are, so switching back lands where it was.
+  const [modesOpened, setModesOpened] = React.useState({ chat: mode === "chat", compass: mode === "compass" });
+  if (!modesOpened[mode]) setModesOpened({ ...modesOpened, [mode]: true });
 
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
@@ -323,10 +334,23 @@ export function SamwellPage() {
     : pendingBook
       ? (allBooks.find((b) => b.id === pendingBook.id)?.coverUrl ?? null)
       : null;
-  // Once a session exists, its book is fixed context — the button is only
-  // worth showing then if there's a book to display; a bookless session's
-  // button would just be inert with nothing to say.
-  const showBookButton = !activeSession || activeSession.bookId != null;
+  // A chat holds one book or one blog post, and each has its own tool. Once
+  // a session exists, what it holds is fixed context, so only the tool for
+  // that is worth showing then; a bookless session's would be inert with
+  // nothing to say.
+  const attachedKind = activeSession
+    ? activeSession.bookKind
+    : (pendingBook?.kind ?? null);
+  const showBookButton = !activeSession || attachedKind === "book";
+  const showPostButton = !activeSession || attachedKind === "article";
+  const attachedBook = attachedKind === "book" ? displayedBookTitle : null;
+  const attachedPost = attachedKind === "article" ? displayedBookTitle : null;
+  const pickPost = React.useCallback(
+    (post: { id: string; title: string; kind: "article" }) =>
+      setSession({ pendingBook: post }),
+    [setSession],
+  );
+  const postPicker = useArticlePicker(pickPost);
 
   // `isGenerating` alone drives the activity indicator; it must never show
   // just because the model isn't ready, since there is nothing to wait for
@@ -516,9 +540,9 @@ export function SamwellPage() {
                     icon: BookOpen,
                     label: "Book",
                     lead: true,
-                    detail: displayedBookTitle ?? "None yet",
-                    image: displayedBookCover,
-                    active: displayedBookTitle != null,
+                    detail: attachedBook ?? "None yet",
+                    image: attachedBook ? displayedBookCover : null,
+                    active: attachedBook != null,
                     onPress:
                       activeSession || isGenerating || chat.switching
                         ? undefined
@@ -527,7 +551,31 @@ export function SamwellPage() {
                     // a chat has started, its book is fixed context.
                     onLongPress:
                       activeSession ||
-                      !pendingBook ||
+                      pendingBook?.kind !== "book" ||
+                      isGenerating ||
+                      chat.switching
+                        ? undefined
+                        : () => setSession({ pendingBook: null }),
+                  } satisfies ToolboxItem,
+                ]
+              : []),
+            // The book's sibling for a blog post: picking one attaches it the
+            // same way, in place of any book.
+            ...(showPostButton
+              ? [
+                  {
+                    id: "post",
+                    icon: Newspaper,
+                    label: "Blog post",
+                    detail: attachedPost ?? "None yet",
+                    active: attachedPost != null,
+                    onPress:
+                      activeSession || isGenerating || chat.switching
+                        ? undefined
+                        : fromToolbox(postPicker.setVisible),
+                    onLongPress:
+                      activeSession ||
+                      pendingBook?.kind !== "article" ||
                       isGenerating ||
                       chat.switching
                         ? undefined
@@ -629,8 +677,11 @@ export function SamwellPage() {
       fromToolbox,
       // Chat
       showBookButton,
+      showPostButton,
       displayedBookCover,
-      displayedBookTitle,
+      attachedBook,
+      attachedPost,
+      postPicker.setVisible,
       activeSession,
       isGenerating,
       chat.switching,
@@ -707,38 +758,48 @@ export function SamwellPage() {
               screen's two beats: the content it came for, then the thing to
               type into. */}
           <Reveal index={0} className="flex-1">
-            {mode === "chat" ? (
-              <ChatTranscript
-                sessionId={activeSession?.id ?? null}
-                messages={visibleChatMessages}
-                streamingContent={streamingContent}
-                isGenerating={isGenerating}
-                indicator={indicator}
-                lastStreamedMessageId={lastStreamedMessageId}
-                status={status}
-                pendingUserMessage={chat.pendingUserMessage}
-                contentColumn={contentColumn}
-                floatingClearance={floatingClearance}
-                onNavigateToHighlight={handleNavigateToHighlight}
-                onNavigateToTimeline={handleNavigateToTimeline}
-                onNavigateToBook={handleNavigateToBook}
-              />
-            ) : (
-              <CompassBody
-                conversation={compass}
-                cloudBlocker={readiness.cloudBlocker}
-                /* The same three destinations the status hook takes, so a
-                   missing plan lands on the plans in both tabs. */
-                onOpenSettings={openSamwellSettings}
-                onOpenPlans={openCloudPlans}
-                onOpenAccount={openAccountSettings}
-                onAboutCompass={openAboutCompass}
-                onRetryCloud={refreshPlan}
-                trackableTitles={trackableTitles}
-                contentColumn={contentColumn}
-                floatingClearance={floatingClearance}
-              />
-            )}
+            {/* Chat and Compass trade places the way the Library's sides do,
+                on the switch's own timing: the one leaving steps away, the
+                one arriving steps in from the side the switch moved to. */}
+            <ViewSwitcher
+              order={SAMWELL_MODES}
+              value={mode}
+              sides={{
+                chat: modesOpened.chat ? (
+                  <ChatTranscript
+                    sessionId={activeSession?.id ?? null}
+                    messages={visibleChatMessages}
+                    streamingContent={streamingContent}
+                    isGenerating={isGenerating}
+                    indicator={indicator}
+                    lastStreamedMessageId={lastStreamedMessageId}
+                    status={status}
+                    pendingUserMessage={chat.pendingUserMessage}
+                    contentColumn={contentColumn}
+                    floatingClearance={floatingClearance}
+                    onNavigateToHighlight={handleNavigateToHighlight}
+                    onNavigateToTimeline={handleNavigateToTimeline}
+                    onNavigateToBook={handleNavigateToBook}
+                  />
+                ) : null,
+                compass: modesOpened.compass ? (
+                  <CompassBody
+                    conversation={compass}
+                    cloudBlocker={readiness.cloudBlocker}
+                    /* The same three destinations the status hook takes, so a
+                       missing plan lands on the plans in both tabs. */
+                    onOpenSettings={openSamwellSettings}
+                    onOpenPlans={openCloudPlans}
+                    onOpenAccount={openAccountSettings}
+                    onAboutCompass={openAboutCompass}
+                    onRetryCloud={refreshPlan}
+                    trackableTitles={trackableTitles}
+                    contentColumn={contentColumn}
+                    floatingClearance={floatingClearance}
+                  />
+                ) : null,
+              }}
+            />
           </Reveal>
 
           {/* Floats over the transcript rather than sitting below it, so
@@ -821,11 +882,13 @@ export function SamwellPage() {
           <BookPickerSheet
             visible={showBookPicker}
             onSelect={(bookId, bookTitle) => {
-              setSession({ pendingBook: { id: bookId, title: bookTitle } });
+              setSession({ pendingBook: { id: bookId, title: bookTitle, kind: 'book' } });
               setShowBookPicker(false);
             }}
             onClose={() => setShowBookPicker(false)}
           />
+
+          <ArticlePickerSheet {...postPicker.sheet} />
 
           <ChatHistorySheet
             visible={showHistory}

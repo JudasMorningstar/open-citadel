@@ -20,7 +20,7 @@ import { SamwellSection } from "@/features/settings/components/samwell-section";
 import { TtsSection } from "@/features/settings/components/tts-section";
 import { PodcastSettings } from "@/features/podcasts/components/podcast-settings-section";
 import { backTo } from "@/navigation/navigate";
-import { useScreenSettled } from "@/navigation/use-screen-settled";
+import { useSettledOnce } from "@/navigation/use-settled-once";
 import { asColor } from "@/utils/colors";
 
 /**
@@ -32,16 +32,19 @@ import { asColor } from "@/utils/colors";
  * route holds no screen state, so nothing here re-renders when a section
  * changes.
  *
- * Sections arrive in two waves. The above-fold four mount with the body and
- * cascade during the drawer's rise; the rest mount after the drawer lands
- * (see `useScreenSettled`), so no commit competes with the transition and
- * the below-fold content fills in as you arrive.
+ * Sections arrive in two waves. The first screenful (Profile, Appearance,
+ * Books) is plain views over settings in memory, drawn from the first frame
+ * so the drawer rises with the page on it. The rest, from Samwell down, mount
+ * once the drawer has landed, behind a placeholder of the Samwell section:
+ * the whole page in one first render measurably stalled the drawer's rise.
  */
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [foreground] = useCSSVariable(["--color-foreground"]);
-  const settled = useScreenSettled();
+  // Latched: a sheet or screen over Settings must not unmount the sections
+  // under it and lose the reader's place.
+  const settled = useSettledOnce();
 
   /**
    * Arriving pointed at a section, from the "set Samwell up" way out of an
@@ -104,66 +107,56 @@ export default function SettingsScreen() {
         onLeftPress={() => backTo(router, "/")}
       />
 
-      {/* Held until the drawer has settled, not merely a frame past the shell.
-          A commit this size landing mid-rise competes with the transition for
-          the UI thread and stalls it partway, which reads as the drawer
-          stuttering near the top rather than as a slow screen. The placeholder
-          covers the wait (see `Handover`). */}
-      <Handover
-        ready={settled}
-        skeleton={
+      {/* Replaces the header's bottom rule — see library-page. */}
+      <PageFade>
+        <TransitionScrollView
+          ref={scrollRef}
+          className="flex-1 px-6"
+          style={contentColumn}
+          contentContainerStyle={{
+            paddingBottom: layout.scrollBottom + insets.bottom,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
           <View
-            className="flex-1 px-6"
-            style={contentColumn}
-          >
-            <SettingsSkeleton />
-          </View>
-        }
-      >
-        {/* Replaces the header's bottom rule — see library-page. */}
-        <PageFade>
-          <TransitionScrollView
-            ref={scrollRef}
-            className="flex-1 px-6"
-            style={contentColumn}
-            contentContainerStyle={{
-              paddingBottom: layout.scrollBottom + insets.bottom,
+            onLayout={(e) => {
+              sectionY.current.account = e.nativeEvent.layout.y;
+              revealSection();
             }}
-            showsVerticalScrollIndicator={false}
           >
-            <View
-              onLayout={(e) => {
-                sectionY.current.account = e.nativeEvent.layout.y;
-                revealSection();
-              }}
-            >
-              <ProfileSection />
-            </View>
+            <ProfileSection />
+          </View>
 
-            <AppearanceSection />
+          <AppearanceSection />
 
-            <BooksTipSection />
+          <BooksTipSection />
 
-            <View
-              onLayout={(e) => {
-                sectionY.current.samwell = e.nativeEvent.layout.y;
-                revealSection();
-              }}
-            >
+          {/* Held until the drawer has settled: a commit this size landing
+              mid-rise competes with the transition for the UI thread and
+              stalls it partway. The placeholder holds the place (see
+              `Handover`). Measured from out here, since a layout is relative
+              to its parent and Samwell is the first thing inside. */}
+          <View
+            onLayout={(e) => {
+              sectionY.current.samwell = e.nativeEvent.layout.y;
+              revealSection();
+            }}
+          >
+            <Handover fill={false} ready={settled} skeleton={<SettingsSkeleton />}>
               <SamwellSection
                 onRequestAccount={revealAccount}
                 initialMode={panel === "cloud" ? "cloud" : undefined}
               />
-            </View>
 
-            {settled && <TtsSection />}
+              <TtsSection />
 
-            {settled && <PodcastSettings />}
+              <PodcastSettings />
 
-            {settled && <ReachOutSection />}
-          </TransitionScrollView>
-        </PageFade>
-      </Handover>
+              <ReachOutSection />
+            </Handover>
+          </View>
+        </TransitionScrollView>
+      </PageFade>
     </ThemedView>
   );
 }

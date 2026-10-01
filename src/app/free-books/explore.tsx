@@ -10,6 +10,7 @@ import { SearchBar } from "@/components/ui/search-bar";
 import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { CatalogResults } from "@/features/free-books/components/catalog-results";
 import { CatalogShelves } from "@/features/free-books/components/catalog-shelves";
+import { CatalogPreview, catalogPreviewReady } from "@/features/free-books/components/catalog-preview";
 import { CatalogShelvesSkeleton } from "@/features/free-books/components/catalog-shelves-skeleton";
 import { useFreeBooksExplore } from "@/features/free-books/hooks/use-free-books-explore";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
@@ -25,6 +26,13 @@ export default function FreeBooksExploreScreen() {
   const landed = useSettledOnce();
   const explore = useFreeBooksExplore(landed);
   const bottomPadding = layout.scrollBottom + insets.bottom;
+  // Seen before (the shelves are cached): the first screen itself while the
+  // drawer rises, rather than a skeleton of it.
+  const placeholder = catalogPreviewReady(explore.shelves) ? (
+    <CatalogPreview shelves={explore.shelves} onOpen={explore.openBook} onViewAll={explore.openShelf} />
+  ) : (
+    <CatalogShelvesSkeleton />
+  );
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -57,7 +65,7 @@ export default function FreeBooksExploreScreen() {
         ) : (
           // The shelves mount when the drawer has finished rising: a list
           // landing mid-rise is what makes a drawer stagger.
-          <Handover ready={landed} skeleton={<CatalogShelvesSkeleton />}>
+          <Handover ready={landed} skeleton={placeholder}>
             <CatalogShelves
               shelves={explore.shelves}
               bottomPadding={bottomPadding}

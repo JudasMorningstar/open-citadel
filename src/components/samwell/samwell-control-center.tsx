@@ -3,6 +3,7 @@ import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { IconSwitch, type IconSwitchItem } from '@/components/icon-switch';
 import { NewChatButton } from '@/components/samwell/new-chat-button';
 import { SamwellPlaceholder } from '@/components/samwell-placeholder';
 import { ToggleButton } from '@/components/ui/toggle-button';
@@ -11,6 +12,11 @@ import { Touchable } from '@/components/ui/touchable';
 import { elevation, fontFamily, iconSize, stackedShadow } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
+
+const MODES: readonly IconSwitchItem<'chat' | 'compass'>[] = [
+  { key: 'chat', label: 'Chat', icon: MessageSquare },
+  { key: 'compass', label: 'Compass', icon: Compass },
+];
 
 type SamwellControlCenterProps = {
   mode: 'chat' | 'compass';
@@ -180,49 +186,14 @@ export function SamwellControlCenter({
       </View>
 
       <View className="flex-row items-center gap-2">
-        {/* Segmented chat/compass switch — same idea as an OS light/dark
-            toggle, icon-only and built from Citadel Frame parts: a bordered
-            track, sharp corners throughout, the active cell lifted with a
-            contrasting fill instead of a sliding rounded pill.
+        {/* The chat/compass switch: the app's one mode switch, the same as
+            the Library header's, its lifted card sliding to the mode chosen.
 
             It stays on the card rather than moving into the drawer. Which
             mode you are in is the one thing that changes what everything else
             on this screen means, including what is in the drawer, so it is
             not something to go looking for. */}
-        <View className="flex-row border border-border bg-muted">
-          <Touchable
-            className={cn(
-              'h-10 w-10 items-center justify-center',
-              mode === 'chat' && 'bg-card',
-              lockMode && mode !== 'chat' && 'opacity-35',
-            )}
-            style={mode === 'chat' ? elevation.soft : undefined}
-            onPress={lockMode ? undefined : () => onSelectMode('chat')}
-            haptic="select"
-          >
-            <MessageSquare
-              size={iconSize.default}
-              color={asColor(mode === 'chat' ? primary : mutedForeground)}
-              strokeWidth={2}
-            />
-          </Touchable>
-          <Touchable
-            className={cn(
-              'h-10 w-10 items-center justify-center',
-              mode === 'compass' && 'bg-card',
-              lockMode && mode !== 'compass' && 'opacity-35',
-            )}
-            style={mode === 'compass' ? elevation.soft : undefined}
-            onPress={lockMode ? undefined : () => onSelectMode('compass')}
-            haptic="select"
-          >
-            <Compass
-              size={iconSize.default}
-              color={asColor(mode === 'compass' ? primary : mutedForeground)}
-              strokeWidth={2}
-            />
-          </Touchable>
-        </View>
+        <IconSwitch items={MODES} value={mode} onChange={onSelectMode} locked={lockMode} />
 
         {/* A fresh conversation, between the mode it would be in and that
             mode's tools. Gone with the mode's other controls when the mode

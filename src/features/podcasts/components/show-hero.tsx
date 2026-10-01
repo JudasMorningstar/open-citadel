@@ -60,6 +60,9 @@ export function ShowHero({
     <View className="gap-5 px-6 pb-6 pt-2">
       <View className="items-center">
         <View style={elevation.card}>
+          {/* No fade: the cover is the one just tapped, decoded again at this
+              size in a few frames. Fading it in on top read as a blank cover
+              loading in. */}
           <PodcastArtwork uri={artworkUrl} size={ART} placeholderColor={tokens['--color-surface-tertiary']} />
         </View>
       </View>

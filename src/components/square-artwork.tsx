@@ -1,12 +1,11 @@
-import { Image } from 'expo-image';
 import React from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { CoverImage } from '@/components/cover-image';
 import type { LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
-import { fontFamily, motion } from '@/constants/theme';
+import { fontFamily } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 type SquareArtworkProps = {
   uri: string | null;
@@ -37,18 +36,24 @@ const FILL = { width: '100%' as const, height: '100%' as const };
  * on decode), so a shelf of forty shows costs forty thumbnails rather than
  * forty posters.
  */
-function SquareArtworkBase({ uri, fallbackIcon: Fallback, monogram, size, recyclingKey, placeholderColor, style }: SquareArtworkProps) {
+function SquareArtworkBase({
+  uri,
+  fallbackIcon: Fallback,
+  monogram,
+  size,
+  recyclingKey,
+  placeholderColor,
+  style,
+}: SquareArtworkProps) {
   const tokens = useThemeTokens();
   const letters = { fontFamily: fontFamily.serifMedium, fontSize: Math.round(size * 0.34), lineHeight: Math.round(size * 0.42) };
   return (
     <View className="overflow-hidden border border-border bg-muted" style={[{ width: size, height: size }, style]}>
       {uri ? (
-        <Image
+        <CoverImage
           source={{ uri, width: size, height: size }}
           style={FILL}
           contentFit="cover"
-          placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-          transition={motion.slow}
           recyclingKey={recyclingKey}
           cachePolicy="memory-disk"
         />

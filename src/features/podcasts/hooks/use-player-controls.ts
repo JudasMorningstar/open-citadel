@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import type { SleepChoice } from '@/features/podcasts/utils/setting-choices';
 import type { usePlayerScreen } from '@/features/podcasts/hooks/use-player-screen';
 import * as actions from '@/services/podcasts/actions';
@@ -35,7 +36,7 @@ export function usePlayerControls(player: PlayerScreen) {
     favorite,
     sleepChoice,
     close: () => router.back(),
-    openShow: () => current && router.push({ pathname: '/podcasts/show/[id]', params: { id: current.podcastId } }),
+    openShow: () => current && openShowPage(router, current.podcastId),
     toggleFavorite: () => current && void actions.setFavorite([current.episodeId], !favorite),
     toggle: () => void togglePlayback(),
     back: () => skipBy(-skipBackSec),
