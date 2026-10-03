@@ -21,6 +21,7 @@ import type { KokoroTextToSpeech } from 'react-native-executorch';
 import { getExecuTorch } from '@/lib/executorch';
 import { VOICE_ACCENTS, type KokoroAccent, type KokoroVoice } from '@/services/device-tts/catalogue';
 import { localModelFiles } from '@/services/device-tts/files';
+import { createPaceMeter, pacedSynthesis, type UtteranceTiming } from '@/services/device-tts/pace';
 
 let engine: { accent: KokoroAccent; pipeline: KokoroTextToSpeech<string> } | null = null;
 /**
@@ -33,6 +34,23 @@ let engine: { accent: KokoroAccent; pipeline: KokoroTextToSpeech<string> } | nul
  * generator finishes, so the next one in line does not start early.
  */
 let synthesisQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * How fast this phone makes speech, measured as it reads. It outlives the
+ * pipeline on purpose: the phone is no faster for a change of accent.
+ */
+const meter = createPaceMeter();
+/** Whether the loaded pipeline has yet to run. Its first chunk is not a fair measure, see `pacedSynthesis`. */
+let fresh = false;
+
+/** One line per utterance in a development build: what to read when judging this on a phone. */
+function logTiming({ chunks, firstAudioSeconds, audioSeconds, workSeconds }: UtteranceTiming): void {
+  if (audioSeconds <= 0) return;
+  console.log(
+    `[tts] ${chunks} chunk${chunks === 1 ? '' : 's'}, first audio after ${firstAudioSeconds.toFixed(1)}s, ` +
+      `${audioSeconds.toFixed(1)}s of speech in ${workSeconds.toFixed(1)}s (x${(workSeconds / audioSeconds).toFixed(2)})`,
+  );
+}
 
 /**
  * The pipeline for `accent`, loaded from local files if it isn't the one
@@ -52,12 +70,15 @@ async function pipelineFor(accent: KokoroAccent): Promise<KokoroTextToSpeech<str
   if (!et || !files) throw new Error("Kokoro isn't downloaded.");
   const pipeline = await et.createKokoroTextToSpeech(files);
   engine = { accent, pipeline };
+  fresh = true;
   return pipeline;
 }
 
 /**
  * Streams synthesized audio for one utterance. Serialized: the native
- * pipeline rejects a second concurrent caller.
+ * pipeline rejects a second concurrent caller. The utterance is cut into
+ * chunks sized to how fast this phone has been making speech (`pace.ts`), so
+ * a slow phone starts each sentence sooner.
  *
  * The queue slot is reserved synchronously, on call, rather than on first
  * iteration — a plain function returning a generator, not a generator
@@ -78,7 +99,9 @@ export function synthesize(
     await myTurn;
     try {
       const pipeline = await pipelineFor(VOICE_ACCENTS[options.voice]);
-      yield* pipeline.synthesize(text, options);
+      const config = { fresh, onDone: __DEV__ ? logTiming : undefined };
+      fresh = false;
+      yield* pacedSynthesis(pipeline, text, options, meter, config);
     } finally {
       releaseTurn();
     }
