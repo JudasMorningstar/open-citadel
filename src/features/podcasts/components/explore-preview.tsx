@@ -26,7 +26,7 @@ type ExplorePreviewProps = {
 };
 
 /** Explore's first screen from cached charts, while the drawer rises. See `ShelvesPreview`. */
-export function ExplorePreview({ charts, isFollowed, onOpen, onViewAll }: ExplorePreviewProps) {
+export const ExplorePreview = React.memo(function ExplorePreview({ charts, isFollowed, onOpen, onViewAll }: ExplorePreviewProps) {
   const shelves: PreviewShelf[] = PREVIEW_GENRES.map((genre) => {
     const chart = charts[chartKey(genre)];
     const shows = chart?.status === 'ready' ? chart.shows.slice(0, PREVIEW_TILES) : [];
@@ -52,4 +52,4 @@ export function ExplorePreview({ charts, isFollowed, onOpen, onViewAll }: Explor
     };
   });
   return <ShelvesPreview shelves={shelves} />;
-}
+});

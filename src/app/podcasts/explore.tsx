@@ -32,8 +32,12 @@ export default function ExploreScreen() {
   const { importer } = explore;
   const bottomPadding = layout.scrollBottom + insets.bottom;
   // Seen before (the charts are cached): the first screen itself while the
-  // drawer rises, rather than a skeleton of it.
-  const placeholder = explorePreviewReady(explore.charts) ? (
+  // drawer rises, rather than a skeleton of it. Decided once, as the page
+  // opens: charts asked for at the tap arrive during the rise, and trading
+  // the skeleton for nine tiles then is the mount mid-slide this is here to
+  // avoid.
+  const [previewed] = React.useState(() => explorePreviewReady(explore.charts));
+  const placeholder = previewed ? (
     <ExplorePreview charts={explore.charts} isFollowed={explore.isFollowed} onOpen={explore.openShow} onViewAll={explore.openGenre} />
   ) : (
     <ExploreSkeleton />

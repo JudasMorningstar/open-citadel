@@ -12,6 +12,12 @@
  */
 import { createRequestGate } from "@/utils/request-gate";
 
+/**
+ * A show as a tile draws it, and no more. Apple's charts send a summary with
+ * every entry, and nothing here shows one (a show's page reads its own from
+ * the feed): carried along, they were two thirds of every chart held in
+ * memory and of the copy kept across launches (`lib/query-persist`).
+ */
 export type DiscoveredShow = {
   /** Apple's id, when the show came from Apple. */
   appleId: string | null;
@@ -20,7 +26,6 @@ export type DiscoveredShow = {
   artworkUrl: string | null;
   /** Known for search results; looked up on open for chart entries. */
   feedUrl: string | null;
-  summary: string | null;
 };
 
 export type ExploreGenre = { id: number | null; label: string };
@@ -85,7 +90,6 @@ type ChartEntry = {
   "im:name"?: Label;
   "im:artist"?: Label;
   "im:image"?: (Label & { attributes?: { height?: string } })[];
-  summary?: Label;
   id?: { attributes?: { "im:id"?: string } };
 };
 
@@ -100,7 +104,6 @@ function fromChartEntry(entry: ChartEntry): DiscoveredShow | null {
     author: entry["im:artist"]?.label ?? null,
     artworkUrl: largeArtwork(images[images.length - 1]?.label),
     feedUrl: null,
-    summary: entry.summary?.label ?? null,
   };
 }
 
@@ -155,7 +158,6 @@ export async function searchShows(term: string, signal?: AbortSignal): Promise<D
       author: r.artistName ?? null,
       artworkUrl: r.artworkUrl600 ?? largeArtwork(r.artworkUrl100),
       feedUrl: r.feedUrl!,
-      summary: null,
     }));
 }
 

@@ -9,9 +9,6 @@ import { CATALOG_SHELVES, type CatalogShelf } from '@/services/gutenberg/shelves
 
 export type ShelfState = { status: 'loading' } | { status: 'ready'; books: CatalogBook[] } | { status: 'failed' };
 
-/** How many of a shelf's first page its row on Explore draws; "View all" has the rest. */
-export const SHELF_PREVIEW_SIZE = 12;
-
 /** The shelves asked for as Explore lands, before anything has been scrolled. */
 const FIRST_SHELVES = new Set(CATALOG_SHELVES.slice(0, 3).map((shelf) => shelf.id));
 
@@ -30,7 +27,7 @@ function shelfState(result: { data?: CatalogPage; isError: boolean }): ShelfStat
   if (!data) return isError ? FAILED : LOADING;
   let ready = readyStates.get(data);
   if (!ready) {
-    ready = { status: 'ready', books: data.books.slice(0, SHELF_PREVIEW_SIZE) };
+    ready = { status: 'ready', books: data.books };
     readyStates.set(data, ready);
   }
   return ready;

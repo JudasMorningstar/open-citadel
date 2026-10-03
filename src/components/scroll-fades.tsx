@@ -29,10 +29,12 @@
  * as an edge treatment and starts dimming content the reader is trying to
  * read.
  */
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
+import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { ScrollFade } from '@/components/ui/scroll-fade';
+import { ScrollFade, withAlpha } from '@/components/ui/scroll-fade';
 import { useMessageScrollerEdgeDistance } from '@/components/ui/message-scroller';
 import { asColor } from '@/utils/colors';
 
@@ -88,6 +90,42 @@ export function RowFade({
     <ScrollFade size={ROW_FADE} color={color}>
       {children}
     </ScrollFade>
+  );
+}
+
+const STILL_END = { position: 'absolute', top: 0, bottom: 0, right: 0, width: ROW_FADE } as const;
+const ACROSS = { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } } as const;
+
+/**
+ * `RowFade` as it looks before anything has been scrolled, for a row that
+ * cannot scroll: a shelf in an Explore page's preview (`ShelvesPreview`).
+ *
+ * A shelf at rest has no fade on its leading edge and a full one on its
+ * trailing edge, so that is all this draws, as a plain view. `RowFade` there
+ * meant a scroll view, a scroll handler and two animated layers per shelf,
+ * built before the drawer could start to rise, for a fade that never moves.
+ */
+export function StillRowFade({
+  surface = 'background',
+  children,
+}: {
+  surface?: FadeSurface;
+  children: React.ReactNode;
+}) {
+  const color = useFadeColor(surface);
+  return (
+    <View>
+      {children}
+      {color ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha(color, 0), withAlpha(color, 1)]}
+          start={ACROSS.start}
+          end={ACROSS.end}
+          style={STILL_END}
+        />
+      ) : null}
+    </View>
   );
 }
 

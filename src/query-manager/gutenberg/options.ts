@@ -38,10 +38,17 @@ export function createShelfQueryOptions(
   } satisfies UseInfiniteQueryOptions<CatalogPage, Error, InfiniteData<CatalogPage>, readonly unknown[], number>;
 }
 
+/** How many of a shelf's first page its row on Explore draws; "View all" has the rest. */
+const SHELF_PREVIEW_SIZE = 12;
+
 /**
- * A shelf's first page, for its row on Explore. Read through the shelf's own
- * paged cache entry rather than fetched beside it, so the "View all" that
- * follows opens on what is already here instead of asking again.
+ * The start of a shelf's first page, for its row on Explore. Read through the
+ * shelf's own paged cache entry rather than fetched beside it, so the "View
+ * all" that follows opens on what is already here instead of asking again.
+ *
+ * Only the books the row draws are held here: this is the entry kept across
+ * launches (see `lib/query-persist-policy`), and the other twenty of the page
+ * were being written to storage for a row that never shows them.
  */
 export function createShelfPreviewQueryOptions(shelf: CatalogShelf, options?: Options<CatalogPage>) {
   return {
@@ -49,7 +56,10 @@ export function createShelfPreviewQueryOptions(shelf: CatalogShelf, options?: Op
     gcTime: 2 * DAY,
     ...options,
     queryKey: gutenbergKeys.shelfPreview(shelf.id),
-    queryFn: async () => (await queryClient.fetchInfiniteQuery(createShelfQueryOptions(shelf))).pages[0],
+    queryFn: async () => {
+      const first = (await queryClient.fetchInfiniteQuery(createShelfQueryOptions(shelf))).pages[0];
+      return { ...first, books: first.books.slice(0, SHELF_PREVIEW_SIZE) };
+    },
   } satisfies UseQueryOptions<CatalogPage>;
 }
 

@@ -29,7 +29,7 @@ type ExploreChartsProps = {
  * Everything else is drawn a screen ahead as the page scrolls, never in
  * front of the reader and never as a batch popping in.
  */
-export function ExploreCharts({ charts, isFollowed, bottomPadding, onOpen, onViewAll, onImport }: ExploreChartsProps) {
+export const ExploreCharts = React.memo(function ExploreCharts({ charts, isFollowed, bottomPadding, onOpen, onViewAll, onImport }: ExploreChartsProps) {
   const renderItem = React.useCallback(
     ({ item }: { item: ExploreGenre }) => (
       <ExploreShelf genre={item} chart={charts[genreKey(item)]} isFollowed={isFollowed} onOpen={onOpen} onViewAll={onViewAll} />
@@ -52,4 +52,4 @@ export function ExploreCharts({ charts, isFollowed, bottomPadding, onOpen, onVie
       />
     </PageFade>
   );
-}
+});
