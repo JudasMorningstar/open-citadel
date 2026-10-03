@@ -89,3 +89,24 @@ export function synthesize(
 export function stop(): void {
   engine?.pipeline.synthesizeStop();
 }
+
+/**
+ * Frees the loaded voice, once whatever it is saying has finished.
+ *
+ * For when memory is needed for something larger: waking a brain on a phone
+ * where it is a tight fit (`stores/model`). The voice loads again the next
+ * time something is read aloud. Takes its turn in the synthesis queue, so it
+ * never frees a pipeline that is mid-utterance.
+ */
+export function releaseVoice(): Promise<void> {
+  if (!engine) return Promise.resolve();
+  const myTurn = synthesisQueue;
+  const done = (async () => {
+    await myTurn;
+    engine?.pipeline.dispose();
+    engine = null;
+  })();
+  // A failed dispose must not hold up the next utterance.
+  synthesisQueue = done.catch(() => undefined);
+  return done;
+}

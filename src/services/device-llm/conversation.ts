@@ -15,7 +15,8 @@
  *   rather than finding out halfway through, so the caller can compact first.
  * - Its history can be replaced (`reseed`), which is how compaction works.
  * - Prefills go in chunks, because some exports take fewer tokens per call
- *   than their window holds (Gemma 4 E2B: 2048 per call, 4048 in the cache).
+ *   than their window holds (Gemma 4 E2B: 1024 per call, 4048 in the cache),
+ *   and one of them pays for a call's length in memory. See `prefill.ts`.
  * - A stop is honoured between steps too, not only during generation, so a
  *   stop pressed while a tool runs does not start the model again.
  * - The cache is never rewound inside a turn. The session takes each
@@ -47,6 +48,8 @@ import {
   releaseCache,
   rewind,
 } from '@/services/device-llm/engine';
+import { createFrameBatch } from '@/services/device-llm/frame-batch';
+import { chunkForPrefill, prefillChunkChars } from '@/services/device-llm/prefill';
 import {
   asThinkMarkers,
   type ReasoningMarkers,
@@ -137,32 +140,6 @@ const DEFAULT_MAX_TOOL_TURNS = 3;
 const DEFAULT_TEMPERATURE = 0.7;
 /** A stand-in for a reply's text, to find what a template writes around it. */
 const PLACEHOLDER = '⟦samwell-reply⟧';
-
-/**
- * Longest text handed to a single native prefill or generate call.
- *
- * Kept well under the smallest per-call limit in the catalogue (2048 tokens)
- * at the most pessimistic tokenization our traffic sees (about 2 chars a
- * token, for ids and reference markers).
- */
-const PREFILL_CHUNK_CHARS = 3000;
-
-/** Splits text at line breaks into pieces no longer than the chunk size. */
-export function chunkForPrefill(text: string, limit = PREFILL_CHUNK_CHARS): string[] {
-  if (text.length <= limit) return text ? [text] : [];
-  const chunks: string[] = [];
-  let rest = text;
-  while (rest.length > limit) {
-    // Breaking on a newline keeps special tokens like `<|turn>` whole, since
-    // chat templates never put one across a line break.
-    let cut = rest.lastIndexOf('\n', limit - 1);
-    cut = cut <= 0 ? limit : cut + 1;
-    chunks.push(rest.slice(0, cut));
-    rest = rest.slice(cut);
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
-}
 
 /** Room kept free under the window when a thought is closed for the model. */
 const ANSWER_MARGIN_TOKENS = 8;
@@ -384,8 +361,9 @@ export function createConversation(options: ConversationOptions = {}): Conversat
    * native call is synchronous, and a system prompt's worth of prefill held on
    * the JS thread would freeze the UI for seconds.
    */
+  const chunkChars = prefillChunkChars(engine.entry);
   const prefill = async (text: string) => {
-    for (const chunk of chunkForPrefill(text)) await engine.prefill(chunk);
+    for (const chunk of chunkForPrefill(text, chunkChars)) await engine.prefill(chunk);
   };
 
   const snapshot = (): ContextSnapshot => {
@@ -553,14 +531,17 @@ export function createConversation(options: ConversationOptions = {}): Conversat
           // generate call is handed more than the export takes per call.
           const stepStart = Date.now();
           const prompt = (step === 0 ? await continuation(true) : await promptAfterTools()) + closedThinking;
-          const pieces = chunkForPrefill(prompt);
-          await prefill(pieces.slice(0, -1).join(''));
+          const pieces = chunkForPrefill(prompt, chunkChars);
+          for (const piece of pieces.slice(0, -1)) await engine.prefill(piece);
 
           let text = '';
+          // Tokens that land inside one frame are shown together: each showing
+          // re-splits the reply and draws the bubble again.
+          const showText = createFrameBatch(() => hooks.onText?.(asThinkMarkers(text, reasoning), step));
           const onToken = hooks.onText
             ? (token: string) => {
                 text += token;
-                hooks.onText?.(asThinkMarkers(text, reasoning), step);
+                showText.request();
               }
             : undefined;
           let response: string;
@@ -607,6 +588,8 @@ export function createConversation(options: ConversationOptions = {}): Conversat
             }
           } finally {
             generating = false;
+            // The last tokens are on screen before anything reads the reply back.
+            showText.flush();
           }
 
           if (stopRequested) {
