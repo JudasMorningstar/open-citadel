@@ -1,6 +1,6 @@
 import React from 'react';
 import Animated, { type AnimatedProps } from 'react-native-reanimated';
-import type { ViewProps } from 'react-native';
+import { View, type ViewProps } from 'react-native';
 
 import { SectionHeader } from '@/components/ui/section-header';
 import { contentColumn } from '@/constants/theme';
@@ -28,9 +28,23 @@ type ShelfSectionProps = {
  */
 export function ShelfSection({ title, count, onViewAll, entering, capped = true, children }: ShelfSectionProps) {
   const viewAll = onViewAll ? { text: 'VIEW ALL', onPress: onViewAll } : undefined;
+  const style = capped ? contentColumn : undefined;
+  const header = <SectionHeader title={title} count={count} rightAction={viewAll} />;
+  // An animated view only where there is a reveal to play, and no page asks
+  // for one today. Explore's pages are lists of these, built as they scroll
+  // into view, and an animated view costs more to build than the plain one
+  // it was standing in for.
+  if (!entering) {
+    return (
+      <View className="mb-8 gap-4" style={style}>
+        {header}
+        {children}
+      </View>
+    );
+  }
   return (
-    <Animated.View entering={entering} className="mb-8 gap-4" style={capped ? contentColumn : undefined}>
-      <SectionHeader title={title} count={count} rightAction={viewAll} />
+    <Animated.View entering={entering} className="mb-8 gap-4" style={style}>
+      {header}
       {children}
     </Animated.View>
   );

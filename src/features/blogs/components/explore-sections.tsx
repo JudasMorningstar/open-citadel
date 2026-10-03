@@ -25,7 +25,7 @@ const blogKey = (blog: DirectoryBlog) => blog.feedUrl;
  * foot. A FlashList of sections, each a horizontal FlashList of tiles, as on
  * the other Explores, so only what is near the screen is built.
  */
-export function ExploreSections({ sections, followed, bottomPadding, onOpen }: ExploreSectionsProps) {
+export const ExploreSections = React.memo(function ExploreSections({ sections, followed, bottomPadding, onOpen }: ExploreSectionsProps) {
   const byFeed = React.useMemo(() => new Map(sections.flatMap((s) => s.blogs.map((b) => [b.feedUrl, b] as const))), [sections]);
   const openFeed = React.useCallback(
     (feedUrl: string) => {
@@ -72,4 +72,4 @@ export function ExploreSections({ sections, followed, bottomPadding, onOpen }: E
       />
     </PageFade>
   );
-}
+});

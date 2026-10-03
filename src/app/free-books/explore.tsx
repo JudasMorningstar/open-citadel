@@ -27,8 +27,12 @@ export default function FreeBooksExploreScreen() {
   const explore = useFreeBooksExplore(landed);
   const bottomPadding = layout.scrollBottom + insets.bottom;
   // Seen before (the shelves are cached): the first screen itself while the
-  // drawer rises, rather than a skeleton of it.
-  const placeholder = catalogPreviewReady(explore.shelves) ? (
+  // drawer rises, rather than a skeleton of it. Decided once, as the page
+  // opens: shelves asked for at the tap arrive during the rise, and trading
+  // the skeleton for nine tiles then is the mount mid-slide this is here to
+  // avoid.
+  const [previewed] = React.useState(() => catalogPreviewReady(explore.shelves));
+  const placeholder = previewed ? (
     <CatalogPreview shelves={explore.shelves} onOpen={explore.openBook} onViewAll={explore.openShelf} />
   ) : (
     <CatalogShelvesSkeleton />

@@ -35,15 +35,27 @@ export function useOpenCatalogBook() {
 /**
  * Opens a book by its eBook number from any of the lists on screen. A tile
  * hands back only its id; this finds the book it came from.
+ *
+ * The callback is the same one for the life of the screen, and looks the book
+ * up when it is pressed. Built from the lists, it was a new function each time
+ * a shelf arrived or a page of "View all" loaded, and every tile takes it as
+ * a prop: each arrival redrew every shelf and every tile on the page, mid
+ * scroll, since arrivals are what scrolling Explore causes.
  */
 export function useOpenFromLists(lists: CatalogBook[][]) {
   const openBook = useOpenCatalogBook();
-  const byId = React.useMemo(() => new Map(lists.flat().map((book) => [book.id, book])), [lists]);
+  const latest = React.useRef(lists);
+  React.useEffect(() => {
+    latest.current = lists;
+  }, [lists]);
   return React.useCallback(
     (id: string | number) => {
-      const book = byId.get(Number(id));
-      if (book) openBook(book);
+      const wanted = Number(id);
+      for (const list of latest.current) {
+        const book = list.find((candidate) => candidate.id === wanted);
+        if (book) return openBook(book);
+      }
     },
-    [byId, openBook],
+    [openBook],
   );
 }

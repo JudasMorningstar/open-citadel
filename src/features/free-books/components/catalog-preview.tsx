@@ -23,7 +23,7 @@ type CatalogPreviewProps = {
 };
 
 /** Free Books' first screen from cached shelves, while the drawer rises. See `ShelvesPreview`. */
-export function CatalogPreview({ shelves, onOpen, onViewAll }: CatalogPreviewProps) {
+export const CatalogPreview = React.memo(function CatalogPreview({ shelves, onOpen, onViewAll }: CatalogPreviewProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
   const ghost = tokens['--color-surface-tertiary'];
@@ -48,4 +48,4 @@ export function CatalogPreview({ shelves, onOpen, onViewAll }: CatalogPreviewPro
     };
   });
   return <ShelvesPreview shelves={preview} />;
-}
+});

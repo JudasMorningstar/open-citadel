@@ -26,7 +26,7 @@ type CatalogShelvesProps = {
  * at the foot. A FlashList of shelves, each a horizontal FlashList of tiles,
  * as on the podcasts' Explore, so only what is near the screen is built.
  */
-export function CatalogShelves({ shelves, bottomPadding, onViewableItemsChanged, onOpen, onViewAll }: CatalogShelvesProps) {
+export const CatalogShelves = React.memo(function CatalogShelves({ shelves, bottomPadding, onViewableItemsChanged, onOpen, onViewAll }: CatalogShelvesProps) {
   const renderItem = React.useCallback(
     ({ item }: { item: Shelf }) => <CatalogShelf shelf={item} state={shelves[item.id]} onOpen={onOpen} onViewAll={onViewAll} />,
     [onOpen, onViewAll, shelves],
@@ -49,4 +49,4 @@ export function CatalogShelves({ shelves, bottomPadding, onViewableItemsChanged,
       />
     </PageFade>
   );
-}
+});

@@ -21,7 +21,7 @@ type ExplorePreviewProps = {
  * app, so unlike the other Explores this never waits on a cache: Blogs'
  * Explore opens on its blogs every time. See `ShelvesPreview`.
  */
-export function ExplorePreview({ sections, followed, onOpen }: ExplorePreviewProps) {
+export const ExplorePreview = React.memo(function ExplorePreview({ sections, followed, onOpen }: ExplorePreviewProps) {
   const shelves: PreviewShelf[] = sections.slice(0, PREVIEW_SECTIONS).map((section) => ({
     key: section.id,
     title: section.label,
@@ -39,4 +39,4 @@ export function ExplorePreview({ sections, followed, onOpen }: ExplorePreviewPro
     )),
   }));
   return <ShelvesPreview shelves={shelves} />;
-}
+});
