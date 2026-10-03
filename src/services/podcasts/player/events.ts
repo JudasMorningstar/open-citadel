@@ -8,7 +8,7 @@ import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem
 import { ensureAudioPlayer, registerAudioBackgroundHandler } from "@/services/audio-session";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
-import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
+import { applyCommands, followSkipLengths, nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
 import {
   clearSeeking,
   clearStarting,
@@ -149,6 +149,7 @@ export function attachListeners(): void {
     // cannot travel through the shared handler's `{ ...payload, type }` shape.
     // It only clears what the screens show, which nothing in the background draws.
     TrackPlayer.addEventListener(Event.SleepTimerTriggered, () => store().patch({ sleep: null })),
+    { remove: followSkipLengths(() => store().loaded) },
   ];
 }
 
@@ -184,6 +185,9 @@ export async function restoreNowPlaying(): Promise<void> {
   }
   if (active?.mediaId === item.id && ensureAudioPlayer()) {
     attachListeners();
+    // Setting the player up again (above) knows nothing of the lock screen's
+    // controls, and nothing else says them again for an episode already playing.
+    applyCommands();
     track(item, TrackPlayer.getProgress().position);
     store().patch({
       current: nowPlayingFrom(item),

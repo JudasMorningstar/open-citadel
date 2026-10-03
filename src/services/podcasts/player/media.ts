@@ -6,7 +6,7 @@ import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { upNextIds } from "@/services/podcasts/queue";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
-import { podcastPrefs } from "@/stores/podcast-prefs";
+import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import type { NowPlaying } from "@/stores/podcast-player";
 
 /** How many Up Next episodes are handed to the native queue ahead of time. */
@@ -56,6 +56,19 @@ export function applyCommands(): void {
     ],
     backwardInterval: prefs.skipBackSec,
     forwardInterval: prefs.skipForwardSec,
+  });
+}
+
+/**
+ * Sends the skip lengths to the native player again whenever the listener
+ * changes them with an episode loaded, so the lock screen's skip buttons are
+ * the lengths the app's own are, now rather than from the next episode.
+ * Returns the way to stop.
+ */
+export function followSkipLengths(isLoaded: () => boolean): () => void {
+  return usePodcastPrefs.subscribe((next, previous) => {
+    const changed = next.skipBackSec !== previous.skipBackSec || next.skipForwardSec !== previous.skipForwardSec;
+    if (changed && isLoaded()) applyCommands();
   });
 }
 
