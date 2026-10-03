@@ -32,7 +32,7 @@ import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
@@ -44,7 +44,7 @@ import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
 import { queryClient } from "@/lib/query-client";
-import { queryPersistOptions } from "@/lib/query-persist";
+import { startQueryPersist } from "@/lib/query-persist";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
@@ -82,6 +82,9 @@ registerTTSBackgroundHandler();
 // Podcasts save positions and move through Up Next from the player's events,
 // which on Android arrive through the same headless task while backgrounded.
 registerPodcastBackgroundHandler();
+// Explore's kept catalogues start reading back now, while fonts and the
+// database are still loading, and are saved when the app leaves the front.
+startQueryPersist(queryClient);
 
 // Catches throws from route module evaluation / rendering that would otherwise
 // crash the app with an unhandled JS exception on startup.
@@ -300,12 +303,12 @@ export default function RootLayout() {
 
   return (
     // The query cache is outermost: it draws nothing, and anything below may
-    // read through it. Its kept catalogues are read back from storage first
-    // (see `lib/query-persist`), a few milliseconds in which queries wait.
+    // read through it. Its kept catalogues are read back beside it, not in
+    // front of it (see `lib/query-persist`), so the library's reads never wait.
     // ThemeTokensProvider wraps everything else, PanelUIProvider included, so
     // the portal host that sheets present into resolves its tokens from the
     // same single subscription as the rest of the tree.
-    <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
+    <QueryClientProvider client={queryClient}>
       <ThemeTokensProvider>
         {/* PanelUIProvider owns the gesture handler root every gesture recognizer
           in the app needs, plus PanelUI's own portal/toast host and the keyboard
@@ -437,6 +440,6 @@ export default function RootLayout() {
           </ToastProvider>
         </PanelUIProvider>
       </ThemeTokensProvider>
-    </PersistQueryClientProvider>
+    </QueryClientProvider>
   );
 }
