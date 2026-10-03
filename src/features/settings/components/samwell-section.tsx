@@ -12,6 +12,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { PURCHASES_ENABLED } from "@/constants/revenuecat";
+import { useWarmPlanOffer } from "@/features/billing/hooks/use-plan-offer";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
@@ -43,6 +44,9 @@ export const SamwellSection = React.memo(function SamwellSection({
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const identity = useCloudIdentity();
+  // The plans, asked for while the Cloud card is still a tap away. Not before
+  // the identity settles: that is when the purchases SDK has been started.
+  useWarmPlanOffer(identity.kind !== "unknown");
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const [infoSheet, setInfoSheet] = React.useState<EngineMode | null>(null);
   const [previewMode, setPreviewMode] = React.useState<EngineMode | null>(() =>
