@@ -2,9 +2,9 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { prefetchFirstShelves } from '@/features/free-books/hooks/use-catalog-shelves';
-import { useLibraryBoot } from '@/features/library/hooks/use-library-boot';
 import { useOpenReader } from '@/features/library/hooks/use-open-reader';
 import { addBooksMenu, type AddBooksKey } from '@/features/library/utils/add-books-menu';
+import { booksLibraryView, type BooksLibraryView } from '@/features/library/utils/library-sides';
 import { pickBooksDirectory } from '@/services/book-sync';
 import {
   useAllBooks,
@@ -19,8 +19,7 @@ import { useCollectionsStore } from '@/stores/collections';
 
 export type BookSection = 'reading' | 'queue' | 'favorites' | 'archived' | 'collections' | 'all';
 
-/** What the books side draws: the boot skeleton, the setup prompt, or the shelves. */
-export type BooksLibraryView = 'booting' | 'setup' | 'library';
+export type { BooksLibraryView };
 
 const IS_IOS = process.env.EXPO_OS === 'ios';
 /** Module level: the same options every render, so the button's menu is not rebuilt. */
@@ -39,10 +38,12 @@ const ALL_BOOKS_PREVIEW = 20;
  * BOOLEAN; its counters tick several times a second and only `SyncIndicator`
  * reads them, which it does for itself. Actions are read from `getState()` at
  * call time, so nothing here re-renders for them.
+ *
+ * `booted` is the Library shell's (the store has been read) and `landed` is
+ * the side's own (it has stopped moving); see `booksLibraryView`.
  */
-export function useBooksLibrary() {
+export function useBooksLibrary({ booted, landed }: { booted: boolean; landed: boolean }) {
   const router = useRouter();
-  const booted = useLibraryBoot();
   const openReader = useOpenReader();
   const booksDirectoryUri = useBooksStore((s) => s.booksDirectoryUri);
   const isLoading = useBooksStore((s) => s.isLoading);
@@ -65,7 +66,7 @@ export function useBooksLibrary() {
    * the shelves by itself. Android gates on whether a folder has been picked.
    */
   const needsSetup = IS_IOS ? all.length === 0 : !booksDirectoryUri && !isLoading;
-  const view: BooksLibraryView = !booted ? 'booting' : needsSetup ? 'setup' : 'library';
+  const view = booksLibraryView({ booted, landed, needsSetup });
 
   /*
    * A pull says "look again", and it is answered whether or not there is

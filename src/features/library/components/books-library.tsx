@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Handover } from '@/components/navigation/handover';
 import { LibrarySkeleton } from '@/components/skeletons/library-skeleton';
 import { ThemedView } from '@/components/themed-view';
 import { fabClearance } from '@/components/fab-placement';
@@ -28,7 +29,7 @@ type BooksLibraryProps = {
 };
 
 /**
- * The books side of the Library: the boot skeleton, the getting-started page, or the
+ * The books side of the Library: its skeleton, the getting-started page, or the
  * shelves with their sheets. The header above it and the switch to podcasts
  * belong to `LibraryPage`, and `BooksPage` wires the state in.
  */
@@ -36,17 +37,6 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
   const insets = useSafeAreaInsets();
   const scrollBottom = layout.scrollBottom + bottomChrome + fabClearance(insets.bottom);
 
-  // Boot in progress: the shape of the Library rather than either branch, so
-  // neither the setup prompt nor an empty scaffold can flash. A skeleton and
-  // not a spinner: this is the first screen anyone sees, and it should arrive
-  // as the page filling in.
-  if (library.view === 'booting') {
-    return (
-      <ThemedView className="flex-1">
-        <LibrarySkeleton />
-      </ThemedView>
-    );
-  }
   if (library.view === 'setup') {
     return (
       <ThemedView className="flex-1">
@@ -59,35 +49,45 @@ export function BooksLibrary({ library, sheets, newCollection, bottomChrome }: B
     );
   }
 
+  // Until the library has been read and the side has stopped moving, the
+  // shape of the shelves rather than either branch, so neither the setup
+  // prompt nor an empty scaffold can flash. A skeleton and not a spinner: this
+  // can be the first screen anyone sees, and it should arrive as the page
+  // filling in. `Handover` fades it away over the shelves once they have
+  // drawn, as the podcasts and blogs sides do theirs.
+  const ready = library.view === 'library';
+
   return (
     <ThemedView className="flex-1">
-      {/* Pull down at the top to scan, and the gap it opens is where every
-          scan reports itself, the launch scan and All Books' button included.
-          It carries the page's scroll fade. */}
-      <PullToSync
-        running={library.syncRunning}
-        onSync={library.pullSync}
-        renderIndicator={renderSyncIndicator}
-        contentContainerClassName="pt-6"
-        contentContainerStyle={{ paddingBottom: scrollBottom }}
-      >
-        <BookShelves
-          shelves={library.shelves}
-          collections={library.collections}
-          viewAll={library.viewAll}
-          onOpen={library.openReader}
-          onMenu={sheets.openMenu}
-          onOpenCollection={library.openCollection}
-          onNewCollection={newCollection.open}
-        />
-      </PullToSync>
+      <Handover ready={ready} skeleton={<LibrarySkeleton />}>
+        {/* Pull down at the top to scan, and the gap it opens is where every
+            scan reports itself, the launch scan and All Books' button included.
+            It carries the page's scroll fade. */}
+        <PullToSync
+          running={library.syncRunning}
+          onSync={library.pullSync}
+          renderIndicator={renderSyncIndicator}
+          contentContainerClassName="pt-6"
+          contentContainerStyle={{ paddingBottom: scrollBottom }}
+        >
+          <BookShelves
+            shelves={library.shelves}
+            collections={library.collections}
+            viewAll={library.viewAll}
+            onOpen={library.openReader}
+            onMenu={sheets.openMenu}
+            onOpenCollection={library.openCollection}
+            onNewCollection={newCollection.open}
+          />
+        </PullToSync>
+      </Handover>
 
       {/* The page's one creative action, the same floating button the
-          Timeline gives its own: adding books, from Files or for free. */}
-      <AddBooksFab options={library.addOptions} onSelect={library.onAddBooks} />
-
-      <BookSheets sheets={sheets} />
-      <NewCollectionPrompt {...newCollection.prompt} />
+          Timeline gives its own: adding books, from Files or for free. With
+          the shelves, not over their skeleton. */}
+      {ready ? <AddBooksFab options={library.addOptions} onSelect={library.onAddBooks} /> : null}
+      {ready ? <BookSheets sheets={sheets} /> : null}
+      {ready ? <NewCollectionPrompt {...newCollection.prompt} /> : null}
     </ThemedView>
   );
 }

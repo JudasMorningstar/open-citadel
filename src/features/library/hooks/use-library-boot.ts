@@ -1,13 +1,20 @@
 import React from 'react';
 
+import { whenIdle } from '@/lib/idle';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
 import { useBooksStore } from '@/stores/books';
 import { useCollectionsStore } from '@/stores/collections';
+
+/** The longest the launch scan is put off for a thread that never goes quiet. */
+const SCAN_IDLE_TIMEOUT_MS = 5000;
 
 /**
  * The Library's start: load what is on disk, then look for new books.
  * Returns whether enough has loaded to tell "not set up" from "not loaded
  * yet", which the store's initial empty state cannot.
+ *
+ * Called by the Library shell, not by the books side, so it runs with the app
+ * whichever side the Library opens on.
  */
 export function useLibraryBoot(): boolean {
   // The store starts empty (no directory, no books). Until the boot below has
@@ -45,7 +52,13 @@ export function useLibraryBoot(): boolean {
          * when the app should look at it: a book dropped in from a browser
          * download sat there until the reader went to All Books and pressed a
          * button.
+         *
+         * Once the thread is idle, not straight after the read: the scan
+         * lists the folder, stats every file and writes rows, all on the JS
+         * thread, and started here it ran in the same moment the side on
+         * screen was mounting its shelves.
          */
+        await whenIdle(SCAN_IDLE_TIMEOUT_MS);
         await books.scanOnLaunch();
       } catch (err) {
         console.error('Library boot failed:', err);

@@ -9,6 +9,7 @@ import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
 import { byLastRead } from "@/features/library/utils/last-read";
 import { gutenbergIdFromUri } from "@/services/gutenberg/records";
+import { keepUnchanged } from "@/utils/keep-unchanged";
 import {
     OWNED_DIR,
     ensureOwnedDir,
@@ -381,11 +382,15 @@ export const useBooksStore = create<BooksState>((set, get) => ({
       progressByBook[row.bookId] = row.percentage;
       lastReadByBook[row.bookId] = row.updatedAt;
     }
-    set(
-      firstRead
-        ? { books: allBooks, progressByBook, lastReadByBook, isLoading: false }
-        : { books: allBooks, progressByBook, lastReadByBook },
-    );
+    // Unchanged rows keep the objects the shelves already hold, so a reload
+    // that found nothing new re-renders nothing (see `keepUnchanged`).
+    const held = get();
+    const next = {
+      books: keepUnchanged(held.books, allBooks),
+      progressByBook: keepUnchanged(held.progressByBook, progressByBook),
+      lastReadByBook: keepUnchanged(held.lastReadByBook, lastReadByBook),
+    };
+    set(firstRead ? { ...next, isLoading: false } : next);
   },
 
   forgetDirectory: async () => {
