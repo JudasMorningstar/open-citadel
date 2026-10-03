@@ -1,0 +1,44 @@
+diff --git a/lib/module/fetcher/fetcher.js b/lib/module/fetcher/fetcher.js
+index 8699b4188a6355e2cbc378514217b48c6bd83177..9f5ab60015ead2223a3dda251e3bfa1d0e0c0fbe 100644
+--- a/lib/module/fetcher/fetcher.js
++++ b/lib/module/fetcher/fetcher.js
+@@ -303,7 +303,7 @@ async function downloadUrlViaAndroidDownloadManager(url, dest, cb) {
+   // like a file that is complete at every sample.
+   const absoluteBytes = reassemble32BitCounter();
+   task.progress({
+-    count: 100
++    interval: 250
+   }, (received, total) => {
+     const tot = Number(total);
+     cb.onBytes?.(absoluteBytes(Number(received)), tot > 0 ? tot : 0);
+@@ -543,7 +543,7 @@ async function downloadUrlViaIosStream(url, dest, cb, canResume = true) {
+   // per 250 ms, so this only means a large file advances in ~1% steps instead
+   // of the 5% ones that made a multi-GB download look stalled between jumps.
+   task.progress({
+-    count: 100
++    interval: 250
+   }, (received, total) => {
+     const recv = Number(received);
+     const tot = Number(total);
+diff --git a/src/fetcher/fetcher.ts b/src/fetcher/fetcher.ts
+index 1ae112716dc32674109099bf74959ccca506ed21..5e6a7211d2c2e148f82055e069d48d203eb56dfe 100644
+--- a/src/fetcher/fetcher.ts
++++ b/src/fetcher/fetcher.ts
+@@ -380,7 +380,7 @@ async function downloadUrlViaAndroidDownloadManager(
+   // as 0 rather than echoing the received count, which would otherwise look
+   // like a file that is complete at every sample.
+   const absoluteBytes = reassemble32BitCounter();
+-  task.progress({ count: 100 }, (received, total) => {
++  task.progress({ interval: 250 }, (received, total) => {
+     const tot = Number(total);
+     cb.onBytes?.(absoluteBytes(Number(received)), tot > 0 ? tot : 0);
+   });
+@@ -641,7 +641,7 @@ async function downloadUrlViaIosStream(
+   // Same granularity as Android. blob-util still floors the rate at one event
+   // per 250 ms, so this only means a large file advances in ~1% steps instead
+   // of the 5% ones that made a multi-GB download look stalled between jumps.
+-  task.progress({ count: 100 }, (received, total) => {
++  task.progress({ interval: 250 }, (received, total) => {
+     const recv = Number(received);
+     const tot = Number(total);
+     // A response with no Content-Length reports `written: 0, total: -1` on a
