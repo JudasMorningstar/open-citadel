@@ -22,8 +22,9 @@ import { asColor } from "@/utils/colors";
  * The header is the hub's map, as it always was: the Timeline to one side,
  * Samwell to the other, drawn with their own icons. Its middle, which used to
  * say "Library", is now the switch that says which library this is. Each side
- * owns everything under the header; this only decides which one is showing
- * and keeps the mini player above both.
+ * owns everything under the header, its own skeleton included, and is mounted
+ * when it is first opened; this only decides which one is showing and keeps
+ * the mini player above them.
  */
 export function LibraryPage() {
   const insets = useSafeAreaInsets();
@@ -31,10 +32,11 @@ export function LibraryPage() {
   const page = useLibraryPage();
   const miniPlayer = useMiniPlayer(insets.bottom);
   const chrome = miniPlayer.clearance;
+  const { mounted, settleMs } = page;
   const sides = {
-    books: <BooksPage bottomChrome={chrome} />,
-    podcasts: page.mounted.podcasts ? <PodcastsPage bottomChrome={chrome} /> : null,
-    blogs: page.mounted.blogs ? <BlogsPage bottomChrome={chrome} /> : null,
+    books: mounted.books ? <BooksPage bottomChrome={chrome} booted={page.booted} settleMs={settleMs.books} /> : null,
+    podcasts: mounted.podcasts ? <PodcastsPage bottomChrome={chrome} settleMs={settleMs.podcasts} /> : null,
+    blogs: mounted.blogs ? <BlogsPage bottomChrome={chrome} settleMs={settleMs.blogs} /> : null,
   };
 
   return (

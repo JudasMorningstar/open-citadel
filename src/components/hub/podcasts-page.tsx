@@ -12,23 +12,25 @@ import { PodcastsHome } from "@/features/podcasts/components/podcasts-home";
 import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/import-guide-sheet";
 import { ImportView } from "@/features/podcasts/components/onboarding/import-view";
 import { PodcastsWelcome } from "@/features/podcasts/components/onboarding/podcasts-welcome";
+import { useLibraryFilled } from "@/features/library/hooks/use-library-filled";
 import { usePodcastsPage } from "@/features/podcasts/hooks/use-podcasts-page";
 import { useSettledAfter } from "@/navigation/use-settled-after";
-
-const SWITCH_SETTLE_MS = 300;
 
 type PodcastsPageProps = {
   /** Room kept free at the bottom for the mini player, when one is showing. */
   bottomChrome: number;
+  /** How long to hold the shelves for the switch's fade; zero when the app opened here. */
+  settleMs: number;
 };
 
 /** The podcasts side of the Library, wired: the welcome the first time, an import while one runs, the shelves after. */
-export function PodcastsPage({ bottomChrome }: PodcastsPageProps) {
+export function PodcastsPage({ bottomChrome, settleMs }: PodcastsPageProps) {
   const insets = useSafeAreaInsets();
   const page = usePodcastsPage();
   // After the Library switch's fade (250ms) has run, so the shelves do not
-  // mount under a moving surface.
-  const landed = useSettledAfter(SWITCH_SETTLE_MS);
+  // mount under a moving surface. At once when the app opened on this side.
+  const landed = useSettledAfter(settleMs);
+  useLibraryFilled(page.view !== "loading");
   const { importer, episodes } = page;
 
   // Getting started keeps clear of whatever floats at the bottom, by the

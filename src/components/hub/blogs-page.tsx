@@ -11,23 +11,25 @@ import { ArticleActionSheet } from "@/features/blogs/components/article-action-s
 import { BlogsHome } from "@/features/blogs/components/blogs-home";
 import { BlogsHomeSkeleton } from "@/features/blogs/components/blogs-home-skeleton";
 import { BlogsWelcome } from "@/features/blogs/components/blogs-welcome";
+import { useLibraryFilled } from "@/features/library/hooks/use-library-filled";
 import { useBlogsPage } from "@/features/blogs/hooks/use-blogs-page";
 import { useSettledAfter } from "@/navigation/use-settled-after";
-
-const SWITCH_SETTLE_MS = 300;
 
 type BlogsPageProps = {
   /** Room kept free at the bottom for the mini player, when one is showing. */
   bottomChrome: number;
+  /** How long to hold the shelves for the switch's fade; zero when the app opened here. */
+  settleMs: number;
 };
 
 /** The blogs side of the Library, wired: the welcome before anything is followed, the shelves after. */
-export function BlogsPage({ bottomChrome }: BlogsPageProps) {
+export function BlogsPage({ bottomChrome, settleMs }: BlogsPageProps) {
   const insets = useSafeAreaInsets();
   const page = useBlogsPage();
   // After the Library switch's fade (250ms), so the shelves do not mount
-  // under a moving surface.
-  const landed = useSettledAfter(SWITCH_SETTLE_MS);
+  // under a moving surface. At once when the app opened on this side.
+  const landed = useSettledAfter(settleMs);
+  useLibraryFilled(page.view !== "loading");
   const { articles, addBlog, importer } = page;
   const stagePadding = bottomChrome + insets.bottom + layout.gutter;
 
