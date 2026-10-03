@@ -4,9 +4,9 @@ import { useCSSVariable } from 'uniwind';
 
 import { Download } from '@/components/icons';
 import { ActionButton } from '@/components/action-button';
+import { DownloadMeter } from '@/components/download-meter';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
-import { Touchable } from '@/components/ui/touchable';
 import { AI_VOICES_DOWNLOAD_SIZE } from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
 
@@ -24,8 +24,6 @@ export function TtsDownloadCard({ progress, error, onDownload, onCancel }: TtsDo
     '--color-muted-foreground',
     '--color-destructive',
   ]);
-
-  const percent = progress === null ? 0 : Math.round(progress * 100);
 
   return (
     <Card className="gap-2 p-3">
@@ -50,27 +48,9 @@ export function TtsDownloadCard({ progress, error, onDownload, onCancel }: TtsDo
           />
         )}
       </View>
-      {progress !== null && (
-        <View className="gap-1">
-          <View className="h-1 overflow-hidden bg-surface-tertiary">
-            <View className="h-1 bg-primary" style={{ width: `${percent}%` }} />
-          </View>
-          <View className="flex-row items-center justify-between">
-            <ThemedText
-              type="labelSm"
-              color={asColor(mutedForeground)}
-              style={{ fontVariant: ['tabular-nums'] }}
-            >
-              {percent}%
-            </ThemedText>
-            <Touchable onPress={onCancel}>
-              <ThemedText type="labelSm" color={asColor(destructive)}>
-                CANCEL
-              </ThemedText>
-            </Touchable>
-          </View>
-        </View>
-      )}
+      {/* The same meter Samwell's brains download under: it glides between
+          reports rather than jumping to each. */}
+      {progress !== null && <DownloadMeter progress={progress} onCancel={onCancel} />}
     </Card>
   );
 }
