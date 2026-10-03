@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
-import { usePlaybackClock, usePlaybackSeconds } from '@/features/podcasts/hooks/use-playback-clock';
+import { useCurrentChapter } from '@/features/podcasts/hooks/use-current-chapter';
+import { usePlaybackClock } from '@/features/podcasts/hooks/use-playback-clock';
 import { formatClock, formatSpeed } from '@/features/podcasts/utils/format';
 import {
   createChaptersQueryOptions,
@@ -17,11 +18,15 @@ import { usePodcastPrefs } from '@/stores/podcast-prefs';
 const NO_EPISODES: EpisodeItem[] = [];
 const NO_CHAPTERS: Chapter[] = [];
 
-/** "12:04" while a timed sleep counts down, "End" when set for the episode's end, null when off. */
-function useSleepLabel(sleep: SleepTimer): string | null {
+/**
+ * "12:04" while a timed sleep counts down, "End" when set for the episode's
+ * end, null when off. Counts only while `ticking` (the player has landed): a
+ * tick renders the whole player, which its opening has no room for.
+ */
+function useSleepLabel(sleep: SleepTimer, ticking: boolean): string | null {
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
-    if (sleep?.kind !== 'time') return;
+    if (sleep?.kind !== 'time' || !ticking) return;
     const tick = () => setNow(Date.now());
     const first = setTimeout(tick, 0);
     const id = setInterval(tick, 1000);
@@ -29,7 +34,7 @@ function useSleepLabel(sleep: SleepTimer): string | null {
       clearTimeout(first);
       clearInterval(id);
     };
-  }, [sleep]);
+  }, [sleep, ticking]);
   if (!sleep) return null;
   if (sleep.kind === 'episode') return 'End';
   return formatClock(Math.max(0, (sleep.endsAt - now) / 1000));
@@ -39,8 +44,14 @@ function useSleepLabel(sleep: SleepTimer): string | null {
  * Everything the full player draws, gathered in one place: the player's own
  * state, the episode as stored (for its favourite), its show (for a speed of
  * its own), its chapters and which one is playing, Up Next, and the sleep
- * countdown. The per-frame values come as shared values; nothing here renders
- * more than once a second.
+ * countdown. The per-frame values come as shared values, and nothing here
+ * renders on a clock: only when something it shows changes.
+ *
+ * `landed` is false while the player is still opening. What is already in the
+ * cache is drawn from the first frame (the mini player reads these ahead, see
+ * `useMiniPlayer`), but nothing is fetched and the native player is not asked
+ * anything until the screen has stopped moving: each answer rendered the whole
+ * player again in the middle of its own opening, which is what made it stutter.
  */
 export function usePlayerScreen(landed: boolean) {
   const current = usePodcastPlayer((s) => s.current);
@@ -58,23 +69,16 @@ export function usePlayerScreen(landed: boolean) {
 
   // The same cache entries the episode page, Up Next's "View all" and the
   // show page read, so opening the player after any of them costs nothing.
-  const episode = useQuery(createEpisodeItemQueryOptions(episodeId ?? '', { enabled: episodeId !== null })).data ?? null;
-  const queue = useQuery(createPodcastSectionQueryOptions('queue')).data?.episodes ?? NO_EPISODES;
-  const show = useQuery(createShowQueryOptions(podcastId ?? '', { enabled: podcastId !== null })).data ?? null;
+  const episode =
+    useQuery(createEpisodeItemQueryOptions(episodeId ?? '', { enabled: landed && episodeId !== null })).data ?? null;
+  const queue = useQuery(createPodcastSectionQueryOptions('queue', { enabled: landed })).data?.episodes ?? NO_EPISODES;
+  const show = useQuery(createShowQueryOptions(podcastId ?? '', { enabled: landed && podcastId !== null })).data ?? null;
   const chapters =
-    useQuery(createChaptersQueryOptions(episodeId ?? '', { enabled: episodeId !== null })).data ?? NO_CHAPTERS;
+    useQuery(createChaptersQueryOptions(episodeId ?? '', { enabled: landed && episodeId !== null })).data ?? NO_CHAPTERS;
   const showSpeed = show ? { title: show.customTitle || show.title, speed: show.playbackSpeed } : null;
 
   const clock = usePlaybackClock(current?.positionSec ?? 0, current?.durationSec ?? 0);
-  const seconds = usePlaybackSeconds(current?.positionSec ?? 0);
-  const currentChapter = React.useMemo(() => {
-    let found: Chapter | null = null;
-    for (const chapter of chapters) {
-      if (chapter.startSec <= seconds.position + 0.5) found = chapter;
-      else break;
-    }
-    return found;
-  }, [chapters, seconds.position]);
+  const currentChapter = useCurrentChapter(chapters, current?.positionSec ?? 0, landed);
 
   return {
     current,
@@ -86,7 +90,7 @@ export function usePlayerScreen(landed: boolean) {
     speedLabel: formatSpeed(speed),
     showOverride: showSpeed?.speed != null ? showSpeed.title : null,
     sleep,
-    sleepLabel: useSleepLabel(sleep),
+    sleepLabel: useSleepLabel(sleep, landed),
     skipBackSec,
     skipForwardSec,
     queue,
