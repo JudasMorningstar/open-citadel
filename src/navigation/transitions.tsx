@@ -286,13 +286,47 @@ export function drawerTransition({ scrim }: { scrim: SharedValue<string> }): Scr
 export const NOW_PLAYING_ART = 'now-playing-art';
 
 /**
- * Both settle with no overshoot, the close a little faster: a bounce on the
- * way back into the mini player read as a blip, as it did on the side screens
- * (see `SIDE_EASE`). A spring's `duration` is its perceptual one; the real
- * settle runs about half again longer.
+ * The open is a timing curve, for the reason the side screens' is (see
+ * `SIDE_EASE`), only more so. It was a spring with no overshoot, and such a
+ * spring does most of its travel at once: the player was past a quarter of
+ * its growth, which is also the whole of the reveal's fade in, some 40ms in.
+ * Those are the frames a slow phone spends drawing the new screen for the
+ * first time, so they were never shown. The player appeared half grown and
+ * crept the rest of the way, which read as a jump rather than as growing.
+ *
+ * The standard ease starts gently: the frames lost to the first draw cover a
+ * few percent of the way, and the growth happens where it can be seen. About
+ * as long overall as the spring took to settle (its `duration` was the
+ * perceptual one; the real settle ran half again longer).
+ *
+ * The close stays a spring with no overshoot: it is the one a finger throws
+ * (the drag down), it mounts nothing, and a bounce on the way back into the
+ * mini player read as a blip.
  */
-const PLAYER_OPEN = { duration: 280, dampingRatio: 1 } as const;
+const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
 const PLAYER_CLOSE = { duration: 240, dampingRatio: 1 } as const;
+
+/**
+ * Whether the reveal is clipped by the library's navigation mask. Not on
+ * Android, going by the source of `@react-native-masked-view` (0.3.2), which
+ * is what the mask is there:
+ *
+ * - It keeps the whole player in an offscreen layer for as long as the screen
+ *   is mounted (`setLayerType` in `RNCMaskedView.dispatchDraw`), the cost the
+ *   note at the top of this file is about.
+ * - It redraws the mask into a new bitmap the size of the screen whenever the
+ *   mask element is invalidated (`updateBitmapMask`), and the reveal moves
+ *   that element on every frame.
+ * - It draws that bitmap with `View.draw`, which leaves out a view's own
+ *   transform, and the library sizes its Android mask with a transform
+ *   (`REVEAL_USES_TRANSFORM_MASK`). So the mask comes out the full screen
+ *   whatever the reveal asked for, and clips nothing.
+ *
+ * Without it the player grows by its content's scale and fade alone, which is
+ * what Android was showing already. Read from source, not yet measured on a
+ * phone: if the open looks different there, this is the line to revisit.
+ */
+const PLAYER_MASK = process.env.EXPO_OS !== 'android';
 
 /**
  * The full player, grown out of the mini player.
@@ -319,7 +353,7 @@ export function playerTransition({ scrim }: { scrim: SharedValue<string> }): Scr
   const rise = drawer.screenStyleInterpolator!;
   return {
     ...drawer,
-    navigationMaskEnabled: true,
+    navigationMaskEnabled: PLAYER_MASK,
     transitionSpec: { open: PLAYER_OPEN, close: PLAYER_CLOSE },
     screenStyleInterpolator: (args) => {
       'worklet';

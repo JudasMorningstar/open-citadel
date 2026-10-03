@@ -2,9 +2,30 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { MINI_PLAYER_CLEARANCE, type MiniPlayerProps } from '@/features/podcasts/components/mini-player';
+import { queryClient } from '@/lib/query-client';
+import {
+  createChaptersQueryOptions,
+  createEpisodeItemQueryOptions,
+  createPodcastSectionQueryOptions,
+  createShowQueryOptions,
+} from '@/query-manager/podcasts';
 import { skipBy, stopPlayback, togglePlayback } from '@/services/podcasts/player';
 import { selectPlaying, usePlayerLoader, usePodcastPlayer } from '@/stores/podcast-player';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
+
+/**
+ * Reads what the full player shows beyond the card (the episode as stored, its
+ * show, its chapters, Up Next) while the card is on screen, so the player
+ * opens complete from its first frame: it fetches nothing while it is opening
+ * (see `usePlayerScreen`), and what was not in the cache by then would only
+ * appear once it had landed. Already cached and unchanged, this does nothing.
+ */
+function warmPlayer(episodeId: string, podcastId: string): void {
+  void queryClient.prefetchQuery(createEpisodeItemQueryOptions(episodeId));
+  void queryClient.prefetchQuery(createShowQueryOptions(podcastId));
+  void queryClient.prefetchQuery(createChaptersQueryOptions(episodeId));
+  void queryClient.prefetchQuery(createPodcastSectionQueryOptions('queue'));
+}
 
 /**
  * Everything the mini player needs, or null when nothing is in the player.
@@ -22,6 +43,12 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
   // so it is simply there. Once it has gone, the next one arrives.
   const [cameWithScreen, setCameWithScreen] = React.useState(nowPlaying !== null);
   if (cameWithScreen && !nowPlaying) setCameWithScreen(false);
+
+  const episodeId = nowPlaying?.episodeId ?? null;
+  const podcastId = nowPlaying?.podcastId ?? null;
+  React.useEffect(() => {
+    if (episodeId && podcastId) warmPlayer(episodeId, podcastId);
+  }, [episodeId, podcastId]);
 
   const onOpen = React.useCallback(() => router.push('/podcasts/player'), [router]);
   const onToggle = React.useCallback(() => void togglePlayback(), []);
