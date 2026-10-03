@@ -18,6 +18,7 @@ import {
   isKokoroVoice,
   voiceMode,
 } from '@/services/device-tts/catalogue';
+import { prefetchDeviceVoices } from '@/query-manager/device-voices';
 import { useSettingsStore } from '@/stores/settings';
 import { useTtsStore } from '@/stores/tts';
 import { asColor } from '@/utils/colors';
@@ -63,6 +64,9 @@ export function TtsSettingsPanel({ onDone }: TtsSettingsPanelProps) {
 
   React.useEffect(() => {
     void useTtsStore.getState().loadState();
+    // The phone's first answer is the slow one, so it is asked for now,
+    // whichever kind of voice is chosen, not when the list is opened.
+    if (NATIVE_VOICE_AVAILABLE) prefetchDeviceVoices();
   }, []);
 
   const mode = voiceMode(ttsVoice);

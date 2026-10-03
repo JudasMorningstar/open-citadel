@@ -26,7 +26,7 @@ export interface NativeVoicePickerProps {
 export function NativeVoicePicker({ selected, onSelect }: NativeVoicePickerProps) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
   const [open, setOpen] = React.useState(false);
-  const { voices, rows, loading, previewing, preview, stop } = useDeviceVoices();
+  const { voices, rows, loading, previewing, preview, stop, toggleLanguage } = useDeviceVoices(selected);
 
   const close = React.useCallback(() => {
     stop();
@@ -67,6 +67,7 @@ export function NativeVoicePicker({ selected, onSelect }: NativeVoicePickerProps
         previewing={previewing}
         onSelect={handleSelect}
         onPreview={preview}
+        onToggleLanguage={toggleLanguage}
       />
     </>
   );

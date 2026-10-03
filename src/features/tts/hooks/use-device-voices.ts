@@ -1,49 +1,57 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { createDeviceVoicesQueryOptions } from '@/query-manager/device-voices';
 import { deviceSpeech } from '@/services/device-tts/speech';
-import { deviceVoiceRows, isPlayableVoice, type DeviceVoice } from '@/utils/device-voices';
+import { deviceVoiceRows, usefulLanguages, type DeviceVoice } from '@/utils/device-voices';
 
 const PREVIEW_PHRASE = 'Hello, this is a preview of this voice.';
+const NO_VOICES: DeviceVoice[] = [];
+
+/** The phone's own locale, for example `en-ZA`. Hermes resolves it without a native module. */
+function phoneLocale(): string {
+  return Intl.DateTimeFormat().resolvedOptions().locale;
+}
 
 /**
- * The phone's own text-to-speech voices: loading them, grouping them for the
- * picker's list, and previewing one.
+ * The phone's own text-to-speech voices: the cached list, its rows for the
+ * picker with only the useful languages open, and previewing one.
  *
- * Owns no persistence — the picker hands the choice to whoever mounts it.
+ * `selected` is the saved voice's identifier, '' for the system default.
+ * Owns no persistence: the picker hands the choice to whoever mounts it.
  */
-export function useDeviceVoices() {
-  const [voices, setVoices] = useState<DeviceVoice[]>([]);
+export function useDeviceVoices(selected: string) {
+  const { data, isPending } = useQuery(createDeviceVoicesQueryOptions());
+  const voices = data ?? NO_VOICES;
   // Nothing to load in a build without expo-speech, so it never shows a skeleton.
-  const [loading, setLoading] = useState(() => deviceSpeech() !== null);
+  const loading = isPending && deviceSpeech() !== null;
+
   const [previewing, setPreviewing] = useState<string | null>(null);
   // Bumped on every preview/stop so a stale `onDone` cannot clear a newer preview.
   const requestRef = useRef(0);
 
-  useEffect(() => {
-    let active = true;
-    const speech = deviceSpeech();
-    if (!speech) return;
-    speech
-      .getAvailableVoicesAsync()
-      .then((available) => {
-        if (!active) return;
-        setVoices(
-          available.filter(isPlayableVoice).map((voice) => ({
-            identifier: voice.identifier,
-            name: voice.name,
-            language: voice.language,
-            quality: voice.quality === speech.VoiceQuality.Enhanced ? 'ENHANCED' : 'DEFAULT',
-          })),
-        );
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setLoading(false);
+  // The languages opened or closed by hand. Until one is, the useful ones are open.
+  const [toggled, setToggled] = useState<ReadonlySet<string> | null>(null);
+  const useful = useMemo(() => usefulLanguages(voices, selected, phoneLocale()), [voices, selected]);
+  const open = useMemo(() => toggled ?? new Set(useful), [toggled, useful]);
+  const rows = useMemo(() => deviceVoiceRows(voices, open, useful), [voices, open, useful]);
+
+  // Stable across toggles, so opening one language does not redraw every row.
+  const toggleLanguage = useCallback(
+    (language: string) => {
+      setToggled((current) => {
+        const next = new Set(current ?? useful);
+        if (!next.delete(language)) next.add(language);
+        return next;
       });
+    },
+    [useful],
+  );
+
+  useEffect(() => {
     return () => {
-      active = false;
       requestRef.current += 1;
-      void speech.stop().catch(() => undefined);
+      void deviceSpeech()?.stop().catch(() => undefined);
     };
   }, []);
 
@@ -80,7 +88,5 @@ export function useDeviceVoices() {
     [previewing],
   );
 
-  const rows = useMemo(() => deviceVoiceRows(voices), [voices]);
-
-  return { voices, rows, loading, previewing, preview, stop };
+  return { voices, rows, loading, previewing, preview, stop, toggleLanguage };
 }

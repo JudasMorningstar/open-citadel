@@ -1,13 +1,11 @@
 import React from 'react';
 import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
 
-import { DeviceVoiceItem } from '@/features/tts/components/device-voice-item';
+import { DeviceVoiceRows } from '@/features/tts/components/device-voice-rows';
 import { PageFade } from '@/components/scroll-fades';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { asColor } from '@/utils/colors';
 import type { DeviceVoice, DeviceVoiceRow } from '@/utils/device-voices';
 
 export interface DeviceVoiceSheetProps {
@@ -20,6 +18,7 @@ export interface DeviceVoiceSheetProps {
   previewing: string | null;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
+  onToggleLanguage: (language: string) => void;
 }
 
 /** The list of the phone's voices, opened from the native voice row. */
@@ -32,9 +31,8 @@ export function DeviceVoiceSheet({
   previewing,
   onSelect,
   onPreview,
+  onToggleLanguage,
 }: DeviceVoiceSheetProps) {
-  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
-
   return (
     // Fixed height, one detent, and a plain `Sheet.ScrollView` rather than
     // `Sheet.FlatList` — the same shape `PlanInfoSheet` uses, which is the
@@ -48,6 +46,11 @@ export function DeviceVoiceSheet({
     // is what made the drawer behind it jump/expand and made a plain pan hard
     // to close: two live gesture recognizers over the same list, not the
     // detents or the stack behavior.
+    //
+    // A plain scroll view draws every row it is given, and with every voice a
+    // phone has in it that can be hundreds of rows mounted in one go. So the
+    // rows it is given are few: only the useful languages arrive open
+    // (`usefulLanguages`), and the rest are one row each until tapped.
     <Sheet visible={visible} onClose={onClose} stackBehavior="push" fixedHeightRatio={0.75}>
       <View className="flex-row items-center justify-between px-6 pb-3 pt-2">
         <ThemedText type="headlineSm">Select voice</ThemedText>
@@ -62,26 +65,14 @@ export function DeviceVoiceSheet({
         ) : (
           <PageFade edges="both" surface="popover">
             <Sheet.ScrollView>
-              {rows.map((row) =>
-                row.kind === 'header' ? (
-                  <View key={row.key} className="bg-popover px-6 py-2">
-                    <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-                      {row.title}
-                    </ThemedText>
-                  </View>
-                ) : (
-                  <DeviceVoiceItem
-                    key={row.key}
-                    voice={row.voice}
-                    isSelected={row.voice.identifier === selected}
-                    isPreviewing={previewing === row.voice.identifier}
-                    primary={asColor(primary)}
-                    mutedForeground={asColor(mutedForeground)}
-                    onSelect={onSelect}
-                    onPreview={onPreview}
-                  />
-                ),
-              )}
+              <DeviceVoiceRows
+                rows={rows}
+                selected={selected}
+                previewing={previewing}
+                onSelect={onSelect}
+                onPreview={onPreview}
+                onToggleLanguage={onToggleLanguage}
+              />
             </Sheet.ScrollView>
           </PageFade>
         )}
