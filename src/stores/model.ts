@@ -22,10 +22,13 @@ import {
   localModelFiles,
   remoteUrls,
 } from "@/services/device-llm/files";
+import { makeRoomForBrain } from "@/services/device-llm/make-room";
+import { markRunFinished, markRunStarted, takeInterruptedRun } from "@/services/device-llm/run-marker";
+import { interruptedMessage, tooLargeMessage, wakeRoom } from "@/services/device-llm/wake-room";
 import { queryClient } from "@/lib/query-client";
 import { createModelSizeQueryOptions } from "@/query-manager/device-models";
 import { formatBytes } from "@/utils/format";
-import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
+import { checkModelMemory, modelFit, type MemoryEstimate } from "@/utils/memory-estimator";
 
 export interface InferenceSettings {
   enableToolCalling: boolean;
@@ -92,6 +95,9 @@ const SLOW_WAKE_NOTICE_MS = 3000;
 
 /** Keyed so a second wake replaces the first notice rather than stacking. */
 const WAKE_TOAST_KEY = 'samwell-wake';
+
+/** Its own key: said alongside the wake notice, not in place of it. */
+const INTERRUPTED_TOAST_KEY = 'samwell-interrupted';
 
 /** Marks the one-time clear-out of the LiteRT runtime's files as done. */
 const LITERT_CLEARED_KEY = 'device.litertCleared';
@@ -452,6 +458,24 @@ async function wake(): Promise<void> {
     return;
   }
 
+  /*
+   * Memory is settled before the runtime is asked for anything. A phone
+   * short of it does not fail the load: Android kills the app, and nothing
+   * here would get to say why. See `wake-room.ts`.
+   */
+  const fit = modelFit(model.sizeBytes);
+  const room = wakeRoom(fit);
+  const interrupted = takeInterruptedRun();
+  if (room === 'refuse') {
+    set({ loadError: tooLargeMessage(entry.name, checkModelMemory(model.sizeBytes).totalBytes) });
+    return;
+  }
+  // The last run of this brain ended with the app gone. He is still woken:
+  // it may have been a busy phone, and the reader asked.
+  if (interrupted === entry.id) {
+    showToast({ key: INTERRUPTED_TOAST_KEY, message: interruptedMessage(fit) });
+  }
+
   set({ isLoading: true, loadError: null });
 
   /*
@@ -489,7 +513,14 @@ async function wake(): Promise<void> {
       return;
     }
 
-    await loadEngine(entry, files);
+    if (room === 'makeRoom') await makeRoomForBrain();
+
+    markRunStarted(entry.id);
+    try {
+      await loadEngine(entry, files);
+    } finally {
+      markRunFinished();
+    }
     clearTimeout(slowWakeNotice);
 
     // Released while it loaded (the app went to the background), or another

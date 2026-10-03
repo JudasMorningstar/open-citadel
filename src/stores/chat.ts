@@ -44,6 +44,7 @@ import {
 } from '@/services/device-llm/conversation';
 import { engineGeneration, getEngine, isEngineLoaded } from '@/services/device-llm/engine';
 import { afterErrand, errandRunning, runErrand } from '@/services/device-llm/errands';
+import { markRunFinished, markRunStarted } from '@/services/device-llm/run-marker';
 import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
@@ -1075,6 +1076,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     try {
       const conversation = deviceConversationFor(activeSession.id, userMsg.id);
+      // Left on disk for the length of the turn: if Android kills the app for
+      // memory partway, the next wake can say that it happened.
+      const brain = getEngine()?.entry.id;
+      if (brain) markRunStarted(brain);
       const turn = await sendDeviceTurn(conversation, content, hooks, userMsg.id);
 
       // A reply that ran out while still reasoning never crossed back, so the
@@ -1111,6 +1116,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       finalContent = get().streamingContent.trim();
     } finally {
       deviceTurn = null;
+      markRunFinished();
     }
 
     if (limitReached) {
