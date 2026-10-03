@@ -14,12 +14,13 @@ import { useCSSVariable } from "uniwind";
 import { ActionButton } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { Card } from "@/components/ui/card";
-import { Touchable } from "@/components/ui/touchable";
 import { ConfirmDeleteSheet } from "@/features/settings/components/confirm-delete-sheet";
 import { MemoryInfoSheet } from "@/features/settings/components/memory-info-sheet";
+import { ModelDownloadMeter } from "@/features/settings/components/model-download-meter";
 import { ModelPickerSheet } from "@/features/settings/components/model-picker-sheet";
 import { TuneSheet } from "@/features/settings/components/tune-sheet";
 import { ModelSizeLine } from "@/features/settings/components/model-size-line";
+import { useModelDownloading } from "@/features/settings/hooks/use-model-download";
 import { useModelSheet } from "@/features/settings/hooks/use-model-sheet";
 import { useModelSize } from "@/features/settings/hooks/use-model-size";
 import { usePulse } from "@/hooks/use-pulse";
@@ -48,8 +49,6 @@ export function OfflineModelCard() {
   const isLoaded = useModelStore((s) => s.isLoaded);
   const modelLoading = useModelStore((s) => s.isLoading);
   const loadError = useModelStore((s) => s.loadError);
-  const downloadProgress = useModelStore((s) => s.downloadProgress);
-  const cancelDownload = useModelStore((s) => s.cancelDownload);
   const downloadModel = useModelStore((s) => s.downloadModel);
   const releaseContext = useModelStore((s) => s.releaseContext);
   const deleteModel = useModelStore((s) => s.deleteModel);
@@ -79,9 +78,9 @@ export function OfflineModelCard() {
   }, [activeModel?.id, activeModel?.isDownloaded, checkMemory]);
 
   const memoryStatus = memoryEstimate?.status ?? "fits";
-  const downloading = activeModel
-    ? downloadProgress[activeModel.id] !== undefined
-    : false;
+  // Only whether, not how far: the meter follows the figure itself, so a
+  // download's reports redraw the bar and not this card and its sheets.
+  const downloading = useModelDownloading(activeModel?.id);
   const busy = modelLoading || isDeleting;
 
   return (
@@ -141,32 +140,8 @@ export function OfflineModelCard() {
           />
         </View>
 
-        {activeModel && downloadProgress[activeModel.id] !== undefined && (
-          <View className="gap-1">
-            {/* Square, like every other meter in the app. */}
-            <View className="h-1 overflow-hidden bg-surface-tertiary">
-              <View
-                className="h-1 bg-primary"
-                style={{
-                  width: `${Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%`,
-                }}
-              />
-            </View>
-            <View className="flex-row items-center justify-between">
-              <ThemedText
-                type="labelSm"
-                color={asColor(mutedForeground)}
-                style={{ fontVariant: ["tabular-nums"] }}
-              >
-                {Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%
-              </ThemedText>
-              <Touchable onPress={() => cancelDownload(activeModel.id)}>
-                <ThemedText type="labelSm" color={asColor(destructive)}>
-                  CANCEL
-                </ThemedText>
-              </Touchable>
-            </View>
-          </View>
+        {activeModel && downloading && (
+          <ModelDownloadMeter id={activeModel.id} />
         )}
 
         {activeModel?.isDownloaded && memoryStatus !== "fits" && (

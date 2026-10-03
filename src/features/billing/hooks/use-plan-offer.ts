@@ -7,6 +7,7 @@ import { PURCHASES_ENABLED } from '@/constants/revenuecat';
 import {
   createOfferingQueryOptions,
   createPlanPreviewQueryOptions,
+  prefetchPlanOffer,
 } from '@/query-manager/billing';
 import type { PlanModel } from '@/stores/subscription';
 
@@ -46,9 +47,11 @@ export type PlanOffer = {
  * The plans on sale and what each one holds, for the plan carousel.
  *
  * Both answers come from TanStack Query and are usually already cached: the
- * account store prefetches them the moment the purchases SDK is configured
- * (`prefetchPlanOffer`), so on most opens this returns `ready` on its first
- * render and no skeleton is drawn at all.
+ * account store prefetches them the moment the purchases SDK is configured,
+ * and Settings asks again when it opens (`useWarmPlanOffer`), so on most
+ * opens this returns `ready` on its first render. The carousel still draws
+ * its skeleton for a frame before the cards (see `PlanCarousel`), but it is
+ * never left waiting on the store.
  *
  * `enabled` waits for the identity to settle, because the account store is
  * what configures the purchases SDK and asking before it throws.
@@ -93,4 +96,22 @@ export function usePlanOffer(enabled: boolean): PlanOffer {
     failed: offering.isError && !offering.isFetching,
     retry,
   };
+}
+
+/**
+ * Ask for the plans before anybody asks to see them.
+ *
+ * For the screen the plan carousel lives on, called while the carousel is
+ * still a tap away. Launch already asks once, but that one attempt can miss:
+ * no network yet, or Play Billing answering empty in its first moments. Asked
+ * again here, the prices are in hand by the time Cloud is chosen. It costs
+ * nothing when they already are: a prefetch of something still fresh does not
+ * go to the store, and one already in flight is joined rather than repeated.
+ *
+ * Nothing subscribes, so the answer landing redraws nothing.
+ */
+export function useWarmPlanOffer(enabled: boolean): void {
+  React.useEffect(() => {
+    if (enabled) prefetchPlanOffer();
+  }, [enabled]);
 }

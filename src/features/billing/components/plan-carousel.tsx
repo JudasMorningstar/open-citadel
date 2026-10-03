@@ -1,31 +1,17 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import type { PurchasesPackage } from "react-native-purchases";
-import Animated, {
-    FadeIn,
-    FadeOut,
-    useAnimatedReaction,
-    useSharedValue,
-} from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
-import {
-    ROW_FADE,
-    useFadeColor,
-    type FadeSurface,
-} from "@/components/scroll-fades";
+import { Handover } from "@/components/navigation/handover";
 import { ThemedText } from "@/components/themed-text";
-import { Carousel, useCarouselState } from "@/components/ui/carousel";
 import { GoldButton } from "@/components/ui/gold-button";
-import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
-import { easing, motion } from "@/constants/theme";
-import { PlanCard } from "@/features/billing/components/plan-card";
 import { PlanCarouselSkeleton } from "@/features/billing/components/plan-carousel-skeleton";
 import { PlanOfferFailed } from "@/features/billing/components/plan-offer-failed";
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
-import { PlanSlide } from "@/features/billing/components/plan-slide";
+import { PlanRun } from "@/features/billing/components/plan-run";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
@@ -92,7 +78,8 @@ export type PlanCarouselProps = {
   /**
    * Everything the cards say is in hand. Until then the run is its skeleton,
    * so the cards arrive whole rather than filling in piece by piece. See
-   * `usePlanOffer`.
+   * `usePlanOffer`. The skeleton is also what is drawn first when this is
+   * true from the start: see the note on `PlanCarousel`.
    */
   ready?: boolean;
   /** The prices could not be had. The run gives way to a way to ask again. */
@@ -111,7 +98,7 @@ export type PlanCarouselProps = {
   showAction?: boolean;
   actionVerb?: "CHOOSE" | "UPGRADE TO" | "DOWNGRADE TO";
   /** The ground the edge fades blend into. Sheets are `popover`. */
-  surface?: FadeSurface;
+  surface?: "background" | "popover";
   /**
    * The gutter of the page the run sits in. The track reaches past it to the
    * screen edge, so the fade starts at the edge rather than a gutter inside
@@ -121,67 +108,20 @@ export type PlanCarouselProps = {
 };
 
 /**
- * The scroll fades, driven by the run itself.
+ * The plans on sale: the run of cards, the one commit under it, and the way
+ * to restore.
  *
- * The carousel is not a ScrollView, so `ScrollFade`'s own scroll handler has
- * nothing to listen to; the `distance` path hands over the two edge
- * distances as shared values instead, derived from the same `progress` the
- * slides are animated from - one value, one truth, UI thread end to end.
- * Rubber-banding past either end drives `progress` out of range, which
- * clamps to no fade at that edge: there is genuinely nothing behind it.
+ * The run itself is `PlanRun`, and it is the one expensive thing here: a
+ * gesture, a track, three animated slides and their edge fades. Mounted in
+ * the same pass as everything around it, it held up the frame that answers
+ * the tap: choosing Cloud in Settings did nothing visible until the whole run
+ * had been built, and with the prices already cached there was no skeleton in
+ * between to draw first. So the run sits in a `Handover`: the heading, the
+ * skeleton and the button are drawn at once, the cards mount on the frame
+ * after and dissolve in over the skeleton, whose edges are where theirs are.
  *
- * Depth is `ROW_FADE`, the shelf depth, because the ask here is consistency
- * with every other edge in the app - the cards are wider than book covers,
- * but a second depth number would be a second decision.
- */
-function CarouselEdgeFade({
-  children,
-  initialIndex,
-  surface,
-}: {
-  children: React.ReactNode;
-  initialIndex: number;
-  surface: FadeSurface;
-}) {
-  const { progress, count } = useCarouselState();
-  const color = useFadeColor(surface);
-  // Seeded for the run's resting index, so the first frame is already
-  // correct and the reaction only ever maintains it.
-  const start = useSharedValue(initialIndex * CARD_WIDTH);
-  const end = useSharedValue((count - 1 - initialIndex) * CARD_WIDTH);
-
-  useAnimatedReaction(
-    () => progress.get(),
-    (p) => {
-      start.set(p * CARD_WIDTH);
-      end.set(Math.max(0, count - 1 - p) * CARD_WIDTH);
-    },
-  );
-
-  return (
-    <ScrollFade
-      orientation="horizontal"
-      edges="both"
-      size={ROW_FADE}
-      color={color}
-      distance={{ start, end }}
-    >
-      {children}
-    </ScrollFade>
-  );
-}
-
-/**
- * The three plans, as a run of cards.
- *
- * `variant="default"` on purpose: it is the plain track, and the docs call it
- * the honest choice for content that is read rather than admired. Three
- * prices are read. `interactive` and `coverflow` rotate their slides, which
- * tilts a price and a button off-axis - a purchase decision is not a shelf of
- * album art.
- *
- * The edge fades are `CarouselEdgeFade` above. They blend into `surface`
- * and start at the screen edge only when `bleed` cancels the page gutter.
+ * The edge fades blend into `surface` and start at the screen edge only when
+ * `bleed` cancels the page gutter.
  */
 export function PlanCarousel({
   packages,
@@ -247,40 +187,39 @@ export function PlanCarousel({
     [packages, onChoose],
   );
 
-  const priceFor = React.useCallback(
-    (plan: CreditPlan): string | null => {
-      /*
-       * The store's own localised string, or nothing at all.
-       *
-       * It used to fall back to the plan's own `priceUsd` while the offering
-       * loaded, which drew a real-looking price that nobody was being
-       * charged: wrong currency outside the US, and wrong everywhere the
-       * moment a store price changes, since that constant is only what the
-       * product was set up as. The card shows a waiting shimmer instead, and
-       * the CHOOSE button is already disabled until the packages arrive, so
-       * no purchase can start from a price that was never quoted.
-       *
-       * The string loses its country qualifier and its exactly-zero cents:
-       * "$20", not "US$20.00" - see `formatStorePrice`.
-       */
-      const priceString = packages[plan.id]?.product.priceString;
-      return priceString ? formatStorePrice(priceString) : null;
-    },
-    [packages],
-  );
-
   /*
-   * Whether this run ever waited. Only then do the cards dissolve in over the
-   * skeleton; a run whose answers were already cached (the usual case, see
-   * `prefetchPlanOffer`) simply draws, with no entrance replayed on every
-   * visit to the panel.
+   * The store's own localised string for each plan, or nothing at all.
+   *
+   * It used to fall back to the plan's own `priceUsd` while the offering
+   * loaded, which drew a real-looking price that nobody was being charged:
+   * wrong currency outside the US, and wrong everywhere the moment a store
+   * price changes, since that constant is only what the product was set up
+   * as. A card with no price shows a waiting shimmer instead, and the CHOOSE
+   * button is already disabled until the packages arrive, so no purchase can
+   * start from a price that was never quoted.
+   *
+   * The string loses its country qualifier and its exactly-zero cents: "$20",
+   * not "US$20.00" - see `formatStorePrice`.
    */
-  const [waited] = React.useState(!ready);
+  const prices = React.useMemo(() => {
+    const out: Partial<Record<PlanId, string>> = {};
+    for (const plan of plans) {
+      const priceString = packages[plan.id]?.product.priceString;
+      if (priceString) out[plan.id] = formatStorePrice(priceString);
+    }
+    return out;
+  }, [packages, plans]);
 
   const bleedStyle = React.useMemo(
     () => ({ marginHorizontal: -bleed }),
     [bleed],
   );
+  const columnStyle = React.useMemo(
+    () => ({ marginHorizontal: bleed }),
+    [bleed],
+  );
+  // The prices could not be had and are not being asked for again.
+  const offerFailed = failed && !ready;
 
   const nothingToBuy = Object.keys(packages).length === 0;
   // The run is bounded to three, but an index arriving from a gesture is not
@@ -291,51 +230,38 @@ export function PlanCarousel({
   return (
     <View className="gap-4">
       <View style={bleedStyle}>
-        {ready ? (
-          <Animated.View
-            entering={
-              waited ? FadeIn.duration(motion.slow).easing(easing) : undefined
-            }
-          >
-            <Carousel
-              variant="default"
-              align="center"
-              itemSize={CARD_WIDTH}
-              defaultIndex={initialIndex}
-              onIndexChange={handleIndexChange}
-            >
-              <CarouselEdgeFade initialIndex={initialIndex} surface={surface}>
-                <Carousel.Content style={contentStyle}>
-                  {plans.map((plan, index) => (
-                    <PlanSlide key={plan.id} index={index}>
-                      <PlanCard
-                        plan={plan}
-                        modelCount={modelCounts[plan.id] ?? 0}
-                        priceLabel={priceFor(plan)}
-                        selected={index === active}
-                        onInfo={() => setInfoPlanId(plan.id)}
-                      />
-                    </PlanSlide>
-                  ))}
-                </Carousel.Content>
-              </CarouselEdgeFade>
-              <Carousel.Dots className="mt-4 self-center" />
-            </Carousel>
-          </Animated.View>
-        ) : failed ? (
+        {offerFailed ? (
           // In the column rather than bled to the screen edges.
-          <View style={{ marginHorizontal: bleed }}>
+          <View style={columnStyle}>
             <PlanOfferFailed onRetry={onRetry} />
           </View>
         ) : (
-          /* Out quicker than the cards come in, so for a moment the two
-             overlap and the outline dissolves into the real thing. */
-          <Animated.View exiting={FadeOut.duration(motion.base).easing(easing)}>
-            <PlanCarouselSkeleton
+          <Handover
+            fill={false}
+            ready={ready}
+            surface={surface}
+            skeleton={
+              <PlanCarouselSkeleton
+                cardWidth={CARD_WIDTH}
+                height={contentStyle.height}
+                count={plans.length}
+                resting={initialIndex}
+              />
+            }
+          >
+            <PlanRun
+              plans={plans}
+              initialIndex={initialIndex}
+              active={active}
               cardWidth={CARD_WIDTH}
-              height={contentStyle.height}
+              contentStyle={contentStyle}
+              prices={prices}
+              modelCounts={modelCounts}
+              surface={surface}
+              onIndexChange={handleIndexChange}
+              onInfo={setInfoPlanId}
             />
-          </Animated.View>
+          </Handover>
         )}
       </View>
 

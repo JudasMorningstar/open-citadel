@@ -30,9 +30,9 @@ function PlanCardBones() {
 }
 
 /**
- * The plan run before its answers are in: three card outlines where the three
- * cards will be, the middle one resting and its neighbours peeking, dimmed,
- * exactly as the run draws them, then the dots.
+ * The plan run before it is drawn: a card outline where each card will be,
+ * the resting one in place and its neighbours peeking, dimmed, exactly as the
+ * run draws them, then the dots.
  *
  * The same geometry is the point. When the cards arrive they dissolve in over
  * this without a single edge moving, so the eye reads one surface filling in
@@ -42,32 +42,47 @@ function PlanCardBones() {
 export function PlanCarouselSkeleton({
   cardWidth,
   height,
+  count = 3,
+  resting = 1,
 }: {
   cardWidth: number;
   /** The run's content height, which the carousel scales with font size. */
   height: number;
+  /** How many cards the run will hold. A plan change offers fewer than three. */
+  count?: number;
+  /** The card the run opens on, which sits in the middle of the screen. */
+  resting?: number;
 }) {
+  const cards = React.useMemo(() => Array.from({ length: count }, (_, i) => i), [count]);
+  // The row is centred as a whole; shifted so the resting card is the one in
+  // the middle, as the run's own centre alignment puts it.
+  const row = React.useMemo<ViewStyle>(
+    () => ({ transform: [{ translateX: ((count - 1) / 2 - resting) * cardWidth }] }),
+    [cardWidth, count, resting],
+  );
   const slide = React.useMemo<ViewStyle>(() => ({ width: cardWidth, height }), [cardWidth, height]);
 
   return (
     <SkeletonGroup label="Loading plans">
       {/* Wider than the screen and centred, so the neighbours overflow both
           edges the way the real run's do. */}
-      <View className="flex-row justify-center overflow-hidden">
-        {[0, 1, 2].map((index) => (
-          <View key={index} className="px-2" style={slide}>
-            <View className="h-full w-full" style={index === 1 ? undefined : AWAY}>
-              <PlanCardBones />
+      <View className="overflow-hidden">
+        <View className="flex-row justify-center" style={row}>
+          {cards.map((index) => (
+            <View key={index} className="px-2" style={slide}>
+              <View className="h-full w-full" style={index === resting ? undefined : AWAY}>
+                <PlanCardBones />
+              </View>
             </View>
-          </View>
-        ))}
+          ))}
+        </View>
       </View>
-      {/* The dots, as `Carousel.Dots` spaces them: 24 boxes, the middle one
+      {/* The dots, as `Carousel.Dots` spaces them: 24 boxes, the resting one
           active. */}
       <View className="mt-4 flex-row items-center gap-1 self-center">
-        {[0, 1, 2].map((dot) => (
+        {cards.map((dot) => (
           <View key={dot} className="h-6 w-6 items-center justify-center">
-            <View className={dot === 1 ? 'h-1 w-4 bg-skeleton' : 'h-1 w-1 bg-skeleton'} />
+            <View className={dot === resting ? 'h-1 w-4 bg-skeleton' : 'h-1 w-1 bg-skeleton'} />
           </View>
         ))}
       </View>
