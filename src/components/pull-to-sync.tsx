@@ -111,7 +111,7 @@ export function PullToSync({
         style={[pull.gapStyle, GAP_BOX]}
         className="inset-x-0 items-center justify-center"
       >
-        {renderIndicator(pull.label)}
+        {pull.showing ? renderIndicator(pull.label) : null}
       </Animated.View>
       {pull.usesNativeRefresh ? (
         scrollable

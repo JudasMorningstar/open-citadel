@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  SLOW_CHUNK_LIMIT,
-  UNMEASURED_CHUNK_LIMIT,
+  KOKORO_CHUNKS,
   chunkLimitFor,
   createPaceMeter,
   pacedSynthesis,
@@ -28,12 +27,14 @@ const chunk = (duration: number, chunkIndex = 0, totalChunks = 1): Chunk => ({
 function fakePipeline(scripts: ({ chunks: [duration: number, workMs: number][] } | { fails: string })[]) {
   const clock = { ms: 0 };
   const limits: (number | undefined)[] = [];
+  const texts: string[] = [];
   const state = { busy: false };
   const pipeline = {
-    async *synthesize(_text: string, options: { voice: string; maxChunkLength?: number }) {
+    async *synthesize(text: string, options: { voice: string; maxChunkLength?: number }) {
       if (state.busy) throw new Error('Synthesis is already in progress.');
       state.busy = true;
       limits.push(options.maxChunkLength);
+      texts.push(text);
       const script = scripts.shift();
       if (!script) throw new Error('No script left.');
       if ('fails' in script) throw new Error(script.fails);
@@ -47,7 +48,7 @@ function fakePipeline(scripts: ({ chunks: [duration: number, workMs: number][] }
       state.busy = false;
     },
   };
-  return { pipeline, limits, state, now: () => clock.ms, clock };
+  return { pipeline, limits, texts, state, now: () => clock.ms, clock };
 }
 
 async function drain<T>(source: AsyncGenerator<T>): Promise<T[]> {
@@ -58,17 +59,17 @@ async function drain<T>(source: AsyncGenerator<T>): Promise<T[]> {
 
 describe('chunkLimitFor', () => {
   it('starts short before anything is measured', () => {
-    expect(chunkLimitFor(null)).toBe(UNMEASURED_CHUNK_LIMIT);
+    expect(chunkLimitFor(null, KOKORO_CHUNKS)).toBe(KOKORO_CHUNKS.unmeasured);
   });
 
   it('leaves the cut to the pipeline on a phone that keeps up', () => {
-    expect(chunkLimitFor(0.3)).toBeUndefined();
-    expect(chunkLimitFor(0.9)).toBeUndefined();
+    expect(chunkLimitFor(0.3, KOKORO_CHUNKS)).toBeUndefined();
+    expect(chunkLimitFor(0.9, KOKORO_CHUNKS)).toBeUndefined();
   });
 
   it('cuts short on a phone that cannot keep up, real time included', () => {
-    expect(chunkLimitFor(1)).toBe(SLOW_CHUNK_LIMIT);
-    expect(chunkLimitFor(1.5)).toBe(SLOW_CHUNK_LIMIT);
+    expect(chunkLimitFor(1, KOKORO_CHUNKS)).toBe(KOKORO_CHUNKS.slow);
+    expect(chunkLimitFor(1.5, KOKORO_CHUNKS)).toBe(KOKORO_CHUNKS.slow);
   });
 });
 
@@ -110,7 +111,7 @@ describe('pacedSynthesis', () => {
     );
 
     expect(chunks.map((c) => c.duration)).toEqual([2, 4]);
-    expect(limits).toEqual([UNMEASURED_CHUNK_LIMIT]);
+    expect(limits).toEqual([KOKORO_CHUNKS.unmeasured]);
     expect(meter.pace()).toBeCloseTo(1.5);
     expect(timing).toEqual({ chunks: 2, firstAudioSeconds: 3, audioSeconds: 6, workSeconds: 9 });
   });
@@ -145,7 +146,7 @@ describe('pacedSynthesis', () => {
     await drain(pacedSynthesis(first.pipeline, 'text', { voice: 'af_heart' }, slow, { now: first.now }));
     await drain(pacedSynthesis(second.pipeline, 'text', { voice: 'af_heart' }, fast, { now: second.now }));
 
-    expect(first.limits).toEqual([SLOW_CHUNK_LIMIT]);
+    expect(first.limits).toEqual([KOKORO_CHUNKS.slow]);
     expect(second.limits).toEqual([undefined]);
   });
 
@@ -155,7 +156,7 @@ describe('pacedSynthesis', () => {
     const chunks = await drain(pacedSynthesis(pipeline, 'text', { voice: 'af_heart' }, createPaceMeter(), { now }));
 
     expect(chunks).toHaveLength(1);
-    expect(limits).toEqual([UNMEASURED_CHUNK_LIMIT, undefined]);
+    expect(limits).toEqual([KOKORO_CHUNKS.unmeasured, undefined]);
   });
 
   it('does not say it again once a chunk has been sent', async () => {
@@ -180,5 +181,34 @@ describe('pacedSynthesis', () => {
     expect(state.busy).toBe(false);
 
     await expect(drain(pacedSynthesis(pipeline, 'next', { voice: 'af_heart' }, meter, { now }))).resolves.toHaveLength(1);
+  });
+});
+
+describe('pacedSynthesis in pieces', () => {
+  const parts = () => [
+    { text: 'first,', limit: undefined },
+    { text: 'and the rest', limit: 50 },
+  ];
+
+  it('makes each piece in turn and numbers the chunks across them', async () => {
+    const { pipeline, limits, texts, now } = fakePipeline([{ chunks: [[2, 1000]] }, { chunks: [[3, 1000], [3, 1000]] }]);
+
+    const chunks = await drain(pacedSynthesis(pipeline, 'first, and the rest', { voice: 'F1' }, createPaceMeter(), { now, parts }));
+
+    expect(texts).toEqual(['first,', 'and the rest']);
+    expect(limits).toEqual([undefined, 50]);
+    expect(chunks.map((c) => c.chunkIndex)).toEqual([0, 1, 2]);
+    // Only the very last chunk may read as the last: the first piece's only
+    // chunk is the last of its own piece, not of the utterance.
+    expect(chunks.map((c) => c.chunkIndex === c.totalChunks - 1)).toEqual([false, false, true]);
+  });
+
+  it('says the utterance whole when its first piece cannot be made', async () => {
+    const { pipeline, texts, now } = fakePipeline([{ fails: 'cannot cut' }, { chunks: [[5, 1000]] }]);
+
+    const chunks = await drain(pacedSynthesis(pipeline, 'first, and the rest', { voice: 'F1' }, createPaceMeter(), { now, parts }));
+
+    expect(texts).toEqual(['first,', 'first, and the rest']);
+    expect(chunks).toHaveLength(1);
   });
 });

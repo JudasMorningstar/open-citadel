@@ -75,7 +75,7 @@ export function PodcastsPage({ bottomChrome, settleMs }: PodcastsPageProps) {
           onPlay={episodes.play}
         />
       ) : (
-        <PodcastsHomeSkeleton />
+        <PodcastsHomeSkeleton hero={page.leadsWithContinue} />
       )}
       {/* The side's one creative action, the same floating button the books
           side and the Timeline give theirs: find something new to follow. */}

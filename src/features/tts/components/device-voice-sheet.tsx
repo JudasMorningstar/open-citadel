@@ -56,27 +56,29 @@ export function DeviceVoiceSheet({
         <ThemedText type="headlineSm">Select voice</ThemedText>
       </View>
 
-      {/* Two waits, one placeholder: `Sheet.Deferred` covers the frames while
-          the list mounts and the same skeleton covers the voice query, so the
-          sheet goes skeleton to voices with nothing in between. */}
-      <Sheet.Deferred skeleton={<VoiceListSkeleton />}>
-        {loading ? (
-          <VoiceListSkeleton />
-        ) : (
-          <PageFade edges="both" surface="popover">
-            <Sheet.ScrollView>
-              <DeviceVoiceRows
-                rows={rows}
-                selected={selected}
-                previewing={previewing}
-                onSelect={onSelect}
-                onPreview={onPreview}
-                onToggleLanguage={onToggleLanguage}
-              />
-            </Sheet.ScrollView>
-          </PageFade>
-        )}
-      </Sheet.Deferred>
+      {/* A placeholder only for a real wait: the phone has not answered yet.
+          It is asked ahead (when Settings opens), so the usual case is a list
+          already in hand, and that is drawn with the sheet as it rises: its
+          first screenful at once, the rest in steps after the sheet lands
+          (`DeviceVoiceRows`). It used to rise onto the placeholder every time
+          and swap to the list after, which read as the voices loading again
+          on each open. */}
+      {loading ? (
+        <VoiceListSkeleton />
+      ) : (
+        <PageFade edges="both" surface="popover">
+          <Sheet.ScrollView>
+            <DeviceVoiceRows
+              rows={rows}
+              selected={selected}
+              previewing={previewing}
+              onSelect={onSelect}
+              onPreview={onPreview}
+              onToggleLanguage={onToggleLanguage}
+            />
+          </Sheet.ScrollView>
+        </PageFade>
+      )}
     </Sheet>
   );
 }

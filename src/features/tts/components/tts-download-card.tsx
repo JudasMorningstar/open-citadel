@@ -7,23 +7,20 @@ import { ActionButton } from '@/components/action-button';
 import { DownloadMeter } from '@/components/download-meter';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
-import { AI_VOICES_DOWNLOAD_SIZE } from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
 
 export interface TtsDownloadCardProps {
+  /** What the download weighs, as it reads: "350 MB". */
+  size: string;
   /** 0-1 while downloading, null when idle. */
   progress: number | null;
-  error: string | null;
   onDownload: () => void;
   onCancel: () => void;
 }
 
-/** The AI voice pack's download prompt, and its progress once started. */
-export function TtsDownloadCard({ progress, error, onDownload, onCancel }: TtsDownloadCardProps) {
-  const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
-  ]);
+/** An AI voice engine's download prompt, and its progress once started. */
+export function TtsDownloadCard({ size, progress, onDownload, onCancel }: TtsDownloadCardProps) {
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
 
   return (
     <Card className="gap-2 p-3">
@@ -31,13 +28,8 @@ export function TtsDownloadCard({ progress, error, onDownload, onCancel }: TtsDo
         <View className="flex-1 gap-1">
           <ThemedText type="bodyMd">Download the voices</ThemedText>
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            {`About ${AI_VOICES_DOWNLOAD_SIZE}, once. Works offline after.`}
+            {`About ${size}, once. Works offline after.`}
           </ThemedText>
-          {error && (
-            <ThemedText type="labelSm" color={asColor(destructive)}>
-              {error}
-            </ThemedText>
-          )}
         </View>
         {progress === null && (
           <ActionButton

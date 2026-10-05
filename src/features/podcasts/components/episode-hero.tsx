@@ -93,7 +93,7 @@ export function EpisodeHero({
             glyph: <DownloadRing episodeId={episode.id} size={TILE_ICON} />,
           }
         : { key: 'download', icon: Download, label: 'Download', onPress: onDownload },
-    { key: 'favorite', icon: Star, label: 'Favorite', onPress: onToggleFavorite, active: episode.isFavorite === 1 },
+    { key: 'favorite', icon: Star, label: 'Favorite', onPress: onToggleFavorite, active: episode.isFavorite === 1, filled: true },
     episode.playState === 'played'
       ? { key: 'played', icon: RotateCcw, label: 'Played', onPress: onTogglePlayed, active: true }
       : { key: 'played', icon: CircleCheckBig, label: 'Played', onPress: onTogglePlayed },

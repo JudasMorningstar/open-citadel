@@ -3,8 +3,10 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
+import { useSheetSettled } from '@/components/ui/sheet';
 import { DeviceLanguageRow } from '@/features/tts/components/device-language-row';
 import { DeviceVoiceItem } from '@/features/tts/components/device-voice-item';
+import { useStagedVoiceRows } from '@/features/tts/hooks/use-staged-voice-rows';
 import { asColor } from '@/utils/colors';
 import type { DeviceVoice, DeviceVoiceRow } from '@/utils/device-voices';
 
@@ -21,7 +23,7 @@ export interface DeviceVoiceRowsProps {
 /**
  * The phone voice list's rows: the default, then each language with its
  * voices under it while it is open. Only open languages have their voices
- * drawn, which is what keeps this short enough to mount in one go.
+ * drawn, and those a few at a time (`useStagedVoiceRows`).
  */
 export function DeviceVoiceRows({
   rows,
@@ -31,6 +33,16 @@ export function DeviceVoiceRows({
   onPreview,
   onToggleLanguage,
 }: DeviceVoiceRowsProps) {
+  // The first screenful rises with the sheet; the rest wait for it to land.
+  const { drawn, stage } = useStagedVoiceRows(rows, !useSheetSettled());
+  // Stable, so a step or a toggle redraws the one language row that changed.
+  const toggleLanguage = React.useCallback(
+    (language: string, wasOpen: boolean) => {
+      if (!wasOpen) stage(language);
+      onToggleLanguage(language);
+    },
+    [stage, onToggleLanguage],
+  );
   const [primaryVar, mutedVar] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
   const primary = asColor(primaryVar);
   const mutedForeground = asColor(mutedVar);
@@ -53,7 +65,7 @@ export function DeviceVoiceRows({
             count={row.count}
             open={row.open}
             mutedForeground={mutedForeground}
-            onToggle={onToggleLanguage}
+            onToggle={toggleLanguage}
           />
         );
       case 'voice':
@@ -72,5 +84,5 @@ export function DeviceVoiceRows({
     }
   };
 
-  return <>{rows.map(renderRow)}</>;
+  return <>{drawn.map(renderRow)}</>;
 }

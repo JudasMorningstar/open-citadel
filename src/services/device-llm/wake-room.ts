@@ -35,10 +35,35 @@ export function tooLargeMessage(name: string, totalBytes: number): string {
 }
 
 /**
- * What to say when the last attempt ended with the app gone.
+ * Why a brain the phone has already ended the app over is not woken again.
+ * `heldBytes` is the most the app was seen holding in that run, when known.
  *
- * Android gives no reason to the app it kills, so this cannot know it was
- * memory. On a phone where the brain is a tight fit it nearly always is.
+ * `fits` is whether the brain should fit this phone going by its size. One
+ * that should was closed over what else the phone was holding at the time
+ * (seen on a Galaxy A33: a 1.2 GB brain closed minutes after a 4 GB one had
+ * filled the phone's memory), and telling its reader to choose a smaller
+ * brain would be advice about the wrong thing.
+ */
+export function closedByPhoneMessage(name: string, heldBytes: number | null, fits = false): string {
+  const held = heldBytes ? ` It was using ${(heldBytes / GB).toFixed(1)} GB.` : '';
+  const advice = fits ? 'Close other apps and try again.' : 'Choose a smaller brain.';
+  return `Your phone closed the app the last time ${name} was running, to get its memory back.${held} ${advice}`;
+}
+
+/** The same, short enough for a toast, pointing at where the rest is said. */
+export function closedByPhoneNotice(name: string): string {
+  return `Your phone closed the app over ${name} last time. Tap CLOSED BY PHONE to see why.`;
+}
+
+/** What to say when the last attempt ended in a fault of the app's own, which no smaller brain would fix. */
+export function faultMessage(what: string): string {
+  return `Samwell stopped last time because of a fault in the app (${what}), not your phone's memory.`;
+}
+
+/**
+ * What to say when the last attempt ended with the app gone and there is no
+ * record of why (iOS, an older Android). This cannot know it was memory. On a
+ * phone where the brain is a tight fit it nearly always is.
  */
 export function interruptedMessage(fit: MemoryStatus): string {
   return fit === 'tight'

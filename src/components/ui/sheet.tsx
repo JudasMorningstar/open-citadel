@@ -139,6 +139,17 @@ const SheetBottomInsetContext = React.createContext(0);
  */
 const SheetSettledContext = React.createContext(false);
 
+/**
+ * LOCAL EDIT (Open Citadel): the settled flag, for a sheet body that draws
+ * its first screenful as the sheet rises and wants to hold the rest back
+ * until the rise is over (the phone voice list). `Sheet.Deferred` holds a
+ * whole body behind a placeholder; this is for a body with no placeholder.
+ * Re-apply after any `panelui-cli update sheet`.
+ */
+export function useSheetSettled(): boolean {
+  return React.useContext(SheetSettledContext);
+}
+
 function AttachedSheetFooter({
   animatedFooterPosition,
   bottomInset,

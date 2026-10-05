@@ -53,10 +53,10 @@ import {
   isValidElement,
   useCallback,
   useContext,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
+  useLayoutEffect,
   useState,
   type ReactNode,
 } from 'react';
@@ -390,14 +390,17 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
   });
 
   const scrollTo = useCallback(
-    (target: number, velocity = 0) => {
+    (target: number, velocity = 0, moving = false) => {
       if (count <= 0) return;
       const settled = normalizeCarouselIndex(target, count, loop);
 
       // A controlled request belongs to its owner. The finger may move the run,
       // but after release it returns to the current prop until the owner accepts
       // the request by changing that prop.
-      animateTo(isControlled ? index : settled, velocity);
+      // `moving`: the release already started this spring on the UI thread
+      // (see the LOCAL EDIT in `onEnd`), so only the record is brought up to date.
+      if (moving) animatedTarget.current = settled;
+      else animateTo(isControlled ? index : settled, velocity);
       setIndex(settled);
     },
     [animateTo, count, index, isControlled, loop, setIndex]
@@ -423,9 +426,9 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
   });
 
   const settle = useCallback(
-    (target: number, velocity = 0) => {
+    (target: number, velocity = 0, moving = false) => {
       setTouched(true);
-      scrollTo(target, velocity);
+      scrollTo(target, velocity, moving);
     },
     [scrollTo]
   );
@@ -477,12 +480,37 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
           const step = past || flicked ? (moved < 0 ? 1 : -1) : 0;
 
           // Negated and scaled into progress units: see `animateTo`.
-          runOnJS(settle)(from + step, -velocity / itemSize);
+          const thrown = -velocity / itemSize;
+
+          /*
+           * LOCAL EDIT (Open Citadel): the settle starts here, on the UI
+           * thread, in the frame the finger lifts.
+           *
+           * The registry hands the release to the JS thread and starts the
+           * spring from there. The JS thread is where React is, so the run sat
+           * still at the release point for as long as JS was busy, then began
+           * its spring in the same moment `onIndexChange` re-rendered whatever
+           * owns the run: a pause, then a stutter (measured on a Galaxy A33,
+           * a swipe through the voice run was 17% janky at a 22ms median).
+           * JS is still told, to record the index, but the motion no longer
+           * waits for it. Only for the plain case: a looped run needs the
+           * shortest-way-round and a controlled one answers to its owner,
+           * both of which `scrollTo` decides.
+           *
+           * Re-apply after any `panelui-cli update carousel`.
+           */
+          if (!loop && !isControlled && !reducedMotion) {
+            const settled = normalizeCarouselIndex(from + step, count, false);
+            progress.set(withSpring(settled, thrown === 0 ? SPRING : { ...SPRING, velocity: thrown }));
+            runOnJS(settle)(settled, thrown, true);
+            return;
+          }
+          runOnJS(settle)(from + step, thrown);
         })
         .onFinalize(() => {
           engaged.value = withTiming(0, { duration: 220 });
         }),
-    [scrollEnabled, count, itemSize, axis, engaged, progress, dragFrom, loop, settle]
+    [scrollEnabled, count, itemSize, axis, engaged, progress, dragFrom, loop, settle, isControlled, reducedMotion]
   );
 
   const onLayout = (event: LayoutChangeEvent) => {
@@ -555,7 +583,19 @@ function CarouselContent({ className, children, ...props }: CarouselContentProps
   const horizontal = orientation === 'horizontal';
   const centred = align === 'center' || variant === 'coverflow' || variant === 'stack';
 
-  useEffect(() => {
+  /*
+   * LOCAL EDIT (Open Citadel): a layout effect, so the count is known before
+   * the first paint.
+   *
+   * As a plain effect the run was painted once believing it had no slides:
+   * `Carousel.Dots` draws nothing for a run of one or fewer, so the dots row
+   * arrived a frame late and pushed everything under the run down by its
+   * height. Seen as the page jumping each time the plans or the voices
+   * appeared.
+   *
+   * Re-apply after any `panelui-cli update carousel`.
+   */
+  useLayoutEffect(() => {
     setCount(slides.length);
   }, [setCount, slides.length]);
 

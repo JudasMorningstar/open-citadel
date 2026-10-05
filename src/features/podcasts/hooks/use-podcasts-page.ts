@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { useContinueHint } from '@/features/library/hooks/use-continue-hint';
 import { useAntennaPodImport } from '@/features/podcasts/hooks/use-antennapod-import';
 import { useEpisodeActions } from '@/features/podcasts/hooks/use-episode-actions';
 import { openPodcastExplore } from '@/features/podcasts/hooks/open-podcast-page';
@@ -27,6 +28,7 @@ export function usePodcastsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const home = usePodcastHome();
+  const leadsWithContinue = useContinueHint('podcasts', home.loaded ? home.shelves.continue.length > 0 : undefined);
   const importer = useAntennaPodImport();
   const episodes = useEpisodeActions();
   // A pull checks every show now, not only those past the interval. A mutation,
@@ -64,6 +66,7 @@ export function usePodcastsPage() {
   return {
     view,
     home,
+    leadsWithContinue,
     importer,
     episodes,
     pulling: pull.isPending,

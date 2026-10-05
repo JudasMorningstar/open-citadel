@@ -20,11 +20,13 @@ import { ModelDownloadMeter } from "@/features/settings/components/model-downloa
 import { ModelPickerSheet } from "@/features/settings/components/model-picker-sheet";
 import { TuneSheet } from "@/features/settings/components/tune-sheet";
 import { ModelSizeLine } from "@/features/settings/components/model-size-line";
+import { useBrainErrorToast } from "@/features/settings/hooks/use-brain-error-toast";
 import { useModelDownloading } from "@/features/settings/hooks/use-model-download";
 import { useModelSheet } from "@/features/settings/hooks/use-model-sheet";
 import { useModelSize } from "@/features/settings/hooks/use-model-size";
 import { usePulse } from "@/hooks/use-pulse";
 import { useModelStore } from "@/stores/model";
+import { closedByPhoneMessage } from "@/services/device-llm/wake-room";
 import { asColor } from "@/utils/colors";
 
 /**
@@ -48,12 +50,13 @@ export function OfflineModelCard() {
   const activeModelId = useModelStore((s) => s.activeModelId);
   const isLoaded = useModelStore((s) => s.isLoaded);
   const modelLoading = useModelStore((s) => s.isLoading);
-  const loadError = useModelStore((s) => s.loadError);
   const downloadModel = useModelStore((s) => s.downloadModel);
   const releaseContext = useModelStore((s) => s.releaseContext);
   const deleteModel = useModelStore((s) => s.deleteModel);
   const memoryEstimate = useModelStore((s) => s.memoryEstimate);
   const checkMemory = useModelStore((s) => s.checkMemory);
+  const memoryVerdict = useModelStore((s) => (s.activeModelId ? s.memoryVerdicts[s.activeModelId] : undefined));
+  const liftMemoryVerdict = useModelStore((s) => s.liftMemoryVerdict);
   const activeModel = models.find((m) => m.id === activeModelId);
   // Asked for while the card is up, in case launch could not measure it.
   const size = useModelSize(activeModel);
@@ -66,6 +69,11 @@ export function OfflineModelCard() {
   const [tuneVisible, setTuneVisible] = React.useState(false);
   const [memoryVisible, setMemoryVisible] = React.useState(false);
   const modelSheet = useModelSheet();
+  // Stable, so the picker's memoized rows are not redrawn with the card.
+  const deleteSwiped = React.useCallback((id: string) => void deleteModel(id), [deleteModel]);
+  // A failure is said in a toast: a red line in the card stayed long after
+  // the moment had passed, repeating what the badge under it already says.
+  useBrainErrorToast();
 
   // The power action's heartbeat: pulses only while the engine is loading.
   const powerPulseStyle = usePulse(modelLoading);
@@ -78,6 +86,18 @@ export function OfflineModelCard() {
   }, [activeModel?.id, activeModel?.isDownloaded, checkMemory]);
 
   const memoryStatus = memoryEstimate?.status ?? "fits";
+  // The phone has already ended the app over this brain: said as plainly as
+  // "too large", and with what happened rather than an estimate.
+  const closedMessage =
+    memoryVerdict && activeModel
+      ? closedByPhoneMessage(activeModel.name, memoryVerdict.heldBytes, memoryStatus === "fits")
+      : null;
+  const memoryWarns = memoryStatus === "wontRun" || closedMessage !== null;
+  const memoryLabel = closedMessage ? "CLOSED BY PHONE" : memoryStatus === "wontRun" ? "TOO LARGE" : "TIGHT";
+  const tryAgain = () => {
+    if (activeModel) liftMemoryVerdict(activeModel.id);
+    setMemoryVisible(false);
+  };
   // Only whether, not how far: the meter follows the figure itself, so a
   // download's reports redraw the bar and not this card and its sheets.
   const downloading = useModelDownloading(activeModel?.id);
@@ -119,15 +139,6 @@ export function OfflineModelCard() {
                 Pick a brain to run Samwell on this device.
               </ThemedText>
             )}
-            {loadError && (
-              <ThemedText
-                type="labelSm"
-                color={asColor(destructive)}
-                numberOfLines={2}
-              >
-                {loadError}
-              </ThemedText>
-            )}
           </View>
           <ActionButton
             icon={List}
@@ -144,19 +155,16 @@ export function OfflineModelCard() {
           <ModelDownloadMeter id={activeModel.id} />
         )}
 
-        {activeModel?.isDownloaded && memoryStatus !== "fits" && (
+        {activeModel?.isDownloaded && (memoryStatus !== "fits" || closedMessage) && (
           <ActionButton
             className="self-start"
             icon={MemoryStick}
-            label={memoryStatus === "wontRun" ? "TOO LARGE" : "TIGHT"}
-            tint={
-              memoryStatus === "wontRun" ? asColor(destructive) : "#f97316"
-            }
+            label={memoryLabel}
+            tint={memoryWarns ? asColor(destructive) : "#f97316"}
             // The one button here that warns rather than acts, so it keeps its
             // own tinted ground.
             style={{
-              backgroundColor:
-                memoryStatus === "wontRun" ? "#e5393520" : "#f9731620",
+              backgroundColor: memoryWarns ? "#e5393520" : "#f9731620",
             }}
             onPress={() => setMemoryVisible(true)}
           />
@@ -246,7 +254,7 @@ export function OfflineModelCard() {
         primary={asColor(primary)}
         // No confirm sheet for a swipe: its reach point is the confirmation.
         // The DELETE button below still asks, since a tap carries no such cue.
-        onDelete={(id) => void deleteModel(id)}
+        onDelete={deleteSwiped}
       />
       {activeModel && (
         <TuneSheet
@@ -264,6 +272,8 @@ export function OfflineModelCard() {
         onClose={() => setMemoryVisible(false)}
         status={memoryStatus}
         estimate={memoryEstimate}
+        closedMessage={closedMessage}
+        onTryAgain={tryAgain}
       />
     </>
   );

@@ -7,23 +7,19 @@ import { ThemedText } from '@/components/themed-text';
 import { elevation } from '@/constants/theme';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import {
-  ACCENT_LABELS,
-  VOICE_ACCENTS,
-  VOICE_DESCRIPTIONS,
-  VOICE_LABELS,
-  type KokoroVoice,
-} from '@/services/device-tts/catalogue';
+import { voiceDescriptor, voiceLabel, type AiVoice } from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
 export interface VoiceCarouselCardProps {
-  voice: KokoroVoice;
+  voice: AiVoice;
   index: number;
   selected: boolean;
   previewing: boolean;
-  onSelect: () => void;
-  onPreviewToggle: () => void;
+  /** Bring this card to the middle. Stable, so a settle redraws two cards, not all. */
+  onSelect: (index: number) => void;
+  onPreview: (voice: AiVoice) => void;
+  onStopPreview: () => void;
 }
 
 /**
@@ -40,19 +36,23 @@ export interface VoiceCarouselCardProps {
  * double-announce the inner one; nothing in this codebase ships that nesting
  * unmitigated, so this doesn't either.
  */
-export function VoiceCarouselCard({
+export const VoiceCarouselCard = React.memo(function VoiceCarouselCard({
   voice,
   index,
   selected,
   previewing,
   onSelect,
-  onPreviewToggle,
+  onPreview,
+  onStopPreview,
 }: VoiceCarouselCardProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
-  const name = VOICE_LABELS[voice];
-  const descriptor = `${ACCENT_LABELS[VOICE_ACCENTS[voice]]} · ${VOICE_DESCRIPTIONS[voice]}`;
-  const sampleLabel = selected && previewing ? 'STOP' : 'SAMPLE';
+  const name = voiceLabel(voice);
+  const descriptor = voiceDescriptor(voice);
+  const playing = selected && previewing;
+  const sampleLabel = playing ? 'STOP' : 'SAMPLE';
+  const select = () => onSelect(index);
+  const toggleSample = () => (playing ? onStopPreview() : onPreview(voice));
 
   return (
     <Card
@@ -63,7 +63,7 @@ export function VoiceCarouselCard({
       style={selected ? elevation.card : undefined}
     >
       <Touchable
-        onPress={onSelect}
+        onPress={select}
         accessibilityRole="radio"
         accessibilityState={{ selected }}
         accessibilityLabel={`${name}, ${descriptor}${selected ? ', selected' : ''}`}
@@ -93,11 +93,11 @@ export function VoiceCarouselCard({
           selected ? 'border-primary' : 'border-border',
         )}
         hitSlop={6}
-        onPress={selected ? onPreviewToggle : onSelect}
+        onPress={selected ? toggleSample : select}
         accessibilityRole="button"
-        accessibilityLabel={selected && previewing ? `Stop ${name} preview` : `Play ${name} preview`}
+        accessibilityLabel={playing ? `Stop ${name} preview` : `Play ${name} preview`}
       >
-        {selected && previewing ? (
+        {playing ? (
           <Pause size={12} color={asColor(primary)} />
         ) : (
           <Play size={12} color={selected ? asColor(primary) : asColor(mutedForeground)} />
@@ -108,4 +108,4 @@ export function VoiceCarouselCard({
       </Touchable>
     </Card>
   );
-}
+});

@@ -285,10 +285,8 @@ export function createConversation(options: ConversationOptions = {}): Conversat
   const genConfig: llm.LLMGenerationConfig = {
     temperature,
     maxNewTokens: Math.min(options.maxNewTokens ?? reserve, reserve),
-    // On by default in the runtime, which then hands the prompt back as the
-    // reply's first token: the template's turn opener, `<|turn>model`, shown
-    // to the reader and written into chat titles.
-    echo: false,
+    // No `echo: false` here any more: since react-native-executorch 0.10.3
+    // the runtime never hands the prompt back, and the option is gone.
   };
   const stopRegex = tools.length > 0 ? toolFormat?.stopRegex : undefined;
 

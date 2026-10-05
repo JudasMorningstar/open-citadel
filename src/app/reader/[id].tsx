@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
 import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
+import { readerVoiceId } from "@/services/device-tts/catalogue";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
@@ -633,7 +634,7 @@ export default function ReaderScreen() {
     if (!isTTSActive) {
       setTtsMismatch(false);
       readerRef.current?.ttsStart({
-        voice: ttsVoice ?? undefined,
+        voice: readerVoiceId(ttsVoice),
         language: ttsVoiceLanguage ?? undefined,
         rate: ttsRate,
       });
@@ -692,7 +693,7 @@ export default function ReaderScreen() {
       if (targetLocator) readerRef.current?.goTo(targetLocator);
       setTimeout(() => {
         readerRef.current?.ttsStart({
-          voice: ttsVoice ?? undefined,
+          voice: readerVoiceId(ttsVoice),
           language: ttsVoiceLanguage ?? undefined,
           rate: ttsRate,
         });
@@ -710,7 +711,7 @@ export default function ReaderScreen() {
       setTtsState(null);
       setTimeout(() => {
         readerRef.current?.ttsStart({
-          voice: ttsVoice ?? undefined,
+          voice: readerVoiceId(ttsVoice),
           language: ttsVoiceLanguage ?? undefined,
           rate: ttsRate,
         });

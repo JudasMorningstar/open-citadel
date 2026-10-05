@@ -3,6 +3,7 @@ import React from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { KeptAlive } from "@/components/kept-alive";
 import { ModeCard } from "@/components/mode-card";
 import {
     EngineInfoSheet,
@@ -12,41 +13,39 @@ import { ThemedText } from "@/components/themed-text";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { PURCHASES_ENABLED } from "@/constants/revenuecat";
-import { useWarmPlanOffer } from "@/features/billing/hooks/use-plan-offer";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
-import { SettingsSection } from "@/features/settings/components/settings-section";
+import { useSettledOnce } from "@/navigation/use-settled-once";
 import { isExecuTorchAvailable } from "@/lib/executorch";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
 
 /**
- * The Samwell group: which engine answers, and its controls. Each panel
- * owns its own sheets — this component only decides which panel exists.
+ * Samwell's settings: which engine answers, and its controls. Each panel
+ * owns its own sheets; this component only decides which panel is showing.
+ *
+ * Both panels are kept once drawn (`KeptAlive`) and the one not showing is
+ * built ahead, once nothing is moving. So choosing the other engine reveals a
+ * panel that already exists: the card answers on the press, and the plans are
+ * simply there rather than arriving behind a placeholder each time.
  */
 export const SamwellSection = React.memo(function SamwellSection({
   onRequestAccount,
   initialMode,
 }: {
-  /** Bring the Profile section into view — the cloud panel's way out when
-   *  there is no account yet. Owned by the route, which holds the scroller. */
+  /** Go to the Profile page: the cloud panel's way out when there is no
+   *  account yet. Owned by the route, which holds the router. */
   onRequestAccount: () => void;
   /** Panel to reveal from a targeted Settings deep link. */
   initialMode?: EngineMode;
 }) {
-  const [primary, mutedForeground] = useCSSVariable([
-    "--color-primary",
-    "--color-muted-foreground",
-  ]);
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const identity = useCloudIdentity();
-  // The plans, asked for while the Cloud card is still a tap away. Not before
-  // the identity settles: that is when the purchases SDK has been started.
-  useWarmPlanOffer(identity.kind !== "unknown");
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const [infoSheet, setInfoSheet] = React.useState<EngineMode | null>(null);
   const [previewMode, setPreviewMode] = React.useState<EngineMode | null>(() =>
@@ -54,6 +53,10 @@ export const SamwellSection = React.memo(function SamwellSection({
   );
   const nativeAvailable = React.useMemo(() => isExecuTorchAvailable(), []);
   const displayedMode = previewMode ?? samwellMode;
+  // The cards answer the press; the panel under them follows a beat behind
+  // when it has to be built first, so building it never holds the press up.
+  const shownMode = React.useDeferredValue(displayedMode);
+  const landed = useSettledOnce();
   const cloudBlocker = getCloudBlocker({
     configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
     identity: identity.kind,
@@ -83,25 +86,20 @@ export const SamwellSection = React.memo(function SamwellSection({
     void setSamwellMode("cloud");
   }, [setSamwellMode]);
 
-  return (
-    <SettingsSection>
-      <View className="gap-1">
-        <ThemedText
-          type="labelMd"
-          color={asColor(primary)}
-          className="tracking-[1.2px]"
-        >
-          {displayedMode === "cloud" ? "SAMWELL CLOUD" : "SAMWELL"}
-        </ThemedText>
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {displayedMode === "cloud"
-            ? "Puts your knowledge to work."
-            : "Your reading companion"}
-        </ThemedText>
-      </View>
+  // A plan that lands while Cloud is only being looked at makes the look the
+  // choice. A payment that confirms a moment late reports no "active" for the
+  // panel to act on, and left a new subscriber on the device with the Cloud
+  // card lit. Only from "no plan", so arriving here by a link never switches.
+  const lastBlocker = React.useRef(cloudBlocker);
+  React.useEffect(() => {
+    const planArrived = lastBlocker.current === "needsPlan" && cloudAccessReady;
+    lastBlocker.current = cloudBlocker;
+    if (planArrived && previewMode === "cloud") activateCloud();
+  }, [cloudBlocker, cloudAccessReady, previewMode, activateCloud]);
 
-      {/* Mode cards */}
-      <View className="flex-row gap-3">
+  return (
+    <View className="gap-4">
+      <View className="flex-row gap-3" accessibilityRole="radiogroup">
         <ModeCard
           active={displayedMode === "offline"}
           icon={Smartphone}
@@ -120,21 +118,24 @@ export const SamwellSection = React.memo(function SamwellSection({
         />
       </View>
 
-      {displayedMode === "cloud" ? (
+      <KeptAlive active={shownMode === "offline"} warm={landed} className="gap-4">
+        {nativeAvailable ? (
+          <OfflineModelCard />
+        ) : (
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            On-device AI is not supported on this device. Grand Maester Samwell is
+            on the way. Check back soon.
+          </ThemedText>
+        )}
+      </KeptAlive>
+      <KeptAlive active={shownMode === "cloud"} warm={landed} className="gap-4">
         <CloudPanel
           onRequestAccount={onRequestAccount}
           onAccessActivated={activateCloud}
         />
-      ) : !nativeAvailable ? (
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          On-device AI is not supported on this device. Grand Maester Samwell is
-          on the way. Check back soon.
-        </ThemedText>
-      ) : (
-        <OfflineModelCard />
-      )}
+      </KeptAlive>
 
       <EngineInfoSheet mode={infoSheet} onClose={() => setInfoSheet(null)} />
-    </SettingsSection>
+    </View>
   );
 });

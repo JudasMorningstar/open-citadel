@@ -38,7 +38,12 @@ export function PlayerTitle({ title, showTitle, favorite, onOpenShow, onToggleFa
         accessibilityLabel={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
         accessibilityState={{ selected: favorite }}
       >
-        <Star size={iconSize.default} color={favorite ? tokens['--color-primary'] : tokens['--color-muted-foreground']} />
+        {/* Filled when it is one: an outline in gold read as an offer, not a state. */}
+        <Star
+          size={iconSize.default}
+          color={favorite ? tokens['--color-primary'] : tokens['--color-muted-foreground']}
+          fill={favorite ? tokens['--color-primary'] : 'none'}
+        />
       </Touchable>
     </View>
   );

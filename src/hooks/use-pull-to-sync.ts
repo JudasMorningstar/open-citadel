@@ -108,6 +108,23 @@ export function usePullToSync(running: boolean, onSync: () => void, labels: Pull
    */
   const open = useDerivedValue(() => Math.max(drag.get(), hold.get()));
 
+  /*
+   * Whether the gap is open at all, so the indicator is only built while it
+   * can be seen. Parked above every shelf it was a loader running for nobody:
+   * five bars animating for as long as the page was mounted, each frame a
+   * commit of the whole tree, which cost most of the UI thread on an A33 with
+   * nothing on screen moving. A boolean for the same reason as `armed`: it
+   * crosses to React twice in a pull, not on every frame of one.
+   */
+  const [showing, setShowing] = React.useState(false);
+  useAnimatedReaction(
+    () => open.get() > 0,
+    (isOpen, wasOpen) => {
+      if (isOpen === (wasOpen ?? false)) return;
+      scheduleOnRN(setShowing, isOpen);
+    },
+  );
+
   const gap = useAnimatedStyle(() => ({
     opacity: Math.min(open.get() / GAP, 1),
     transform: [{ translateY: open.get() }],
@@ -135,5 +152,6 @@ export function usePullToSync(running: boolean, onSync: () => void, labels: Pull
     refreshing: running || waiting,
     onNativeRefresh: handleNativeRefresh,
     label,
+    showing,
   };
 }

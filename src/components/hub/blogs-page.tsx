@@ -65,7 +65,7 @@ export function BlogsPage({ bottomChrome, settleMs }: BlogsPageProps) {
           onArticleMenu={articles.openMenu}
         />
       ) : (
-        <BlogsHomeSkeleton />
+        <BlogsHomeSkeleton hero={page.leadsWithContinue} />
       )}
       {/* The side's one creative action, the same floating button the other
           sides give theirs: find something new to read. */}

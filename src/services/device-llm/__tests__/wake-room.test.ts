@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { interruptedMessage, tooLargeMessage, wakeRoom } from '../wake-room';
+import { closedByPhoneMessage, closedByPhoneNotice, faultMessage, interruptedMessage, tooLargeMessage, wakeRoom } from '../wake-room';
 
 describe('wakeRoom', () => {
   it('refuses a brain the phone cannot hold, rather than letting Android kill the app', () => {
@@ -38,5 +38,32 @@ describe('what the reader is told', () => {
       expect(line).not.toMatch(/[—–]/);
       expect(line).not.toMatch(/Samwell[^.]*\bit (is|was|stopped)\b/);
     }
+  });
+});
+
+describe('what the reader is told when the death is on record', () => {
+  it('says the phone closed the app, and how much it was using when that is known', () => {
+    expect(closedByPhoneMessage('Gemma 4 E2B', 4.4 * 1024 ** 3)).toBe(
+      'Your phone closed the app the last time Gemma 4 E2B was running, to get its memory back. It was using 4.4 GB. Choose a smaller brain.',
+    );
+    expect(closedByPhoneMessage('Gemma 4 E2B', null)).not.toContain('GB');
+  });
+
+  it('does not tell the reader of a brain that fits to choose a smaller one', () => {
+    expect(closedByPhoneMessage('Qwen 3 1.7B', 1.3 * 1024 ** 3, true)).toBe(
+      'Your phone closed the app the last time Qwen 3 1.7B was running, to get its memory back. It was using 1.3 GB. Close other apps and try again.',
+    );
+  });
+
+  it('has a short form for a toast', () => {
+    expect(closedByPhoneNotice('Qwen 3 1.7B')).toBe(
+      'Your phone closed the app over Qwen 3 1.7B last time. Tap CLOSED BY PHONE to see why.',
+    );
+  });
+
+  it('does not blame memory for a fault', () => {
+    expect(faultMessage('a native crash, signal 11')).toBe(
+      "Samwell stopped last time because of a fault in the app (a native crash, signal 11), not your phone's memory.",
+    );
   });
 });

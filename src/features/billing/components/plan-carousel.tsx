@@ -13,6 +13,7 @@ import { PlanOfferFailed } from "@/features/billing/components/plan-offer-failed
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
 import { PlanRun } from "@/features/billing/components/plan-run";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
+import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -82,6 +83,13 @@ export type PlanCarouselProps = {
    * true from the start: see the note on `PlanCarousel`.
    */
   ready?: boolean;
+  /**
+   * The caller builds this ahead of the press that shows it (the cloud panel,
+   * kept hidden until chosen), so with the prices in hand the run needs no
+   * placeholder. Without it the run mounts behind its skeleton for a few
+   * frames, so that its mount does not hold up the press that asked for it.
+   */
+  prebuilt?: boolean;
   /** The prices could not be had. The run gives way to a way to ask again. */
   failed?: boolean;
   onRetry?: () => void;
@@ -96,7 +104,8 @@ export type PlanCarouselProps = {
   showRestore?: boolean;
   /** Plan-change sheets pin their action outside the scrolling region. */
   showAction?: boolean;
-  actionVerb?: "CHOOSE" | "UPGRADE TO" | "DOWNGRADE TO";
+  /** The verb alone: the plan is named by its mark beside it. */
+  actionVerb?: "CHOOSE" | "UPGRADE" | "DOWNGRADE";
   /** The ground the edge fades blend into. Sheets are `popover`. */
   surface?: "background" | "popover";
   /**
@@ -111,24 +120,52 @@ export type PlanCarouselProps = {
  * The plans on sale: the run of cards, the one commit under it, and the way
  * to restore.
  *
- * The run itself is `PlanRun`, and it is the one expensive thing here: a
- * gesture, a track, three animated slides and their edge fades. Mounted in
- * the same pass as everything around it, it held up the frame that answers
- * the tap: choosing Cloud in Settings did nothing visible until the whole run
- * had been built, and with the prices already cached there was no skeleton in
- * between to draw first. So the run sits in a `Handover`: the heading, the
- * skeleton and the button are drawn at once, the cards mount on the frame
- * after and dissolve in over the skeleton, whose edges are where theirs are.
+ * The run itself is `PlanRun`, the one expensive thing here: a gesture, a
+ * track, three animated slides and their edge fades.
+ *
+ * Mounted in the same pass as a press, it holds up the frame that answers
+ * the press, so by default it sits behind its skeleton for a few frames and
+ * dissolves in over it, its edges where the skeleton's are.
+ *
+ * `prebuilt` drops that when the prices are already in hand, which is the
+ * usual case (they are asked for ahead: see `usePlanOffer`). In Settings the
+ * placeholder was seen as the plans loading again on every visit when nothing
+ * was being loaded; the cloud panel is built ahead of the press and kept
+ * instead (`KeptAlive`), so there the run is simply drawn. A real wait, the
+ * store not having answered yet, still draws the skeleton.
  *
  * The edge fades blend into `surface` and start at the screen edge only when
  * `bleed` cancels the page gutter.
  */
+/** The run, behind its placeholder only when it had to wait for the store. */
+function PlanRunSlot({
+  waited,
+  ready,
+  surface,
+  skeleton,
+  children,
+}: {
+  waited: boolean;
+  ready: boolean;
+  surface: "background" | "popover";
+  skeleton: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  if (!waited) return <>{children}</>;
+  return (
+    <Handover fill={false} ready={ready} surface={surface} skeleton={skeleton}>
+      {children}
+    </Handover>
+  );
+}
+
 export function PlanCarousel({
   packages,
   catalogue,
   modelCounts,
   busy,
   ready = true,
+  prebuilt = false,
   failed = false,
   onRetry,
   onChoose,
@@ -220,6 +257,9 @@ export function PlanCarousel({
   );
   // The prices could not be had and are not being asked for again.
   const offerFailed = failed && !ready;
+  // Latched at mount: a run that had to wait keeps its placeholder through
+  // the dissolve, and one that never waited never has one.
+  const [waited] = React.useState(!ready || !prebuilt);
 
   const nothingToBuy = Object.keys(packages).length === 0;
   // The run is bounded to three, but an index arriving from a gesture is not
@@ -236,8 +276,8 @@ export function PlanCarousel({
             <PlanOfferFailed onRetry={onRetry} />
           </View>
         ) : (
-          <Handover
-            fill={false}
+          <PlanRunSlot
+            waited={waited}
             ready={ready}
             surface={surface}
             skeleton={
@@ -261,18 +301,23 @@ export function PlanCarousel({
               onIndexChange={handleIndexChange}
               onInfo={setInfoPlanId}
             />
-          </Handover>
+          </PlanRunSlot>
         )}
       </View>
 
-      {/* One commit, in a fixed place, naming what it will buy. Gold appears
-          once per screen and never moves; the run is what selects. A label
-          that says which plan is also the difference between a button a
-          screen reader can announce and three that all say "choose". */}
+      {/* One commit, in a fixed place. Gold appears once per screen and never
+          moves; the run is what selects. The button carries the resting
+          card's own mark and the verb, not the plan's name a second time:
+          the name is on the card straight above it, and the mark changing
+          with the run is what ties the two together. Leading, since a
+          trailing mark on a button reads as "this goes somewhere". A screen
+          reader still hears which plan, so the three never all say "choose". */}
       {showAction ? (
         <View>
           <GoldButton
-            label={`${actionVerb} ${activePlan.label.toUpperCase()}`}
+            label={actionVerb}
+            icon={PLAN_ICON[activePlan.id]}
+            accessibilityLabel={`${actionVerb} ${activePlan.label}`}
             size="full"
             loading={busy === activePlan.id}
             disabled={nothingToBuy || busy !== null}

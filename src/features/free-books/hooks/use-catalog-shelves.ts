@@ -1,16 +1,14 @@
 import { useQueries } from '@tanstack/react-query';
 import React from 'react';
-import type { ViewToken } from 'react-native';
 
+import { CATALOG_FIRST_SHELVES, type ShelfState } from '@/features/free-books/utils/catalog-preview';
 import { queryClient } from '@/lib/query-client';
 import { createShelfPreviewQueryOptions } from '@/query-manager/gutenberg';
-import type { CatalogBook, CatalogPage } from '@/services/gutenberg/records';
-import { CATALOG_SHELVES, type CatalogShelf } from '@/services/gutenberg/shelves';
-
-export type ShelfState = { status: 'loading' } | { status: 'ready'; books: CatalogBook[] } | { status: 'failed' };
+import type { CatalogPage } from '@/services/gutenberg/records';
+import { CATALOG_SHELVES } from '@/services/gutenberg/shelves';
 
 /** The shelves asked for as Explore lands, before anything has been scrolled. */
-const FIRST_SHELVES = new Set(CATALOG_SHELVES.slice(0, 3).map((shelf) => shelf.id));
+const FIRST_SHELVES = new Set(CATALOG_SHELVES.slice(0, CATALOG_FIRST_SHELVES).map((shelf) => shelf.id));
 
 const LOADING: ShelfState = { status: 'loading' };
 const FAILED: ShelfState = { status: 'failed' };
@@ -49,29 +47,24 @@ export function prefetchFirstShelves(): void {
 }
 
 /**
- * Explore's shelves, each asked for only once it has been on screen.
+ * Explore's shelves, each asked for only once the page has come near it.
  *
  * Sixteen shelves are not fetched because a drawer opened, which would be
  * sixteen requests to Samwell Cloud for rows nobody may scroll to: the first
- * few are, and the rest as they scroll into view. The list reports
- * what it shows through `onViewableItemsChanged`, and the set of shelves seen
+ * few are, and the rest as the page is scrolled towards them. The stack
+ * reports how many shelves it has drawn through `onDrawn`, and that count
  * only grows, so scrolling back never asks again (the cache answers).
  */
 export function useCatalogShelves(landed: boolean) {
-  const [seen, setSeen] = React.useState<ReadonlySet<string>>(FIRST_SHELVES);
+  const [drawn, setDrawn] = React.useState(FIRST_SHELVES.size);
 
   const shelves = useQueries({
-    queries: CATALOG_SHELVES.map((shelf) => createShelfPreviewQueryOptions(shelf, { enabled: landed && seen.has(shelf.id) })),
+    queries: CATALOG_SHELVES.map((shelf, index) => createShelfPreviewQueryOptions(shelf, { enabled: landed && index < drawn })),
     combine: combineShelves,
   });
 
-  // Stable for the list's lifetime: FlashList reads it once.
-  const onViewableItemsChanged = React.useCallback(({ viewableItems }: { viewableItems: ViewToken<CatalogShelf>[] }) => {
-    setSeen((prev) => {
-      const fresh = viewableItems.map((token) => token.item?.id).filter((id): id is string => !!id && !prev.has(id));
-      return fresh.length > 0 ? new Set([...prev, ...fresh]) : prev;
-    });
-  }, []);
+  // Stable for the stack's lifetime, so it is not a reason to draw again.
+  const onDrawn = React.useCallback((count: number) => setDrawn((current) => Math.max(current, count)), []);
 
-  return { shelves, onViewableItemsChanged };
+  return { shelves, onDrawn };
 }

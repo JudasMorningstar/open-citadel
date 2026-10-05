@@ -8,7 +8,16 @@ import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
-const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const TTS_RATES: readonly number[] = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+/** The stop nearest `rate`: a saved speed may be one these stops do not have. */
+function nearestIndex(rates: readonly number[], rate: number): number {
+  let best = 0;
+  rates.forEach((r, i) => {
+    if (Math.abs(r - rate) < Math.abs(rates[best]! - rate)) best = i;
+  });
+  return best;
+}
 
 function formatRate(rate: number): string {
   return rate === 1 ? '1×' : `${rate}×`;
@@ -19,25 +28,26 @@ function formatRate(rate: number): string {
  * lands on one of `TTS_RATES`, so dragging between stops would just snap
  * back — tapping the stop you want is the whole interaction.
  *
- * Self-contained and prop-free, like `TtsSettingsPanel` that hosts it — reads
- * and writes `useSettingsStore` directly.
+ * Self-contained, like `TtsSettingsPanel` that hosts it — reads and writes
+ * `useSettingsStore` directly. `rates` narrows the stops for a voice that
+ * cannot read at all of them.
  */
-export function ReadingSpeedStepper() {
+export function ReadingSpeedStepper({ rates = TTS_RATES }: { rates?: readonly number[] }) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
   const ttsRate = useSettingsStore((s) => s.ttsRate);
   const setTtsRate = useSettingsStore((s) => s.setTtsRate);
-  const rateIndex = TTS_RATES.findIndex((r) => Math.abs(ttsRate - r) < 0.01);
+  const rateIndex = nearestIndex(rates, ttsRate);
 
   return (
     <View className="gap-3">
       <View className="flex-row items-baseline justify-between">
         <ThemedText type="labelSm" color={asColor(mutedForeground)}>READING SPEED</ThemedText>
-        <ThemedText type="headlineSm">{formatRate(ttsRate)}</ThemedText>
+        <ThemedText type="headlineSm">{formatRate(rates[rateIndex] ?? ttsRate)}</ThemedText>
       </View>
 
       <View className="flex-row items-center" accessibilityRole="radiogroup">
-        {TTS_RATES.map((r, i) => (
+        {rates.map((r, i) => (
           <React.Fragment key={r}>
             {i > 0 && <View className={cn('h-px flex-1', i <= rateIndex ? 'bg-primary' : 'bg-border')} />}
             <Touchable
@@ -64,7 +74,7 @@ export function ReadingSpeedStepper() {
       </View>
 
       <View className="flex-row justify-between">
-        {TTS_RATES.map((r, i) => (
+        {rates.map((r, i) => (
           <ThemedText
             key={r}
             type="labelSm"

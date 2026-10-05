@@ -6,7 +6,7 @@ import { BookTileSkeleton } from '@/components/skeletons/book-tile-skeleton';
 import { SkeletonGroup } from '@/components/skeletons/skeleton-group';
 import { ThemedText } from '@/components/themed-text';
 import { SHELF_TILE_WIDTH } from '@/constants/theme';
-import type { ShelfState } from '@/features/free-books/hooks/use-catalog-shelves';
+import type { ShelfState } from '@/features/free-books/utils/catalog-preview';
 import { BookTile } from '@/features/library/components/book-tile';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { CatalogBook } from '@/services/gutenberg/records';

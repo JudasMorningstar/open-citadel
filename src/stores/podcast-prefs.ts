@@ -25,6 +25,13 @@ export type LibraryTab = 'books' | 'podcasts' | 'blogs';
 export type PodcastPrefs = {
   onboarding: PodcastOnboarding;
   libraryTab: LibraryTab;
+  /**
+   * Whether each side last opened on a Continue card. Its placeholder draws
+   * one only if so: drawn regardless, a side with nothing part-finished showed
+   * a hero that was not coming, then a second placeholder without it.
+   */
+  podcastsContinue: boolean;
+  blogsContinue: boolean;
   newEpisodesAction: 'inbox' | 'queue' | 'nothing';
   autoDownload: boolean;
   /** Delete a download once its episode has been played to the end. */
@@ -40,6 +47,8 @@ export type PodcastPrefs = {
 const DEFAULTS: PodcastPrefs = {
   onboarding: 'pending',
   libraryTab: 'books',
+  podcastsContinue: true,
+  blogsContinue: false,
   newEpisodesAction: 'inbox',
   autoDownload: false,
   autoDeletePlayed: false,

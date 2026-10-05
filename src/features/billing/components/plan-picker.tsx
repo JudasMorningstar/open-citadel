@@ -33,6 +33,7 @@ export function PlanPicker({
   | "modelCounts"
   | "busy"
   | "ready"
+  | "prebuilt"
   | "failed"
   | "onRetry"
   | "onChoose"

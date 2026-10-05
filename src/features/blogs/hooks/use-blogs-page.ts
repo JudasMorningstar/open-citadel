@@ -5,6 +5,7 @@ import React from 'react';
 import { useAddBlog } from '@/features/blogs/hooks/use-add-blog';
 import { useArticleActions } from '@/features/blogs/hooks/use-article-actions';
 import { useBlogImport } from '@/features/blogs/hooks/use-blog-import';
+import { useContinueHint } from '@/features/library/hooks/use-continue-hint';
 import {
   createBlogSectionQueryOptions,
   createFollowedFeedsQueryOptions,
@@ -33,6 +34,7 @@ export function useBlogsPage() {
   const queryClient = useQueryClient();
   const { data } = useQuery(createBlogsHomeQueryOptions());
   const home = data ?? EMPTY;
+  const leadsWithContinue = useContinueHint('blogs', data ? data.shelves.continue.length > 0 : undefined);
   const articles = useArticleActions();
   const importer = useBlogImport();
   const addBlog = useAddBlog(articles.openBlog);
@@ -67,6 +69,7 @@ export function useBlogsPage() {
   return {
     view,
     home,
+    leadsWithContinue,
     articles,
     importer,
     addBlog,

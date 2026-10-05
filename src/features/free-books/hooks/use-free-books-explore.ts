@@ -20,7 +20,7 @@ const NO_BOOKS: CatalogBook[] = [];
 export function useFreeBooksExplore(landed: boolean) {
   const router = useRouter();
   const [query, setQuery] = React.useState('');
-  const { shelves, onViewableItemsChanged } = useCatalogShelves(landed);
+  const { shelves, onDrawn } = useCatalogShelves(landed);
   const search = useCatalogSearch(query);
 
   const results = search.status === 'ready' ? search.books : NO_BOOKS;
@@ -50,7 +50,7 @@ export function useFreeBooksExplore(landed: boolean) {
     clearQuery: () => setQuery(''),
     searching: search.status === 'loading',
     shelves,
-    onViewableItemsChanged,
+    onDrawn,
     results,
     searchEmptyText,
     openBook,

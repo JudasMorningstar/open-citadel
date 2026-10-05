@@ -8,13 +8,19 @@
  * `react-native-executorch`'s JS layer — so it asks JS for each utterance's
  * audio via `onTTSSynthesisRequest` and this hook answers with
  * `ttsProvideAudioChunk` calls, one per streamed chunk.
+ *
+ * Supertonic speaks through the same native engine, which only knows Kokoro's
+ * voice ids: the reader starts it with no voice (`readerVoiceId`), and the
+ * voice to speak in is read from settings here instead.
  */
 import { useCallback } from 'react';
 
 import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
 import { KOKORO_SAMPLE_RATE } from 'react-native-executorch';
 
-import { DEFAULT_VOICE, isKokoroVoice } from '@/services/device-tts/catalogue';
+import { isSupertonicVoice } from '@/services/device-tts/supertonic';
+import { resolveVoice } from '@/services/device-tts/catalogue';
+import { useSettingsStore } from '@/stores/settings';
 import { stop as stopSynthesis, synthesize } from '@/services/device-tts/engine';
 
 /** The exact bytes of a chunk's audio, regardless of how its Float32Array views its buffer. */
@@ -29,7 +35,8 @@ export function useKokoroTtsBridge(readerRef: React.RefObject<ReadiumViewRef | n
   const onSynthesisRequest = useCallback(
     (request: TTSSynthesisRequest) => {
       void (async () => {
-        const voice = isKokoroVoice(request.voice) ? request.voice : DEFAULT_VOICE;
+        const chosen = useSettingsStore.getState().ttsVoice;
+        const voice = isSupertonicVoice(chosen) ? chosen : resolveVoice(request.voice);
         // One retry, and only when nothing has been sent yet. A book left
         // reading unattended hits an occasional utterance that throws before
         // its first chunk — nothing this bridge does explains why, and

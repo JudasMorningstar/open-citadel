@@ -1,22 +1,22 @@
 import React from 'react';
-import type { ViewToken } from 'react-native';
 
-import { TransitionFlashList } from '@/components/navigation/transition-scroll';
-import { PageFade } from '@/components/scroll-fades';
-import { LIST_DRAW_DISTANCE } from '@/constants/theme';
+import { ShelfStack } from '@/components/shelf-stack';
 import { CatalogShelf } from '@/features/free-books/components/catalog-shelf';
 import { FreeBooksNotice } from '@/features/free-books/components/free-books-notice';
-import type { ShelfState } from '@/features/free-books/hooks/use-catalog-shelves';
+import type { ShelfState } from '@/features/free-books/utils/catalog-preview';
+import { CATALOG_FIRST_SHELVES } from '@/features/free-books/utils/catalog-preview';
 import { CATALOG_SHELVES, type CatalogShelf as Shelf } from '@/services/gutenberg/shelves';
 
 const shelfKey = (shelf: Shelf) => shelf.id;
 /** A shelf counts as seen once any of it is on screen. */
-const VIEWABILITY = { itemVisiblePercentThreshold: 1 };
 
 type CatalogShelvesProps = {
   shelves: Record<string, ShelfState>;
   bottomPadding: number;
-  onViewableItemsChanged: (info: { viewableItems: ViewToken<Shelf>[] }) => void;
+  /** The drawer has finished rising. */
+  ready: boolean;
+  /** Told how many shelves are drawn, so only those are asked for. */
+  onDrawn: (count: number) => void;
   onOpen: (id: number) => void;
   onViewAll: (shelf: Shelf) => void;
 };
@@ -26,27 +26,24 @@ type CatalogShelvesProps = {
  * at the foot. A FlashList of shelves, each a horizontal FlashList of tiles,
  * as on the podcasts' Explore, so only what is near the screen is built.
  */
-export const CatalogShelves = React.memo(function CatalogShelves({ shelves, bottomPadding, onViewableItemsChanged, onOpen, onViewAll }: CatalogShelvesProps) {
-  const renderItem = React.useCallback(
-    ({ item }: { item: Shelf }) => <CatalogShelf shelf={item} state={shelves[item.id]} onOpen={onOpen} onViewAll={onViewAll} />,
+export const CatalogShelves = React.memo(function CatalogShelves({ shelves, bottomPadding, ready, onDrawn, onOpen, onViewAll }: CatalogShelvesProps) {
+  const renderShelf = React.useCallback(
+    (shelf: Shelf) => <CatalogShelf shelf={shelf} state={shelves[shelf.id]} onOpen={onOpen} onViewAll={onViewAll} />,
     [onOpen, onViewAll, shelves],
   );
 
   return (
-    <PageFade>
-      <TransitionFlashList
-        data={CATALOG_SHELVES}
-        keyExtractor={shelfKey}
-        renderItem={renderItem}
-        extraData={shelves}
-        drawDistance={LIST_DRAW_DISTANCE}
-        viewabilityConfig={VIEWABILITY}
-        onViewableItemsChanged={onViewableItemsChanged}
-        contentContainerClassName="pt-4"
-        contentContainerStyle={{ paddingBottom: bottomPadding }}
-        showsVerticalScrollIndicator={false}
-        ListFooterComponent={<FreeBooksNotice />}
-      />
-    </PageFade>
+    <ShelfStack
+      shelves={CATALOG_SHELVES}
+      keyOf={shelfKey}
+      renderShelf={renderShelf}
+      first={CATALOG_FIRST_SHELVES}
+      ready={ready}
+      // A shelf here is a request, so one is only drawn as the page nears it.
+      lazy
+      onDrawn={onDrawn}
+      bottomPadding={bottomPadding}
+      footer={<FreeBooksNotice />}
+    />
   );
 });

@@ -1,88 +1,78 @@
 import React from 'react';
-import { View, type ViewProps } from 'react-native';
-import Animated, {
-  Extrapolation,
-  interpolate,
-  interpolateColor,
-  useAnimatedStyle,
-  useReducedMotion,
-} from 'react-native-reanimated';
-import { useCSSVariable } from 'uniwind';
+import { Pressable, View, type AccessibilityActionEvent, type GestureResponderEvent } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import { useCarouselState } from '@/components/ui/carousel';
-import { Touchable } from '@/components/ui/touchable';
 import { cn } from '@/lib/cn';
 
-const DOT_WIDTH = 6;
-const BAR_WIDTH = 18;
+const DOT = 6;
+/** One dot and the gap after it: how far the bar travels per voice. */
+const PITCH = 12;
+const BAR = 14;
+const ROW_HEIGHT = 24;
 
-function VoiceCarouselDot({
-  index,
-  primaryColor,
-  borderColor,
-}: {
-  index: number;
-  primaryColor: string;
-  borderColor: string;
-}) {
-  const { progress, index: active, scrollTo } = useCarouselState();
-  const reducedMotion = useReducedMotion();
+const DOT_SLOT = { width: PITCH, height: ROW_HEIGHT };
+const DOT_BOX = { width: DOT, height: DOT };
+const BAR_BOX = {
+  position: 'absolute',
+  left: (PITCH - BAR) / 2,
+  top: (ROW_HEIGHT - DOT) / 2,
+  width: BAR,
+  height: DOT,
+} as const;
+const STEPS = [{ name: 'increment' }, { name: 'decrement' }] as const;
 
-  const animated = useAnimatedStyle(() => {
-    const distance = Math.abs(index - progress.value);
-    if (reducedMotion) {
-      const isActive = distance < 0.5;
-      return {
-        width: isActive ? BAR_WIDTH : DOT_WIDTH,
-        backgroundColor: isActive ? primaryColor : borderColor,
-      };
-    }
-    return {
-      width: interpolate(distance, [0, 1], [BAR_WIDTH, DOT_WIDTH], Extrapolation.CLAMP),
-      backgroundColor: interpolateColor(distance, [0, 1], [primaryColor, borderColor]),
-    };
-  });
-
-  return (
-    <Touchable
-      onPress={() => scrollTo(index)}
-      hitSlop={20}
-      accessibilityRole="tab"
-      accessibilityLabel={`Voice ${index + 1}`}
-      accessibilityState={{ selected: active === index }}
-    >
-      <Animated.View className="h-1.5 rounded-none" style={animated} />
-    </Touchable>
-  );
-}
-
-export interface VoiceCarouselDotsProps extends ViewProps {
+export interface VoiceCarouselDotsProps {
   className?: string;
 }
 
 /**
- * The carousel's page indicator: square dots, the active one widened into a
- * bar. Custom rather than the vendored `Carousel.Dots` — that one switches on
- * the settled index, and this needs `progress` continuously so the bar grows
- * and shrinks under the finger mid-drag, not just on release.
+ * The carousel's page indicator: a row of square dots with one gold bar that
+ * slides along it under the finger.
+ *
+ * One animated node, moved by a transform. It used to be every dot growing
+ * and shrinking its own `width`, which is a layout prop: each frame of a swipe
+ * laid the row out again, once per dot, and on a Galaxy A33 that was most of
+ * why the run stuttered.
+ *
+ * One pressable too, which works out the dot from where it was touched. A
+ * pressable per dot was nine or ten of them for a row nobody presses often,
+ * and each is a noticeable part of what the run costs to build. To a screen
+ * reader the row is one adjustable control, stepped a voice at a time.
  */
-export function VoiceCarouselDots({ className, ...props }: VoiceCarouselDotsProps) {
-  const { count } = useCarouselState();
-  const [primary, border] = useCSSVariable(['--color-primary', '--color-border']);
-  const primaryColor = typeof primary === 'string' ? primary : '#B8861A';
-  const borderColor = typeof border === 'string' ? border : 'rgba(0, 0, 0, 0.2)';
+export function VoiceCarouselDots({ className }: VoiceCarouselDotsProps) {
+  const { count, progress, index: active, scrollTo } = useCarouselState();
+  const dots = React.useMemo(() => Array.from({ length: count }, (_unused, index) => index), [count]);
+
+  const bar = useAnimatedStyle(() => ({
+    // Held inside the row: past either end the run rubber-bands, the bar does not.
+    transform: [{ translateX: Math.min(count - 1, Math.max(0, progress.value)) * PITCH }],
+  }));
 
   if (count <= 1) return null;
 
+  const goToTouched = (event: GestureResponderEvent) =>
+    scrollTo(Math.min(count - 1, Math.max(0, Math.floor(event.nativeEvent.locationX / PITCH))));
+  const step = (event: AccessibilityActionEvent) =>
+    scrollTo(active + (event.nativeEvent.actionName === 'increment' ? 1 : -1));
+
   return (
-    <View
-      {...props}
-      accessibilityRole="tablist"
-      className={cn('flex-row items-center gap-1', className)}
+    <Pressable
+      className={cn('flex-row items-center', className)}
+      onPress={goToTouched}
+      hitSlop={8}
+      accessibilityRole="adjustable"
+      accessibilityLabel="Voice"
+      accessibilityValue={{ min: 1, max: count, now: active + 1 }}
+      accessibilityActions={STEPS}
+      onAccessibilityAction={step}
     >
-      {Array.from({ length: count }, (_unused, index) => (
-        <VoiceCarouselDot key={index} index={index} primaryColor={primaryColor} borderColor={borderColor} />
+      {dots.map((index) => (
+        <View key={index} style={DOT_SLOT} className="items-center justify-center">
+          <View className="bg-border" style={DOT_BOX} />
+        </View>
       ))}
-    </View>
+      <Animated.View pointerEvents="none" className="bg-primary" style={[BAR_BOX, bar]} />
+    </Pressable>
   );
 }

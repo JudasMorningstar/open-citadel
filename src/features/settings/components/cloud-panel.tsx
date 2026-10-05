@@ -5,6 +5,7 @@ import type { PurchasesPackage } from "react-native-purchases";
 import { useCSSVariable } from "uniwind";
 
 import { ActionButton } from "@/components/action-button";
+import { useOnScreen } from "@/components/kept-alive";
 import { List, LogIn, RefreshCw, Settings, SlidersHorizontal } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
@@ -55,7 +56,10 @@ export function CloudPanel({
   onRequestAccount: () => void;
   onAccessActivated?: () => void;
 }) {
-  const focused = useIsFocused();
+  // This panel is kept while the on-device one shows (`KeptAlive`), and
+  // nothing about a balance needs asking while it is put away.
+  const onScreen = useOnScreen();
+  const focused = useIsFocused() && onScreen;
   const [mutedForeground, primary] = useCSSVariable([
     "--color-muted-foreground",
     "--color-primary",
@@ -126,8 +130,8 @@ export function CloudPanel({
    * is on sale is `usePlanOffer`'s, above, and asked either way.
    */
   React.useEffect(() => {
-    if (hasIdentity) void refresh();
-  }, [hasIdentity, refresh]);
+    if (hasIdentity && onScreen) void refresh();
+  }, [hasIdentity, onScreen, refresh]);
   const { packages } = offer;
 
   /**
@@ -312,6 +316,7 @@ export function CloudPanel({
           modelCounts={offer.modelCounts}
           busy={checkout.preparing ?? busy}
           ready={offer.ready}
+          prebuilt
           failed={offer.failed}
           onRetry={offer.retry}
           onChoose={startPurchase}
@@ -409,6 +414,7 @@ export function CloudPanel({
              tap. */
           busy={checkout.preparing ?? busy}
           ready={offer.ready}
+          prebuilt
           failed={offer.failed}
           onRetry={offer.retry}
           onChoose={startPurchase}

@@ -1,5 +1,5 @@
 /**
- * Kokoro's files on this device: fetching them, finding them.
+ * The voice engines' files on this device: fetching them, finding them.
  *
  * Same contract as `device-llm/files.ts` (see that file for the reasoning):
  * ExecuTorch's `download` owns the cache, so the app only ever asks the disk
@@ -13,12 +13,13 @@
  */
 
 import RNBlobUtil from 'react-native-blob-util';
-import type { KokoroTtsModel } from 'react-native-executorch';
+import type { KokoroTtsModel, SupertonicTtsModel } from 'react-native-executorch';
 
 import { cachePath, getExecuTorch } from '@/lib/executorch';
-import { kokoroModels, type KokoroAccent } from '@/services/device-tts/catalogue';
+import { kokoroModels, type KokoroAccent, type TtsEngineId } from '@/services/device-tts/catalogue';
+import { supertonicModel } from '@/services/device-tts/supertonic';
 
-/** Every remote URL nested inside a Kokoro model config, in no particular order. */
+/** Every remote URL nested inside a model config, in no particular order. */
 function collectUrls(value: unknown): string[] {
   if (typeof value === 'string') return value.startsWith('http') ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(collectUrls);
@@ -26,27 +27,52 @@ function collectUrls(value: unknown): string[] {
   return [];
 }
 
-/**
- * Every URL Kokoro needs, across both accents. The two share their weights, so
- * the list is deduplicated: the second accent only adds a phonemizer and its
- * voices.
- */
-export function remoteUrls(): string[] {
-  const models = kokoroModels();
-  return models ? [...new Set(collectUrls(models))] : [];
+/** Everything an engine downloads, as one value `download` can walk, or null without the runtime. */
+function packSource(engine: TtsEngineId): unknown {
+  return engine === 'kokoro' ? kokoroModels() : supertonicModel();
 }
 
-/** Fetches every file Kokoro needs. Rejects with `DOWNLOAD_ABORTED` when `signal` fires. */
-export async function downloadModelFiles(options: {
-  onProgress: (fraction: number) => void;
-  signal: AbortSignal;
-}): Promise<void> {
+/**
+ * Every URL an engine needs. For Kokoro that is both accents: the two share
+ * their weights, so the list is deduplicated and the second accent only adds
+ * a phonemizer and its voices.
+ */
+export function remoteUrls(engine: TtsEngineId): string[] {
+  const source = packSource(engine);
+  return source ? [...new Set(collectUrls(source))] : [];
+}
+
+/** Fetches every file an engine needs. Rejects with `DOWNLOAD_ABORTED` when `signal` fires. */
+export async function downloadModelFiles(
+  engine: TtsEngineId,
+  options: { onProgress: (fraction: number) => void; signal: AbortSignal },
+): Promise<void> {
   const et = getExecuTorch();
-  const models = kokoroModels();
-  if (!et || !models) throw new Error("On-device voices aren't supported on this device.");
-  // One call for both accents, so progress is weighted across every file
-  // and the shared weights are fetched once.
-  await et.download(models, options);
+  const source = packSource(engine);
+  if (!et || !source) throw new Error("On-device voices aren't supported on this device.");
+  // One call for the whole pack, so progress is weighted across every file
+  // and Kokoro's shared weights are fetched once.
+  await et.download(source, options);
+}
+
+/**
+ * `model` with its URLs swapped for local paths, or null when any file of
+ * `engine`'s pack is missing. Never touches the network — see
+ * `device-llm/files.ts`'s identical note.
+ */
+async function localCopy<T>(engine: TtsEngineId, model: T | null | undefined): Promise<T | null> {
+  const et = getExecuTorch();
+  if (!et || !model) return null;
+
+  const urls = remoteUrls(engine);
+  const present = await Promise.all(urls.map((url) => RNBlobUtil.fs.exists(cachePath(url)).catch(() => false)));
+  if (!present.every(Boolean)) return null;
+
+  try {
+    return await et.download(model);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -54,20 +80,13 @@ export async function downloadModelFiles(options: {
  * accent is missing.
  *
  * Checks both accents so a half-finished or older, US-only download reads as
- * not downloaded rather than failing later on the first British voice. Never
- * touches the network — see `device-llm/files.ts`'s identical note.
+ * not downloaded rather than failing later on the first British voice.
  */
-export async function localModelFiles(accent: KokoroAccent): Promise<KokoroTtsModel<string> | null> {
-  const et = getExecuTorch();
-  const models = kokoroModels();
-  if (!et || !models) return null;
+export function localKokoroFiles(accent: KokoroAccent): Promise<KokoroTtsModel<string> | null> {
+  return localCopy('kokoro', kokoroModels()?.[accent]);
+}
 
-  const present = await Promise.all(remoteUrls().map((url) => RNBlobUtil.fs.exists(cachePath(url)).catch(() => false)));
-  if (!present.every(Boolean)) return null;
-
-  try {
-    return await et.download(models[accent]);
-  } catch {
-    return null;
-  }
+/** Supertonic's files on this device, or null when any of them is missing. */
+export function localSupertonicFiles(): Promise<SupertonicTtsModel<string> | null> {
+  return localCopy('supertonic', supertonicModel());
 }

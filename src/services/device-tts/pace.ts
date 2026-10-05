@@ -1,5 +1,7 @@
 /**
- * How fast Kokoro runs on this phone, and how an utterance is cut up to suit.
+ * How fast a voice engine runs on this phone, and how an utterance is cut up
+ * to suit. Written about Kokoro, where it was first needed; Supertonic is
+ * paced the same way with its own limits.
  *
  * One Kokoro forward takes a chunk of up to 126 phonemes, about eight seconds
  * of speech, and nothing can be heard until the whole chunk is done. The
@@ -17,17 +19,26 @@
  * phone that keeps up gets the pipeline's own cut, which sounds best.
  */
 
-import type { KokoroTextToSpeech, KokoroTtsChunk, KokoroTtsOptions } from 'react-native-executorch';
-
-/** Phonemes per chunk for a phone that makes speech slower than it is spoken. */
-export const SLOW_CHUNK_LIMIT = 40;
+import type { Part } from '@/services/device-tts/lead';
 
 /**
- * Phonemes per chunk before anything has been measured. Short enough that the
- * first sentence starts soon on a slow phone, long enough that a fast one
- * hears at most a join or two before it is given the pipeline's own cut.
+ * How short an engine's chunks are cut, in whatever its pipeline counts a
+ * chunk in.
  */
-export const UNMEASURED_CHUNK_LIMIT = 60;
+export interface ChunkLimits {
+  /** For a phone that makes speech slower than it is spoken. */
+  slow: number;
+  /**
+   * Before anything has been measured. Short enough that the first sentence
+   * starts soon on a slow phone, long enough that a fast one hears at most a
+   * join or two before it is given the pipeline's own cut.
+   */
+  unmeasured: number;
+}
+
+/** Kokoro counts phonemes: its model takes up to 126 a chunk. */
+export const KOKORO_CHUNKS: ChunkLimits = { slow: 40, unmeasured: 60 };
+
 
 /**
  * The slowest pace that still counts as keeping up: seconds of work per second
@@ -41,12 +52,12 @@ export const KEEPS_UP_PACE = 0.9;
 const WINDOW = 8;
 
 /**
- * The most phonemes one chunk may hold at this pace, or `undefined` to leave
- * the cut to the pipeline (its model's limit).
+ * The most one chunk may hold at this pace, or `undefined` to leave the cut
+ * to the pipeline (its model's limit).
  */
-export function chunkLimitFor(pace: number | null): number | undefined {
-  if (pace === null) return UNMEASURED_CHUNK_LIMIT;
-  return pace > KEEPS_UP_PACE ? SLOW_CHUNK_LIMIT : undefined;
+export function chunkLimitFor(pace: number | null, limits: ChunkLimits): number | undefined {
+  if (pace === null) return limits.unmeasured;
+  return pace > KEEPS_UP_PACE ? limits.slow : undefined;
 }
 
 export interface PaceMeter {
@@ -87,7 +98,20 @@ export interface UtteranceTiming {
   workSeconds: number;
 }
 
-type Pipeline<K extends PropertyKey> = Pick<KokoroTextToSpeech<K>, 'synthesize' | 'synthesizeStop'>;
+/** One piece of an utterance's audio, as either engine's pipeline hands it over. */
+export interface SpeechChunk {
+  audio: Float32Array;
+  sampleRate: number;
+  duration: number;
+  chunkIndex: number;
+  totalChunks: number;
+}
+
+/** What pacing needs of a pipeline: both engines' fit, each with its own options `O`. */
+interface Pipeline<O> {
+  synthesize(text: string, options: O & { maxChunkLength?: number }): AsyncGenerator<SpeechChunk>;
+  synthesizeStop(): void;
+}
 
 /**
  * One utterance from `pipeline`, cut to suit the measured pace, with every
@@ -97,46 +121,64 @@ type Pipeline<K extends PropertyKey> = Pick<KokoroTextToSpeech<K>, 'synthesize' 
  * forward also pays for the backend setting itself up, so that chunk is left
  * out of the measurement.
  */
-export async function* pacedSynthesis<K extends PropertyKey>(
-  pipeline: Pipeline<K>,
+export async function* pacedSynthesis<O extends object>(
+  pipeline: Pipeline<NoInfer<O>>,
   text: string,
-  options: KokoroTtsOptions<K>,
+  options: O & { maxChunkLength?: number },
   meter: PaceMeter,
-  config: { fresh?: boolean; now?: () => number; onDone?: (timing: UtteranceTiming) => void } = {},
-): AsyncGenerator<KokoroTtsChunk> {
+  config: {
+    limits?: ChunkLimits;
+    /** Cuts the utterance into pieces itself, instead of one limit for the whole of it (`lead.ts`). */
+    parts?: (text: string, pace: number | null) => Part[];
+    fresh?: boolean;
+    now?: () => number;
+    onDone?: (timing: UtteranceTiming) => void;
+  } = {},
+): AsyncGenerator<SpeechChunk> {
   const now = config.now ?? Date.now;
-  const limit = options.maxChunkLength ?? chunkLimitFor(meter.pace());
+  const limit = options.maxChunkLength ?? chunkLimitFor(meter.pace(), config.limits ?? KOKORO_CHUNKS);
+  const whole: Part[] = [{ text, limit: undefined }];
+  const parts = config.parts?.(text, meter.pace()) ?? [{ text, limit }];
+  const cut = parts.length > 1 || parts[0]?.limit !== undefined;
   const timing: UtteranceTiming = { chunks: 0, firstAudioSeconds: 0, audioSeconds: 0, workSeconds: 0 };
   let skip = config.fresh === true;
 
-  async function* timed(maxChunkLength: number | undefined) {
-    let asked = now();
-    for await (const chunk of pipeline.synthesize(text, { ...options, maxChunkLength })) {
-      const work = (now() - asked) / 1000;
-      if (timing.chunks === 0) timing.firstAudioSeconds = work;
-      timing.chunks += 1;
-      timing.audioSeconds += chunk.duration;
-      timing.workSeconds += work;
-      if (skip) skip = false;
-      else meter.record(chunk.duration, work);
-      yield chunk;
-      // Timed from the moment the next chunk is asked for, so whatever the
-      // caller did with this one is not counted as Kokoro's work.
-      asked = now();
+  async function* timed(pieces: Part[]) {
+    for (const [index, piece] of pieces.entries()) {
+      const before = timing.chunks;
+      const more = index < pieces.length - 1;
+      let asked = now();
+      for await (const chunk of pipeline.synthesize(piece.text, { ...options, maxChunkLength: piece.limit })) {
+        const work = (now() - asked) / 1000;
+        if (timing.chunks === 0) timing.firstAudioSeconds = work;
+        timing.chunks += 1;
+        timing.audioSeconds += chunk.duration;
+        timing.workSeconds += work;
+        if (skip) skip = false;
+        else meter.record(chunk.duration, work);
+        // Numbered across the pieces: the caller ends the utterance on the
+        // chunk that says it is the last, and a piece's own last is not it
+        // while another piece is still to come.
+        const totalChunks = more ? timing.chunks + 1 : before + chunk.totalChunks;
+        yield { ...chunk, chunkIndex: timing.chunks - 1, totalChunks };
+        // Timed from the moment the next chunk is asked for, so whatever the
+        // caller did with this one is not counted as the engine's work.
+        asked = now();
+      }
     }
   }
 
   try {
     try {
-      yield* timed(limit);
+      yield* timed(parts);
     } catch (error) {
       // A short limit can be one the text has no way to meet: a web address
       // or a very long word is a run of phonemes with nowhere to cut. Nothing
       // has been sent yet, so say it again whole rather than lose the
       // sentence.
-      if (timing.chunks > 0 || limit === undefined) throw error;
+      if (timing.chunks > 0 || !cut) throw error;
       pipeline.synthesizeStop();
-      yield* timed(undefined);
+      yield* timed(whole);
     }
     config.onDone?.(timing);
   } finally {

@@ -10,6 +10,8 @@ export type EpisodeTile = {
   label: string;
   onPress: () => void;
   active?: boolean;
+  /** The mark fills in while active: a star that is a favourite, not an offer to make one. */
+  filled?: boolean;
   /** Drawn in the icon's place, for a mark that moves (a running download). */
   glyph?: React.ReactNode;
 };
@@ -23,6 +25,7 @@ type EpisodeActionTileProps = {
 /** One of the things done to an episode besides playing it. */
 export function EpisodeActionTile({ tile, gold, ink }: EpisodeActionTileProps) {
   const color = tile.active ? gold : ink;
+  const fill = tile.active && tile.filled ? color : 'none';
   return (
     <Touchable
       className="flex-1 items-center gap-2 border border-border bg-card py-3 shadow-sm"
@@ -31,7 +34,7 @@ export function EpisodeActionTile({ tile, gold, ink }: EpisodeActionTileProps) {
       accessibilityRole="button"
       accessibilityLabel={tile.label}
     >
-      {tile.glyph ?? <tile.icon size={20} color={color} />}
+      {tile.glyph ?? <tile.icon size={20} color={color} fill={fill} />}
       <ThemedText type="labelSm" color={color} numberOfLines={1}>
         {tile.label}
       </ThemedText>

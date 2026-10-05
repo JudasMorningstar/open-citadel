@@ -70,6 +70,7 @@ import { useAccountStore } from "@/stores/account";
 import { useGuestStore } from "@/stores/guest";
 import { useBooksStore } from "@/stores/books";
 import { useModelStore } from "@/stores/model";
+import { useTtsStore } from "@/stores/tts";
 import { useSettingsStore } from "@/stores/settings";
 import { Uniwind, useCSSVariable } from "uniwind";
 
@@ -189,6 +190,10 @@ export default function RootLayout() {
       .then(() => {
         setupTTSMediaSession();
         setDbReady(true);
+        // Which voice packs are on the phone, read here rather than when the
+        // voice settings mount: read there, the settings drew their download
+        // card for a frame before the voices they already had.
+        void useTtsStore.getState().loadState();
         // Hydrate the local model list at startup — previously only the
         // Settings screen loaded it, so the chat tab's first open saw an
         // empty store and claimed Samwell wasn't set up. Fire-and-forget:

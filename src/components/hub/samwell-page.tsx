@@ -94,36 +94,34 @@ export function SamwellPage() {
     [router],
   );
   /**
-   * Settings, landing on the Samwell section.
+   * Settings, opened straight onto Samwell's pane.
    *
    * A separate callback rather than an optional argument on `openSettings`:
    * that one is wired straight to `onPress` handlers, which would hand the
-   * press event in as the section.
+   * press event in as the pane.
    */
   const openSamwellSettings = React.useCallback(
-    () =>
-      router.push({ pathname: "/settings", params: { section: "samwell" } }),
+    () => router.push({ pathname: "/settings", params: { pane: "samwell" } }),
     [router],
   );
   const openCloudPlans = React.useCallback(
     () =>
       router.push({
         pathname: "/settings",
-        params: { section: "samwell", panel: "cloud" },
+        params: { pane: "samwell", panel: "cloud" },
       }),
     [router],
   );
   /**
-   * Settings, opened at the account rather than at the engine.
+   * Settings, opened onto the account rather than the engine.
    *
-   * A different destination because a different thing is wrong. "Set Samwell
-   * up" wants the engine section; "sign in" wants the account card, and
-   * pointing it at Samwell landed the reader on a panel whose only advice was
-   * to sign in somewhere further up the page it had just scrolled them past.
+   * A different pane because a different thing is wrong. "Set Samwell up"
+   * wants the engine; "sign in" wants the account, and pointing it at Samwell
+   * landed the reader on a panel whose only advice was to sign in somewhere
+   * else.
    */
   const openAccountSettings = React.useCallback(
-    () =>
-      router.push({ pathname: "/settings", params: { section: "account" } }),
+    () => router.push({ pathname: "/settings", params: { pane: "profile" } }),
     [router],
   );
 

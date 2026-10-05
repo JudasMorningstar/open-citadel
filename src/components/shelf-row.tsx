@@ -1,39 +1,30 @@
 import { FlashList } from '@shopify/flash-list';
 import React from 'react';
-import { View } from 'react-native';
 
 import { RowFade } from '@/components/scroll-fades';
-import { layout } from '@/constants/theme';
+import { SHELF_ROW_PADDING, ShelfGap } from '@/components/shelf-parts';
+import { WholeShelfRow } from '@/components/whole-shelf-row';
 
-const GAP = { width: 16 };
-/** The row's inset. Shared with `ShelvesPreview`, which has to lay its rows out the same. */
-export const SHELF_ROW_PADDING = { paddingHorizontal: layout.gutter };
-
-/** The space between two tiles. Shared with `ShelvesPreview`, as above. */
-export function ShelfGap() {
-  return <View style={GAP} />;
-}
+/**
+ * The longest row that is drawn whole rather than as a list. An Explore shelf
+ * is ten or twelve tiles, with the rest behind its "View all".
+ */
+const WHOLE_ROW_MAX = 12;
 
 type ShelfRowProps<T> = {
   items: T[];
   keyOf: (item: T) => string;
   renderTile: (item: T) => React.ReactElement;
-  /** Changes that should redraw tiles without new items (a show becoming followed). */
   extraData?: unknown;
 };
 
 /**
- * A shelf's row of tiles, scrolling sideways.
- *
- * A virtualized list, not a scroll view with every tile mapped into it: a
- * scroll view builds all of its tiles before it can draw, and a page of
- * shelves built that way cost the frames the screen needed to start moving.
- * FlashList builds the tiles that are on screen (and a little past the
- * edge), and inside a vertical FlashList it tells the parent when its layout
- * is done, so the page never draws a row at the wrong height.
+ * A shelf's row of tiles: drawn whole when it is short (`WholeShelfRow`), and
+ * as a horizontal list that draws only the tiles on screen when it is long.
  */
 export function ShelfRow<T>({ items, keyOf, renderTile, extraData }: ShelfRowProps<T>) {
   const renderItem = React.useCallback(({ item }: { item: T }) => renderTile(item), [renderTile]);
+  if (items.length <= WHOLE_ROW_MAX) return <WholeShelfRow items={items} keyOf={keyOf} renderTile={renderTile} />;
   return (
     <RowFade>
       <FlashList

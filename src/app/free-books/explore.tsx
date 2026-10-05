@@ -10,8 +10,8 @@ import { SearchBar } from "@/components/ui/search-bar";
 import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { CatalogResults } from "@/features/free-books/components/catalog-results";
 import { CatalogShelves } from "@/features/free-books/components/catalog-shelves";
-import { CatalogPreview, catalogPreviewReady } from "@/features/free-books/components/catalog-preview";
 import { CatalogShelvesSkeleton } from "@/features/free-books/components/catalog-shelves-skeleton";
+import { catalogPreviewReady } from "@/features/free-books/utils/catalog-preview";
 import { useFreeBooksExplore } from "@/features/free-books/hooks/use-free-books-explore";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
@@ -26,16 +26,21 @@ export default function FreeBooksExploreScreen() {
   const landed = useSettledOnce();
   const explore = useFreeBooksExplore(landed);
   const bottomPadding = layout.scrollBottom + insets.bottom;
-  // Seen before (the shelves are cached): the first screen itself while the
-  // drawer rises, rather than a skeleton of it. Decided once, as the page
-  // opens: shelves asked for at the tap arrive during the rise, and trading
-  // the skeleton for nine tiles then is the mount mid-slide this is here to
-  // avoid.
+  // Seen before (the shelves are cached): the page opens on its shelves, in
+  // the real scroller, so it can be scrolled as it arrives.
+  // Decided once, as the page opens: shelves asked for at the tap arrive
+  // during the rise, and trading a skeleton for nine tiles then is the mount
+  // mid-slide this is here to avoid.
   const [previewed] = React.useState(() => catalogPreviewReady(explore.shelves));
-  const placeholder = previewed ? (
-    <CatalogPreview shelves={explore.shelves} onOpen={explore.openBook} onViewAll={explore.openShelf} />
-  ) : (
-    <CatalogShelvesSkeleton />
+  const shelves = (
+    <CatalogShelves
+      shelves={explore.shelves}
+      bottomPadding={bottomPadding}
+      ready={landed}
+      onDrawn={explore.onDrawn}
+      onOpen={explore.openBook}
+      onViewAll={explore.openShelf}
+    />
   );
 
   return (
@@ -66,17 +71,14 @@ export default function FreeBooksExploreScreen() {
             bottomPadding={bottomPadding}
             onOpen={explore.openBook}
           />
+        ) : previewed ? (
+          shelves
         ) : (
-          // The shelves mount when the drawer has finished rising: a list
-          // landing mid-rise is what makes a drawer stagger.
-          <Handover ready={landed} skeleton={placeholder}>
-            <CatalogShelves
-              shelves={explore.shelves}
-              bottomPadding={bottomPadding}
-              onViewableItemsChanged={explore.onViewableItemsChanged}
-              onOpen={explore.openBook}
-              onViewAll={explore.openShelf}
-            />
+          // Not seen before: a skeleton holds the page while the shelves are
+          // fetched, and they mount under it once the drawer has finished
+          // rising (a list landing mid-rise makes a drawer stagger).
+          <Handover ready={landed} skeleton={<CatalogShelvesSkeleton />}>
+            {shelves}
           </Handover>
         )}
       </View>

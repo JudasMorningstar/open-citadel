@@ -398,10 +398,10 @@ describe('createConversation', () => {
     expect(replyOf(turn).content).toBe('the whole of b');
   });
 
-  it('never echoes the prompt back as the start of the reply', async () => {
+  it('does not pass the echo option the runtime dropped in 0.10.3', async () => {
     runner.replies.push('Hello.');
     await createConversation().sendMessage('Hi');
-    expect(runner.configs[0]).toMatchObject({ echo: false });
+    expect(runner.configs[0]).not.toHaveProperty('echo');
   });
 
   it('leaves every end token out of the reply, not only the eos token', async () => {

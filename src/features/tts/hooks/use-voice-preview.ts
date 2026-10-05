@@ -2,18 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
-import { AI_VOICES_SUPPORTED, DEVICE_VOICE, VOICE_LABELS, type ReaderVoice } from '@/services/device-tts/catalogue';
+import { AI_VOICES_SUPPORTED, DEVICE_VOICE, voiceLabel, type ReaderVoice } from '@/services/device-tts/catalogue';
 import { synthesize } from '@/services/device-tts/engine';
 import { deviceSpeech } from '@/services/device-tts/speech';
 import { encodeWav } from '@/utils/wav';
 
 function previewText(voice: ReaderVoice): string {
-  const name = voice === DEVICE_VOICE ? 'your device voice' : VOICE_LABELS[voice];
+  const name = voice === DEVICE_VOICE ? 'your device voice' : voiceLabel(voice);
   return `Hi, I'm ${name}. Welcome to Open Citadel, your personal knowledge companion.`;
 }
 
 /**
- * Plays a short spoken sample of a Kokoro voice — picking a voice by name
+ * Plays a short spoken sample of an AI voice — picking a voice by name
  * alone in `TtsSettingsPanel` doesn't tell you much about how it sounds.
  *
  * Synthesizes through the same `device-tts/engine.ts` singleton the reader
@@ -56,7 +56,7 @@ export function useVoicePreview() {
       return;
     }
     setPreviewingVoice(voice);
-    setPreviewNotice(voice === DEVICE_VOICE ? null : `${VOICE_LABELS[voice]} is unavailable. Playing the device voice instead.`);
+    setPreviewNotice(voice === DEVICE_VOICE ? null : `${voiceLabel(voice)} is unavailable. Playing the device voice instead.`);
     try {
       speech.speak(previewText(DEVICE_VOICE), {
         language: 'en-US',

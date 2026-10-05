@@ -24,7 +24,9 @@ import {
 } from "@/services/device-llm/files";
 import { makeRoomForBrain } from "@/services/device-llm/make-room";
 import { markRunFinished, markRunStarted, takeInterruptedRun } from "@/services/device-llm/run-marker";
-import { interruptedMessage, tooLargeMessage, wakeRoom } from "@/services/device-llm/wake-room";
+import { faultLabel, type MemoryVerdict } from "@/services/device-llm/exit-verdict";
+import { clearVerdict, loadVerdicts, settleInterruptedRun } from "@/services/device-llm/memory-verdict";
+import { closedByPhoneMessage, faultMessage, interruptedMessage, tooLargeMessage, wakeRoom } from "@/services/device-llm/wake-room";
 import { queryClient } from "@/lib/query-client";
 import { createModelSizeQueryOptions } from "@/query-manager/device-models";
 import { formatBytes } from "@/utils/format";
@@ -73,6 +75,12 @@ interface ModelStore {
   downloadProgress: Record<string, number>; // modelId → 0–1
   inference: InferenceSettings;
   memoryEstimate: MemoryEstimate | null;
+  /**
+   * Brains the phone has ended the app over, by id: read from Android's own
+   * record of the death, never assumed (`memory-verdict.ts`). One is not
+   * woken until its verdict is lifted.
+   */
+  memoryVerdicts: Record<string, MemoryVerdict>;
 
   loadModels(): Promise<void>;
   /** Fills in what each brain weighs, for any not yet measured, or only `ids`. Needs the network. */
@@ -88,6 +96,8 @@ interface ModelStore {
   releaseContext(): Promise<void>;
   setInference(settings: Partial<InferenceSettings>): Promise<void>;
   checkMemory(modelId: string): Promise<void>;
+  /** Lets a brain the phone closed the app over be woken again: the reader's call. */
+  liftMemoryVerdict(modelId: string): void;
 }
 
 /** How long a wake may take before it is worth explaining. */
@@ -219,6 +229,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   downloadProgress: {},
   inference: { ...DEFAULT_INFERENCE },
   memoryEstimate: null,
+  memoryVerdicts: {},
 
   async loadModels() {
     // Off the path to the list: the old runtime's gigabytes can take a while
@@ -258,6 +269,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       models,
       activeModelId,
       inference,
+      memoryVerdicts: loadVerdicts(),
       modelsHydrated: true,
     });
 
@@ -439,12 +451,20 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       set({ memoryEstimate: null });
     }
   },
+
+  liftMemoryVerdict(modelId) {
+    set({ memoryVerdicts: clearVerdict(modelId), loadError: null });
+  },
 }));
 
 /** Loads the active brain. Only through `initContext`, which keeps it to one at a time. */
 async function wake(): Promise<void> {
   const get = useModelStore.getState;
   const set = useModelStore.setState;
+  // Each attempt starts with no error, so one that fails the same way as the
+  // last is still a change: Settings says a failure in a toast when the error
+  // appears (`useBrainErrorToast`), and a second press must not go unanswered.
+  set({ loadError: null });
   const { models, activeModelId } = get();
   const model = models.find((m) => m.id === activeModelId);
   const entry = catalogueModel(activeModelId);
@@ -465,15 +485,30 @@ async function wake(): Promise<void> {
    */
   const fit = modelFit(model.sizeBytes);
   const room = wakeRoom(fit);
+  // A run that never finished is judged once, here, from Android's record of
+  // how the app died. Only a death the phone chose counts against the brain.
   const interrupted = takeInterruptedRun();
+  const outcome = interrupted ? settleInterruptedRun(interrupted) : null;
+  if (outcome?.cause === 'memory') set({ memoryVerdicts: loadVerdicts() });
+
   if (room === 'refuse') {
     set({ loadError: tooLargeMessage(entry.name, checkModelMemory(model.sizeBytes).totalBytes) });
     return;
   }
-  // The last run of this brain ended with the app gone. He is still woken:
-  // it may have been a busy phone, and the reader asked.
-  if (interrupted === entry.id) {
-    showToast({ key: INTERRUPTED_TOAST_KEY, message: interruptedMessage(fit) });
+  const verdict = get().memoryVerdicts[entry.id];
+  if (verdict) {
+    set({ loadError: closedByPhoneMessage(entry.name, verdict.heldBytes, fit === 'fits') });
+    return;
+  }
+  // The last run of this brain ended with the app gone, and not for memory.
+  // He is still woken: a fault is not his size, and with no record of the
+  // death it may have been a busy phone.
+  if (interrupted?.model === entry.id && outcome) {
+    if (outcome.cause === 'fault') {
+      showToast({ key: INTERRUPTED_TOAST_KEY, message: faultMessage(faultLabel(outcome.exit)) });
+    } else if (outcome.cause === 'unknown') {
+      showToast({ key: INTERRUPTED_TOAST_KEY, message: interruptedMessage(fit) });
+    }
   }
 
   set({ isLoading: true, loadError: null });

@@ -13,7 +13,8 @@ export interface DeviceLanguageRowProps {
   count: number;
   open: boolean;
   mutedForeground?: string;
-  onToggle: (language: string) => void;
+  /** Given whether it was open, so the list can tell an opening from a closing. */
+  onToggle: (language: string, wasOpen: boolean) => void;
 }
 
 /**
@@ -36,7 +37,7 @@ export const DeviceLanguageRow = React.memo(function DeviceLanguageRow({
   return (
     <Touchable
       className="flex-row items-center justify-between bg-popover px-6 py-3"
-      onPress={() => onToggle(language)}
+      onPress={() => onToggle(language, open)}
       haptic="tap"
       accessibilityRole="button"
       accessibilityLabel={label}

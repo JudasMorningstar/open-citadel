@@ -14,7 +14,27 @@ const AWAY_SCALE = 0.92;
 const REST_OPACITY = 1;
 const AWAY_OPACITY = 0.45;
 
-export type VoiceCarouselSlideProps = Omit<VoiceCarouselCardProps, 'onSelect'>;
+export type VoiceCarouselSlideProps = Omit<VoiceCarouselCardProps, 'onSelect'> & {
+  /**
+   * Hold the slide's place without drawing its card: for the slides out of
+   * view while the run is being built in the frame of a press. See `full` on
+   * `VoiceCarousel`.
+   */
+  bare?: boolean;
+};
+
+/**
+ * The run's `scrollTo`, under one identity for the slide's whole life. The
+ * carousel hands out a new one each time it settles, which would otherwise
+ * redraw every card for a function that does the same thing.
+ */
+function useSelect(scrollTo: (index: number) => void) {
+  const latest = React.useRef(scrollTo);
+  React.useEffect(() => {
+    latest.current = scrollTo;
+  }, [scrollTo]);
+  return React.useCallback((index: number) => latest.current(index), []);
+}
 
 /**
  * One slide of the voice run, with depth — mirrors `PlanSlide`: the
@@ -26,8 +46,9 @@ export type VoiceCarouselSlideProps = Omit<VoiceCarouselCardProps, 'onSelect'>;
  * exists inside the `<Carousel>` tree this renders into — the host component
  * that lays out `<Carousel>` itself sits one level above that context.
  */
-export function VoiceCarouselSlide({ index, ...card }: VoiceCarouselSlideProps) {
+export function VoiceCarouselSlide({ index, bare = false, ...card }: VoiceCarouselSlideProps) {
   const { progress, scrollTo } = useCarouselState();
+  const select = useSelect(scrollTo);
   const reducedMotion = useReducedMotion();
 
   const animated = useAnimatedStyle(() => {
@@ -50,7 +71,7 @@ export function VoiceCarouselSlide({ index, ...card }: VoiceCarouselSlideProps) 
   return (
     <Carousel.Item className="px-1.5">
       <Animated.View className="h-full w-full" style={animated}>
-        <VoiceCarouselCard {...card} index={index} onSelect={() => scrollTo(index)} />
+        {bare ? null : <VoiceCarouselCard {...card} index={index} onSelect={select} />}
       </Animated.View>
     </Carousel.Item>
   );

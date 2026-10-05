@@ -274,9 +274,9 @@ function Fade({
  * Gradients need a transparent stop of the *same* colour — `transparent` is
  * black at zero alpha on Android, which shows as a grey smear.
  *
- * Open Citadel: exported (upstream keeps it private) for `StillRowFade` in
- * `components/scroll-fades`, which draws this same gradient for a row that
- * cannot scroll and must not grow a second copy of the rule.
+ * Open Citadel: exported (upstream keeps it private) for `PlainRowFade` in
+ * `components/scroll-fades`, which draws this same gradient for a short shelf
+ * and must not grow a second copy of the rule.
  */
 export function withAlpha(color: string, alpha: number): string {
   if (color.startsWith('#')) {
