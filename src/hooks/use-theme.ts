@@ -46,29 +46,30 @@ export function useThemeSetting(): AppTheme {
 /** Reads the active theme name and sets it — the documented `useTheme` API. */
 export function useTheme() {
   const { theme } = useUniwind();
-  const setTheme = useSetTheme();
-
   return {
     /** Active theme name, e.g. `'dark'`. */
     theme,
-    setTheme,
+    setTheme: setThemeSetting,
   };
 }
 
-function useSetTheme() {
-  const storeTheme = useSettingsStore((s) => s.theme);
-  const setStoredTheme = useSettingsStore((s) => s.setTheme);
+/**
+ * Sets the theme setting. A plain function over the store as it is when
+ * called, not a hook: as a hook it subscribed every caller of `useTheme` and
+ * `useThemeMode` to the setting itself, the root layout among them, so a
+ * change drew all of them again at once, ahead of the scope that is meant to
+ * decide when each part of the app changes (`components/theme-scope`).
+ */
+export function setThemeSetting(name: AppTheme | 'system') {
+  if (name === 'system') {
+    // Following the device is a Uniwind-level concept; the store has no
+    // `system` value yet, so this applies immediately but does not persist.
+    Uniwind.setTheme('system');
+    return;
+  }
 
-  return (name: AppTheme | 'system') => {
-    if (name === 'system') {
-      // Following the device is a Uniwind-level concept; the store has no
-      // `system` value yet, so this applies immediately but does not persist.
-      Uniwind.setTheme('system');
-      return;
-    }
-
-    if (name !== storeTheme) void setStoredTheme(name);
-  };
+  const { theme, setTheme } = useSettingsStore.getState();
+  if (name !== theme) void setTheme(name);
 }
 
 /**
@@ -78,7 +79,7 @@ function useSetTheme() {
  */
 export function useThemeMode() {
   const { theme } = useUniwind();
-  const setTheme = useSetTheme();
+  const setTheme = setThemeSetting;
 
   const mode: Mode = theme === 'light' ? 'light' : 'dark';
 

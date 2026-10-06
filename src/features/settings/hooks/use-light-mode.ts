@@ -1,27 +1,18 @@
 import React from 'react';
 
-import { useThemeMode } from '@/hooks/use-theme';
+import { setThemeSetting, useThemeSetting } from '@/hooks/use-theme';
 
-/** The light switch, moved on the press rather than once the theme has landed. */
+/**
+ * The light switch, read from the setting and not from the theme drawn.
+ *
+ * The setting changes in the press itself, so the thumb moves on that frame.
+ * The theme drawn is handed out by `ThemeScope`, and the part of the app this
+ * hook is called from takes it a beat later: read from there, the switch
+ * needed a local copy to stay ahead, and two quick presses could show the
+ * thumb the first one's answer after the second.
+ */
 export function useLightMode() {
-  const { mode, setMode } = useThemeMode();
-  // Local, so the thumb moves on the frame of the press, ahead of the store
-  // write and the theme-token cascade (see `app/_layout.tsx`). `mode` is the
-  // truth and takes this back the moment it catches up.
-  const [light, setLight] = React.useState(mode === 'light');
-  // State following the theme, set while rendering: when it moves, so does this.
-  const [seen, setSeen] = React.useState(mode);
-  if (seen !== mode) {
-    setSeen(mode);
-    setLight(mode === 'light');
-  }
-
-  const onLightChange = React.useCallback(
-    (next: boolean) => {
-      setLight(next);
-      setMode(next ? 'light' : 'dark');
-    },
-    [setMode],
-  );
+  const light = useThemeSetting() === 'light';
+  const onLightChange = React.useCallback((next: boolean) => setThemeSetting(next ? 'light' : 'dark'), []);
   return { light, onLightChange };
 }

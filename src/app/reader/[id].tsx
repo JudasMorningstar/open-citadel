@@ -49,6 +49,7 @@ import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 import { ReaderLoading } from "@/features/reader/components/reader-loading";
+import { useThemeMode } from "@/hooks/use-theme";
 import { ReadingSkeleton } from "@/features/reader/components/reading-skeleton";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
@@ -91,7 +92,10 @@ function parseLocatorParam(param: string | undefined): Locator | null {
 }
 
 export default function ReaderScreen() {
-  const appTheme = useSettingsStore((s) => s.theme);
+  // The theme the reader is drawn in, which is also when its colours below
+  // change: read from the setting it ran a step ahead of them, and the page
+  // was restyled twice for one change.
+  const { mode: appTheme } = useThemeMode();
   const [background, foreground, primary, mutedForeground] = useCSSVariable([
     "--color-background",
     "--color-foreground",

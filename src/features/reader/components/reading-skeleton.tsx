@@ -35,7 +35,7 @@ const PAGE = { marginTop: spacing[8], overflow: 'hidden' } as const;
  */
 export function ReadingSkeleton({ label }: { label?: string }) {
   return (
-    <SkeletonGroup label={label} className="flex-1 gap-3 px-6">
+    <SkeletonGroup label={label} className="flex-1 px-6">
       <View className="flex-1 gap-3" style={PAGE}>
         {LINES.map((line, index) => (
           <SkeletonBar key={index} className={line} />
