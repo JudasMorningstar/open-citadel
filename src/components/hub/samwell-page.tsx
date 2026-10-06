@@ -42,6 +42,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { contentColumn, spacing } from "@/constants/theme";
 import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-sheet";
+import { useArticleCover } from "@/features/blogs/hooks/use-article-cover";
 import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
@@ -230,7 +231,10 @@ export function SamwellPage() {
   );
   // Each mode's body is mounted the first time it is shown and kept from then
   // on, as the Library's sides are, so switching back lands where it was.
-  const [modesOpened, setModesOpened] = React.useState({ chat: mode === "chat", compass: mode === "compass" });
+  const [modesOpened, setModesOpened] = React.useState({
+    chat: mode === "chat",
+    compass: mode === "compass",
+  });
   if (!modesOpened[mode]) setModesOpened({ ...modesOpened, [mode]: true });
 
   const [showBookPicker, setShowBookPicker] = React.useState(false);
@@ -339,6 +343,11 @@ export function SamwellPage() {
   const attachedKind = activeSession
     ? activeSession.bookKind
     : (pendingBook?.kind ?? null);
+  const articleCover = useArticleCover(
+    attachedKind === "article"
+      ? (activeSession?.bookId ?? pendingBook?.id ?? null)
+      : null,
+  );
   const showBookButton = !activeSession || attachedKind === "book";
   const showPostButton = !activeSession || attachedKind === "article";
   const attachedBook = attachedKind === "book" ? displayedBookTitle : null;
@@ -515,7 +524,8 @@ export function SamwellPage() {
       : compass.submitting || compass.switching
         ? undefined
         : startNewCompassSession;
-  const composerNewChatLabel = mode === "chat" ? "New chat" : "New conversation";
+  const composerNewChatLabel =
+    mode === "chat" ? "New chat" : "New conversation";
 
   const chatSessionCount = sessions.length;
   const compassSessionCount = compass.sessions.length;
@@ -566,6 +576,7 @@ export function SamwellPage() {
                     icon: Newspaper,
                     label: "Blog post",
                     detail: attachedPost ?? "None yet",
+                    image: attachedPost ? articleCover : null,
                     active: attachedPost != null,
                     onPress:
                       activeSession || isGenerating || chat.switching
@@ -677,6 +688,7 @@ export function SamwellPage() {
       showBookButton,
       showPostButton,
       displayedBookCover,
+      articleCover,
       attachedBook,
       attachedPost,
       postPicker.setVisible,
@@ -880,7 +892,9 @@ export function SamwellPage() {
           <BookPickerSheet
             visible={showBookPicker}
             onSelect={(bookId, bookTitle) => {
-              setSession({ pendingBook: { id: bookId, title: bookTitle, kind: 'book' } });
+              setSession({
+                pendingBook: { id: bookId, title: bookTitle, kind: "book" },
+              });
               setShowBookPicker(false);
             }}
             onClose={() => setShowBookPicker(false)}

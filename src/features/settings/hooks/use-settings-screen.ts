@@ -6,7 +6,7 @@ import type { SettingsPanesProps } from '@/features/settings/components/settings
 import { useLightMode } from '@/features/settings/hooks/use-light-mode';
 import { useSettingsPanes } from '@/features/settings/hooks/use-settings-panes';
 import { useSettingsSummaries } from '@/features/settings/hooks/use-settings-summaries';
-import { PANE_TITLES, isSettingsPane } from '@/features/settings/utils/panes';
+import { isSettingsPane } from '@/features/settings/utils/panes';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
 import { backTo } from '@/navigation/navigate';
 import { prefetchDeviceVoices } from '@/query-manager/device-voices';
@@ -29,7 +29,7 @@ export function useSettingsScreen() {
   const params = useLocalSearchParams<{ pane?: string; panel?: string }>();
   const enteredAt = isSettingsPane(params.pane) ? params.pane : null;
   const close = React.useCallback(() => backTo(router, '/'), [router]);
-  const { pane, open, leave, leaves, scrollRef, warm, landed } = useSettingsPanes(enteredAt, close);
+  const { pane, open, leave, warm, landed } = useSettingsPanes(enteredAt, close);
 
   const username = useSettingsStore((s) => s.username);
   const summaries = useSettingsSummaries();
@@ -49,12 +49,12 @@ export function useSettingsScreen() {
   const panes: SettingsPanesProps = {
     pane,
     warm,
+    onLeave: leave,
     home: { name: username || 'Add your name', summaries, ...theme, onOpen: open, onOpenNote: openNote },
     samwell: { onRequestAccount: openProfile, initialMode: params.panel === 'cloud' ? 'cloud' : undefined },
   };
 
   return {
-    page: { title: pane ? PANE_TITLES[pane] : 'Settings', leaves, onLeave: leave, scrollRef },
     panes,
     note: { visible: noteOpen, onClose: closeNote },
   };

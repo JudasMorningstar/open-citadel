@@ -47,41 +47,46 @@
  * `translateZ`, so a slide is made to *look* further away rather than put there.
  */
 import {
-  Children,
-  createContext,
-  forwardRef,
-  isValidElement,
-  useCallback,
-  useContext,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useLayoutEffect,
-  useState,
-  type ReactNode,
-} from 'react';
-import { Pressable, View, type LayoutChangeEvent, type ViewProps } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  Extrapolation,
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  type SharedValue,
-} from 'react-native-reanimated';
-import { ChevronLeftIcon, ChevronRightIcon } from '@/components/ui/icons';
-import { useControllableState } from '@/components/ui/controllable-state';
-import { Text, textChildren } from '@/components/ui/text';
-import { cn } from '@/lib/cn';
+    normalizeCarouselIndex,
+    useCarouselAutoplay,
+    useCarouselIndexLifecycle,
+} from "@/components/ui/carousel-lifecycle";
+import { useControllableState } from "@/components/ui/controllable-state";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
+import { Text, textChildren } from "@/components/ui/text";
+import { cn } from "@/lib/cn";
 import {
-  normalizeCarouselIndex,
-  useCarouselAutoplay,
-  useCarouselIndexLifecycle,
-} from '@/components/ui/carousel-lifecycle';
+    Children,
+    createContext,
+    forwardRef,
+    isValidElement,
+    useCallback,
+    useContext,
+    useImperativeHandle,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
+} from "react";
+import {
+    Pressable,
+    View,
+    type LayoutChangeEvent,
+    type ViewProps,
+} from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+    Extrapolation,
+    interpolate,
+    runOnJS,
+    useAnimatedStyle,
+    useReducedMotion,
+    useSharedValue,
+    withSpring,
+    withTiming,
+    type SharedValue,
+} from "react-native-reanimated";
 
 /** Settles the run onto a whole index. Tuned to stop rather than to bounce. */
 const SPRING = { damping: 22, stiffness: 190, mass: 0.55 } as const;
@@ -114,9 +119,9 @@ const COVERFLOW_SPREAD = 0.55;
 /** Cards behind the top one in `stack`. Two is a pile; five is a mess. */
 const STACK_DEPTH = 2;
 
-export type CarouselVariant = 'default' | 'interactive' | 'coverflow' | 'stack';
-export type CarouselOrientation = 'horizontal' | 'vertical';
-export type CarouselAlign = 'start' | 'center';
+export type CarouselVariant = "default" | "interactive" | "coverflow" | "stack";
+export type CarouselOrientation = "horizontal" | "vertical";
+export type CarouselAlign = "start" | "center";
 
 interface CarouselContextValue {
   /** Position in the run as a fractional index. The whole component reads it. */
@@ -173,7 +178,7 @@ const ItemIndexContext = createContext(0);
  */
 export function useCarouselState() {
   const { index, count, scrollTo, next, previous, progress, engaged } =
-    useCarousel('useCarouselState');
+    useCarousel("useCarouselState");
   return { index, count, scrollTo, next, previous, progress, engaged };
 }
 
@@ -182,7 +187,7 @@ export function useCarouselState() {
  * per frame on the UI thread, and the imperative handle needs it in JS.
  */
 function wrap(value: number, count: number) {
-  'worklet';
+  "worklet";
   return normalizeCarouselIndex(value, count, true);
 }
 
@@ -194,8 +199,13 @@ function wrap(value: number, count: number) {
  * every layout throws it off screen at the exact moment it should be sliding
  * in from the other side.
  */
-function distance(index: number, progress: number, count: number, loop: boolean) {
-  'worklet';
+function distance(
+  index: number,
+  progress: number,
+  count: number,
+  loop: boolean,
+) {
+  "worklet";
   const raw = index - progress;
   if (!loop || count <= 1) return raw;
   const half = count / 2;
@@ -259,305 +269,347 @@ export interface CarouselHandle {
   scrollTo: (index: number) => void;
 }
 
-const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function CarouselRoot(
-  {
-    className,
-    variant = 'default',
-    orientation = 'horizontal',
-    loop = false,
-    align = 'center',
-    itemSize: itemSizeProp,
-    autoplay = false,
-    autoplayInterval = 4000,
-    index: indexProp,
-    defaultIndex = 0,
-    onIndexChange,
-    scrollEnabled = true,
-    children,
-    ...props
-  },
-  ref
-) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [count, setCountValue] = useState(0);
-  const [countKnown, setCountKnown] = useState(false);
-  const [touched, setTouched] = useState(false);
-  const reducedMotion = useReducedMotion();
-
-  const {
-    value: requestedIndex,
-    setValue: setIndex,
-    isControlled,
-  } = useControllableState({
-    value: indexProp,
-    defaultValue: defaultIndex,
-    onChange: onIndexChange,
-  });
-
-  const progress = useSharedValue(indexProp ?? defaultIndex);
-  const engaged = useSharedValue(0);
-  /*
-   * LOCAL EDIT (Open Citadel): where the run was when the finger landed.
-   *
-   * A pan reports `translation` from the touch down, cumulatively — so the
-   * position under the finger is (start - translation/itemSize), not
-   * (wherever it is now - translation/itemSize). The registry's `onUpdate`
-   * did the latter, which re-applies the whole travel to an already-moved
-   * `progress` on every frame: the run advances by the SUM of the per-frame
-   * offsets and outruns the finger several times over. Felt as a deck that
-   * flies through three cards on a flick meant to take one.
-   *
-   * Re-apply after any `panelui-cli update carousel`.
-   */
-  const dragFrom = useSharedValue(0);
-
-  // A deck is dealt from the top of a pile, so it is dragged sideways whatever
-  // the run's own direction is — there is no track for it to travel along.
-  const axis: CarouselOrientation = variant === 'stack' ? 'horizontal' : orientation;
-  const along = axis === 'horizontal' ? size.width : size.height;
-  const itemSize = itemSizeProp ?? along ?? 0;
-
-  const setCount = useCallback((next: number) => {
-    setCountValue(next);
-    setCountKnown(true);
-  }, []);
-
-  /*
-   * The slide the run is currently travelling to.
-   *
-   * Moving the run and recording where it went are two steps: `scrollTo` starts
-   * the spring, then the new index arrives back through state and the lifecycle
-   * effect asks for it again. Without this the second ask restarts the spring a
-   * frame into the first — from a standstill, so a flick loses the momentum it
-   * was carrying. Remembering the target lets the echo be recognised and
-   * ignored, while a genuine request for the same slide still animates, because
-   * that one comes through `scrollTo` and sets this first.
-   */
-  const animatedTarget = useRef<number | null>(null);
-
-  /*
-   * LOCAL EDIT (Open Citadel): `velocity`.
-   *
-   * `onEnd` reads the release velocity and used it only to DECIDE whether to
-   * step, then started the spring from a standstill. That is the visible seam
-   * between dragging and animating - a hard flick and a slow nudge landed at
-   * exactly the same speed, so the run stopped feeling like a thing you threw
-   * and started feeling like a thing you asked politely to move.
-   *
-   * The spring now inherits the finger's speed. Converted from points per
-   * second into progress units (`/ itemSize`) and negated, because progress
-   * runs opposite to the drag: `onUpdate` computes `dragFrom - moved /
-   * itemSize`.
-   *
-   * Re-apply after any `panelui-cli update carousel`.
-   */
-  const animateTo = useCallback(
-    (target: number, velocity = 0) => {
-      animatedTarget.current = target;
-      const spring = velocity === 0 ? SPRING : { ...SPRING, velocity };
-      if (reducedMotion) {
-        progress.value = target;
-      } else if (loop) {
-        // Spring to the nearest representation of the target rather than to the
-        // target itself, so a wrap from the last slide to the first travels one
-        // step forward instead of winding all the way back through the run.
-        const shortest = progress.value + distance(target, progress.value, count, true);
-        progress.value = withSpring(shortest, spring, (finished) => {
-          if (finished) progress.value = wrap(progress.value, count);
-        });
-      } else {
-        progress.value = withSpring(target, spring);
-      }
+const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(
+  function CarouselRoot(
+    {
+      className,
+      variant = "default",
+      orientation = "horizontal",
+      loop = false,
+      align = "center",
+      itemSize: itemSizeProp,
+      autoplay = false,
+      autoplayInterval = 4000,
+      index: indexProp,
+      defaultIndex = 0,
+      onIndexChange,
+      scrollEnabled = true,
+      children,
+      ...props
     },
-    [count, loop, progress, reducedMotion]
-  );
+    ref,
+  ) {
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    const [count, setCountValue] = useState(0);
+    const [countKnown, setCountKnown] = useState(false);
+    const [touched, setTouched] = useState(false);
+    const reducedMotion = useReducedMotion();
 
-  const settleIndex = useCallback(
-    (next: number) => {
-      if (animatedTarget.current === next) return;
-      if (Math.abs(progress.value - next) >= 0.001) animateTo(next);
-    },
-    [animateTo, progress]
-  );
+    const {
+      value: requestedIndex,
+      setValue: setIndex,
+      isControlled,
+    } = useControllableState({
+      value: indexProp,
+      defaultValue: defaultIndex,
+      onChange: onIndexChange,
+    });
 
-  const index = useCarouselIndexLifecycle({
-    requestedIndex,
-    count,
-    countKnown,
-    loop,
-    onCorrection: setIndex,
-    onSettledIndex: settleIndex,
-  });
+    const progress = useSharedValue(indexProp ?? defaultIndex);
+    const engaged = useSharedValue(0);
+    /*
+     * LOCAL EDIT (Open Citadel): where the run was when the finger landed.
+     *
+     * A pan reports `translation` from the touch down, cumulatively — so the
+     * position under the finger is (start - translation/itemSize), not
+     * (wherever it is now - translation/itemSize). The registry's `onUpdate`
+     * did the latter, which re-applies the whole travel to an already-moved
+     * `progress` on every frame: the run advances by the SUM of the per-frame
+     * offsets and outruns the finger several times over. Felt as a deck that
+     * flies through three cards on a flick meant to take one.
+     *
+     * Re-apply after any `panelui-cli update carousel`.
+     */
+    const dragFrom = useSharedValue(0);
 
-  const scrollTo = useCallback(
-    (target: number, velocity = 0, moving = false) => {
-      if (count <= 0) return;
-      const settled = normalizeCarouselIndex(target, count, loop);
+    // A deck is dealt from the top of a pile, so it is dragged sideways whatever
+    // the run's own direction is — there is no track for it to travel along.
+    const axis: CarouselOrientation =
+      variant === "stack" ? "horizontal" : orientation;
+    const along = axis === "horizontal" ? size.width : size.height;
+    const itemSize = itemSizeProp ?? along ?? 0;
 
-      // A controlled request belongs to its owner. The finger may move the run,
-      // but after release it returns to the current prop until the owner accepts
-      // the request by changing that prop.
-      // `moving`: the release already started this spring on the UI thread
-      // (see the LOCAL EDIT in `onEnd`), so only the record is brought up to date.
-      if (moving) animatedTarget.current = settled;
-      else animateTo(isControlled ? index : settled, velocity);
-      setIndex(settled);
-    },
-    [animateTo, count, index, isControlled, loop, setIndex]
-  );
+    const setCount = useCallback((next: number) => {
+      setCountValue(next);
+      setCountKnown(true);
+    }, []);
 
-  const next = useCallback(() => scrollTo(index + 1), [index, scrollTo]);
-  const previous = useCallback(() => scrollTo(index - 1), [index, scrollTo]);
+    /*
+     * The slide the run is currently travelling to.
+     *
+     * Moving the run and recording where it went are two steps: `scrollTo` starts
+     * the spring, then the new index arrives back through state and the lifecycle
+     * effect asks for it again. Without this the second ask restarts the spring a
+     * frame into the first — from a standstill, so a flick loses the momentum it
+     * was carrying. Remembering the target lets the echo be recognised and
+     * ignored, while a genuine request for the same slide still animates, because
+     * that one comes through `scrollTo` and sets this first.
+     */
+    const animatedTarget = useRef<number | null>(null);
 
-  useImperativeHandle(ref, () => ({ next, previous, scrollTo }), [next, previous, scrollTo]);
-
-  /*
-   * Autoplay stops for good the first time a finger lands, rather than pausing.
-   * Someone who has taken hold of the run is reading it, and having it start
-   * moving again a few seconds later is the behaviour everybody hates.
-   */
-  useCarouselAutoplay({
-    enabled: autoplay && !touched,
-    index,
-    count,
-    loop,
-    interval: autoplayInterval,
-    onAdvance: scrollTo,
-  });
-
-  const settle = useCallback(
-    (target: number, velocity = 0, moving = false) => {
-      setTouched(true);
-      scrollTo(target, velocity, moving);
-    },
-    [scrollTo]
-  );
-
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .enabled(scrollEnabled && count > 1 && itemSize > 0)
-        // A carousel inside a scroll view has to let the cross-axis drags
-        // through, or the two fight over every diagonal.
-        .activeOffsetX(axis === 'horizontal' ? [-10, 10] : [-10000, 10000])
-        .activeOffsetY(axis === 'horizontal' ? [-10000, 10000] : [-10, 10])
-        .onBegin(() => {
-          // Read before the first update, and before any spring still settling
-          // from the last flick has anywhere left to go — assigning `progress`
-          // below cancels it, so this is where the run actually starts from.
-          dragFrom.value = progress.value;
-          engaged.value = withTiming(1, { duration: 160 });
-        })
-        .onUpdate((event) => {
-          const moved = axis === 'horizontal' ? event.translationX : event.translationY;
-          const raw = dragFrom.value - moved / itemSize;
-          if (loop) {
-            progress.value = raw;
-            return;
-          }
-          // Off the ends the run follows the finger at a fraction of the
-          // distance, so the edge is felt rather than hit.
-          const last = count - 1;
-          progress.value =
-            raw < 0
-              ? Math.max(-OVERSCROLL, raw * RUBBER)
-              : raw > last
-                ? Math.min(last + OVERSCROLL, last + (raw - last) * RUBBER)
-                : raw;
-        })
-        .onEnd((event) => {
-          const velocity = axis === 'horizontal' ? event.velocityX : event.velocityY;
-          const moved = axis === 'horizontal' ? event.translationX : event.translationY;
-
-          // The slide it started on, not the one it is nearest now: rounding
-          // the current position would let a slow drag that never reached the
-          // threshold still count as a move. Taken from where the finger
-          // landed rather than reconstructed by adding the travel back on,
-          // which the rubber band at the ends makes inexact.
-          const from = Math.round(dragFrom.value);
-          const past = Math.abs(moved) / itemSize > SNAP_FRACTION;
-          const flicked = Math.abs(velocity) > SNAP_VELOCITY;
-          const step = past || flicked ? (moved < 0 ? 1 : -1) : 0;
-
-          // Negated and scaled into progress units: see `animateTo`.
-          const thrown = -velocity / itemSize;
-
-          /*
-           * LOCAL EDIT (Open Citadel): the settle starts here, on the UI
-           * thread, in the frame the finger lifts.
-           *
-           * The registry hands the release to the JS thread and starts the
-           * spring from there. The JS thread is where React is, so the run sat
-           * still at the release point for as long as JS was busy, then began
-           * its spring in the same moment `onIndexChange` re-rendered whatever
-           * owns the run: a pause, then a stutter (measured on a Galaxy A33,
-           * a swipe through the voice run was 17% janky at a 22ms median).
-           * JS is still told, to record the index, but the motion no longer
-           * waits for it. Only for the plain case: a looped run needs the
-           * shortest-way-round and a controlled one answers to its owner,
-           * both of which `scrollTo` decides.
-           *
-           * Re-apply after any `panelui-cli update carousel`.
-           */
-          if (!loop && !isControlled && !reducedMotion) {
-            const settled = normalizeCarouselIndex(from + step, count, false);
-            progress.set(withSpring(settled, thrown === 0 ? SPRING : { ...SPRING, velocity: thrown }));
-            runOnJS(settle)(settled, thrown, true);
-            return;
-          }
-          runOnJS(settle)(from + step, thrown);
-        })
-        .onFinalize(() => {
-          engaged.value = withTiming(0, { duration: 220 });
-        }),
-    [scrollEnabled, count, itemSize, axis, engaged, progress, dragFrom, loop, settle, isControlled, reducedMotion]
-  );
-
-  const onLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setSize((current) =>
-      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
-        ? current
-        : { width, height }
+    /*
+     * LOCAL EDIT (Open Citadel): `velocity`.
+     *
+     * `onEnd` reads the release velocity and used it only to DECIDE whether to
+     * step, then started the spring from a standstill. That is the visible seam
+     * between dragging and animating - a hard flick and a slow nudge landed at
+     * exactly the same speed, so the run stopped feeling like a thing you threw
+     * and started feeling like a thing you asked politely to move.
+     *
+     * The spring now inherits the finger's speed. Converted from points per
+     * second into progress units (`/ itemSize`) and negated, because progress
+     * runs opposite to the drag: `onUpdate` computes `dragFrom - moved /
+     * itemSize`.
+     *
+     * Re-apply after any `panelui-cli update carousel`.
+     */
+    const animateTo = useCallback(
+      (target: number, velocity = 0) => {
+        animatedTarget.current = target;
+        const spring = velocity === 0 ? SPRING : { ...SPRING, velocity };
+        if (reducedMotion) {
+          progress.value = target;
+        } else if (loop) {
+          // Spring to the nearest representation of the target rather than to the
+          // target itself, so a wrap from the last slide to the first travels one
+          // step forward instead of winding all the way back through the run.
+          const shortest =
+            progress.value + distance(target, progress.value, count, true);
+          progress.value = withSpring(shortest, spring, (finished) => {
+            if (finished) progress.value = wrap(progress.value, count);
+          });
+        } else {
+          progress.value = withSpring(target, spring);
+        }
+      },
+      [count, loop, progress, reducedMotion],
     );
-    props.onLayout?.(event);
-  };
 
-  const context = useMemo(
-    () => ({
-      progress,
-      engaged,
+    const settleIndex = useCallback(
+      (next: number) => {
+        if (animatedTarget.current === next) return;
+        if (Math.abs(progress.value - next) >= 0.001) animateTo(next);
+      },
+      [animateTo, progress],
+    );
+
+    const index = useCarouselIndexLifecycle({
+      requestedIndex,
       count,
-      setCount,
-      index,
-      scrollTo: settle,
+      countKnown,
+      loop,
+      onCorrection: setIndex,
+      onSettledIndex: settleIndex,
+    });
+
+    const scrollTo = useCallback(
+      (target: number, velocity = 0, moving = false) => {
+        if (count <= 0) return;
+        const settled = normalizeCarouselIndex(target, count, loop);
+
+        // A controlled request belongs to its owner. The finger may move the run,
+        // but after release it returns to the current prop until the owner accepts
+        // the request by changing that prop.
+        // `moving`: the release already started this spring on the UI thread
+        // (see the LOCAL EDIT in `onEnd`), so only the record is brought up to date.
+        if (moving) animatedTarget.current = settled;
+        else animateTo(isControlled ? index : settled, velocity);
+        setIndex(settled);
+      },
+      [animateTo, count, index, isControlled, loop, setIndex],
+    );
+
+    const next = useCallback(() => scrollTo(index + 1), [index, scrollTo]);
+    const previous = useCallback(() => scrollTo(index - 1), [index, scrollTo]);
+
+    useImperativeHandle(ref, () => ({ next, previous, scrollTo }), [
       next,
       previous,
-      variant,
-      orientation: axis,
-      align,
-      loop,
-      itemSize,
-    }),
-    [progress, engaged, count, index, settle, next, previous, variant, axis, align, loop, itemSize]
-  );
+      scrollTo,
+    ]);
 
-  return (
-    <CarouselContext.Provider value={context}>
-      <GestureDetector gesture={pan}>
-        <View
-          accessibilityRole="list"
-          {...props}
-          onLayout={onLayout}
-          className={cn('w-full', className)}
-        >
-          {textChildren(children)}
-        </View>
-      </GestureDetector>
-    </CarouselContext.Provider>
-  );
-});
-CarouselRoot.displayName = 'Carousel';
+    /*
+     * Autoplay stops for good the first time a finger lands, rather than pausing.
+     * Someone who has taken hold of the run is reading it, and having it start
+     * moving again a few seconds later is the behaviour everybody hates.
+     */
+    useCarouselAutoplay({
+      enabled: autoplay && !touched,
+      index,
+      count,
+      loop,
+      interval: autoplayInterval,
+      onAdvance: scrollTo,
+    });
+
+    const settle = useCallback(
+      (target: number, velocity = 0, moving = false) => {
+        setTouched(true);
+        scrollTo(target, velocity, moving);
+      },
+      [scrollTo],
+    );
+
+    const pan = useMemo(() => {
+      return (
+        Gesture.Pan()
+          .enabled(scrollEnabled && count > 1 && itemSize > 0)
+          // A carousel inside a scroll view has to let the cross-axis drags
+          // through, or the two fight over every diagonal.
+          .activeOffsetX(axis === "horizontal" ? [-10, 10] : [-10000, 10000])
+          .activeOffsetY(axis === "horizontal" ? [-10000, 10000] : [-10, 10])
+          .onBegin(() => {
+            // Read before the first update, and before any spring still settling
+            // from the last flick has anywhere left to go — assigning `progress`
+            // below cancels it, so this is where the run actually starts from.
+            dragFrom.value = progress.value;
+            engaged.value = withTiming(1, { duration: 160 });
+          })
+          .onUpdate((event) => {
+            const moved =
+              axis === "horizontal" ? event.translationX : event.translationY;
+            const raw = dragFrom.value - moved / itemSize;
+            if (loop) {
+              progress.value = raw;
+              return;
+            }
+            // Off the ends the run follows the finger at a fraction of the
+            // distance, so the edge is felt rather than hit.
+            const last = count - 1;
+            progress.value =
+              raw < 0
+                ? Math.max(-OVERSCROLL, raw * RUBBER)
+                : raw > last
+                  ? Math.min(last + OVERSCROLL, last + (raw - last) * RUBBER)
+                  : raw;
+          })
+          .onEnd((event) => {
+            const velocity =
+              axis === "horizontal" ? event.velocityX : event.velocityY;
+            const moved =
+              axis === "horizontal" ? event.translationX : event.translationY;
+
+            // The slide it started on, not the one it is nearest now: rounding
+            // the current position would let a slow drag that never reached the
+            // threshold still count as a move. Taken from where the finger
+            // landed rather than reconstructed by adding the travel back on,
+            // which the rubber band at the ends makes inexact.
+            const from = Math.round(dragFrom.value);
+            const past = Math.abs(moved) / itemSize > SNAP_FRACTION;
+            const flicked = Math.abs(velocity) > SNAP_VELOCITY;
+            const step = past || flicked ? (moved < 0 ? 1 : -1) : 0;
+
+            // Negated and scaled into progress units: see `animateTo`.
+            const thrown = -velocity / itemSize;
+
+            /*
+             * LOCAL EDIT (Open Citadel): the settle starts here, on the UI
+             * thread, in the frame the finger lifts.
+             *
+             * The registry hands the release to the JS thread and starts the
+             * spring from there. The JS thread is where React is, so the run sat
+             * still at the release point for as long as JS was busy, then began
+             * its spring in the same moment `onIndexChange` re-rendered whatever
+             * owns the run: a pause, then a stutter (measured on a Galaxy A33,
+             * a swipe through the voice run was 17% janky at a 22ms median).
+             * JS is still told, to record the index, but the motion no longer
+             * waits for it. Only for the plain case: a looped run needs the
+             * shortest-way-round and a controlled one answers to its owner,
+             * both of which `scrollTo` decides.
+             *
+             * Re-apply after any `panelui-cli update carousel`.
+             */
+            if (!loop && !isControlled && !reducedMotion) {
+              const settled = normalizeCarouselIndex(from + step, count, false);
+              progress.set(
+                withSpring(
+                  settled,
+                  thrown === 0 ? SPRING : { ...SPRING, velocity: thrown },
+                ),
+              );
+              runOnJS(settle)(settled, thrown, true);
+              return;
+            }
+            runOnJS(settle)(from + step, thrown);
+          })
+          .onFinalize(() => {
+            engaged.value = withTiming(0, { duration: 220 });
+          })
+      );
+    }, [
+      scrollEnabled,
+      count,
+      itemSize,
+      axis,
+      engaged,
+      progress,
+      dragFrom,
+      loop,
+      settle,
+      isControlled,
+      reducedMotion,
+    ]);
+
+    const onLayout = (event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+      setSize((current) =>
+        Math.abs(current.width - width) < 1 &&
+        Math.abs(current.height - height) < 1
+          ? current
+          : { width, height },
+      );
+      props.onLayout?.(event);
+    };
+
+    const context = useMemo(
+      () => ({
+        progress,
+        engaged,
+        count,
+        setCount,
+        index,
+        scrollTo: settle,
+        next,
+        previous,
+        variant,
+        orientation: axis,
+        align,
+        loop,
+        itemSize,
+      }),
+      [
+        progress,
+        engaged,
+        count,
+        index,
+        settle,
+        next,
+        previous,
+        variant,
+        axis,
+        align,
+        loop,
+        itemSize,
+      ],
+    );
+
+    return (
+      <CarouselContext.Provider value={context}>
+        <GestureDetector gesture={pan}>
+          <View
+            accessibilityRole="list"
+            {...props}
+            onLayout={onLayout}
+            className={cn("w-full", className)}
+          >
+            {textChildren(children)}
+          </View>
+        </GestureDetector>
+      </CarouselContext.Provider>
+    );
+  },
+);
+CarouselRoot.displayName = "Carousel";
 
 /* -------------------------------------------------------------------------- */
 /* Track                                                                      */
@@ -577,11 +629,17 @@ export interface CarouselContentProps extends ViewProps {
  * rather than two different trees. The alignment here is the *resting* place
  * every slide is offset from.
  */
-function CarouselContent({ className, children, ...props }: CarouselContentProps) {
-  const { setCount, variant, orientation, align } = useCarousel('Carousel.Content');
+function CarouselContent({
+  className,
+  children,
+  ...props
+}: CarouselContentProps) {
+  const { setCount, variant, orientation, align } =
+    useCarousel("Carousel.Content");
   const slides = renderableChildren(children);
-  const horizontal = orientation === 'horizontal';
-  const centred = align === 'center' || variant === 'coverflow' || variant === 'stack';
+  const horizontal = orientation === "horizontal";
+  const centred =
+    align === "center" || variant === "coverflow" || variant === "stack";
 
   /*
    * LOCAL EDIT (Open Citadel): a layout effect, so the count is known before
@@ -603,23 +661,26 @@ function CarouselContent({ className, children, ...props }: CarouselContentProps
     <View
       {...props}
       className={cn(
-        'w-full overflow-hidden',
+        "w-full overflow-hidden",
         // Absolutely positioned children with no insets still take the
         // parent's alignment in Yoga, which is what puts a slide at rest.
         horizontal
-          ? cn('justify-center', centred ? 'items-center' : 'items-start')
-          : cn('items-center', centred ? 'justify-center' : 'justify-start'),
-        className
+          ? cn("justify-center", centred ? "items-center" : "items-start")
+          : cn("items-center", centred ? "justify-center" : "justify-start"),
+        className,
       )}
       style={[
         // `perspective` on the container is what makes coverflow's rotation
         // read as depth rather than as a squash.
-        variant === 'coverflow' ? { transform: [{ perspective: 1000 }] } : null,
+        variant === "coverflow" ? { transform: [{ perspective: 1000 }] } : null,
         props.style,
       ]}
     >
       {slides.map((child, index) => (
-        <ItemIndexContext.Provider key={renderableChildKey(child, index)} value={index}>
+        <ItemIndexContext.Provider
+          key={renderableChildKey(child, index)}
+          value={index}
+        >
           {child}
         </ItemIndexContext.Provider>
       ))}
@@ -633,11 +694,24 @@ export interface CarouselItemProps extends ViewProps {
 }
 
 /** One slide. Its transform is whatever the root's `variant` asks for. */
-function CarouselItem({ className, children, style, ...props }: CarouselItemProps) {
-  const { progress, engaged, count, index: active, variant, orientation, loop, itemSize } =
-    useCarousel('Carousel.Item');
+function CarouselItem({
+  className,
+  children,
+  style,
+  ...props
+}: CarouselItemProps) {
+  const {
+    progress,
+    engaged,
+    count,
+    index: active,
+    variant,
+    orientation,
+    loop,
+    itemSize,
+  } = useCarousel("Carousel.Item");
   const index = useContext(ItemIndexContext);
-  const horizontal = orientation === 'horizontal';
+  const horizontal = orientation === "horizontal";
 
   /*
    * In the layouts that pile slides on top of each other, only the one on top
@@ -649,14 +723,14 @@ function CarouselItem({ className, children, style, ...props }: CarouselItemProp
    * a deck that slide is the one at the bottom of the pile, drawn at zero
    * opacity. An invisible card was swallowing every drag.
    */
-  const stacked = variant === 'coverflow' || variant === 'stack';
+  const stacked = variant === "coverflow" || variant === "stack";
   const inert = stacked && index !== active;
 
   const animated = useAnimatedStyle(() => {
     const d = distance(index, progress.value, count, loop);
     const a = Math.abs(d);
 
-    if (variant === 'coverflow') {
+    if (variant === "coverflow") {
       return {
         opacity: a > COVERFLOW_DEPTH ? 0 : Math.max(0, 1 - a * 0.25),
         zIndex: Math.round(100 - a * 10),
@@ -665,13 +739,15 @@ function CarouselItem({ className, children, style, ...props }: CarouselItemProp
           { translateX: d * itemSize * COVERFLOW_SPREAD },
           // Turned away from the middle and back towards it as it arrives.
           // Interpolated rather than switched, or a slide would snap flat.
-          { rotateY: `${interpolate(d, [-1, 0, 1], [38, 0, -38], Extrapolation.CLAMP)}deg` },
+          {
+            rotateY: `${interpolate(d, [-1, 0, 1], [38, 0, -38], Extrapolation.CLAMP)}deg`,
+          },
           { scale: interpolate(a, [0, 1], [1.1, 0.92], Extrapolation.CLAMP) },
         ],
       };
     }
 
-    if (variant === 'stack') {
+    if (variant === "stack") {
       // The pile behind the top card is stepped, not spread: each card back is
       // a little smaller and a little lower. Only the top one is dragged, and
       // it leaves sideways with a tilt.
@@ -697,7 +773,7 @@ function CarouselItem({ className, children, style, ...props }: CarouselItemProp
       };
     }
 
-    if (variant === 'interactive') {
+    if (variant === "interactive") {
       /*
        * Two states blended by `engaged`, rather than switched between: at rest
        * the run is a tidy fan, and it opens wider under a finger. Blended, so
@@ -741,18 +817,22 @@ function CarouselItem({ className, children, style, ...props }: CarouselItemProp
   // `coverflow` and `stack` are sized by whatever is put in them: they are
   // built around a card, and a card that had to be the width of the screen
   // would have nothing to stack behind.
-  const sized = variant === 'default' || variant === 'interactive';
+  const sized = variant === "default" || variant === "interactive";
 
   return (
     <Animated.View
       {...props}
       style={[
-        { position: 'absolute', pointerEvents: inert ? 'none' : 'auto' },
-        sized ? (horizontal ? { width: itemSize } : { height: itemSize }) : null,
-        sized && variant === 'default'
+        { position: "absolute", pointerEvents: inert ? "none" : "auto" },
+        sized
           ? horizontal
-            ? { height: '100%' }
-            : { width: '100%' }
+            ? { width: itemSize }
+            : { height: itemSize }
+          : null,
+        sized && variant === "default"
+          ? horizontal
+            ? { height: "100%" }
+            : { width: "100%" }
           : null,
         animated,
         style,
@@ -780,8 +860,12 @@ export interface CarouselCaptionProps extends ViewProps {
  * it names — a caption that stays put while the picture moves belongs to the
  * carousel rather than to the picture.
  */
-function CarouselCaption({ className, children, ...props }: CarouselCaptionProps) {
-  const { progress, count, loop } = useCarousel('Carousel.Caption');
+function CarouselCaption({
+  className,
+  children,
+  ...props
+}: CarouselCaptionProps) {
+  const { progress, count, loop } = useCarousel("Carousel.Caption");
   const index = useContext(ItemIndexContext);
 
   /*
@@ -803,7 +887,11 @@ function CarouselCaption({ className, children, ...props }: CarouselCaptionProps
   });
 
   return (
-    <Animated.View {...props} style={[animated, props.style]} className={cn(className)}>
+    <Animated.View
+      {...props}
+      style={[animated, props.style]}
+      className={cn(className)}
+    >
       {textChildren(children, (text) => (
         <Text size="xs" weight="semibold" className="text-center">
           {text}
@@ -830,19 +918,23 @@ export interface CarouselDotsProps extends ViewProps {
  */
 function CarouselDots({
   className,
-  orientation = 'horizontal',
+  orientation = "horizontal",
   interactive = true,
   ...props
 }: CarouselDotsProps) {
-  const { count, index, scrollTo } = useCarousel('Carousel.Dots');
-  const horizontal = orientation === 'horizontal';
+  const { count, index, scrollTo } = useCarousel("Carousel.Dots");
+  const horizontal = orientation === "horizontal";
   if (count <= 1) return null;
 
   return (
     <View
       accessibilityRole="tablist"
       {...props}
-      className={cn('items-center gap-1', horizontal ? 'flex-row' : 'flex-col', className)}
+      className={cn(
+        "items-center gap-1",
+        horizontal ? "flex-row" : "flex-col",
+        className,
+      )}
     >
       {Array.from({ length: count }, (_unused, dot) => {
         const active = dot === index;
@@ -859,19 +951,22 @@ function CarouselDots({
             // the join land on the wrong slide — or push a five-slide run out
             // to the width of the screen. 24 clears the minimum with the pitch
             // still wider than the target, so no two dots contend for a touch.
-            className={cn('items-center justify-center', interactive && 'h-6 w-6')}
+            className={cn(
+              "items-center justify-center",
+              interactive && "h-6 w-6",
+            )}
           >
             <View
               className={cn(
-                'rounded-full',
+                "rounded-full",
                 horizontal
                   ? active
-                    ? 'h-1 w-4'
-                    : 'h-1 w-1'
+                    ? "h-1 w-4"
+                    : "h-1 w-1"
                   : active
-                    ? 'h-4 w-1'
-                    : 'h-1 w-1',
-                active ? 'bg-foreground' : 'bg-foreground/30'
+                    ? "h-4 w-1"
+                    : "h-1 w-1",
+                active ? "bg-foreground" : "bg-foreground/30",
               )}
             />
           </Pressable>
@@ -887,31 +982,36 @@ export interface CarouselArrowProps extends ViewProps {
 }
 
 /** Body of the two arrows — they differ only in icon, label and direction. */
-function makeArrow(direction: 'previous' | 'next') {
-  const name = direction === 'next' ? 'Next' : 'Previous';
+function makeArrow(direction: "previous" | "next") {
+  const name = direction === "next" ? "Next" : "Previous";
 
   function Arrow({ className, children, ...props }: CarouselArrowProps) {
-    const { count, index, loop, next, previous } = useCarousel(`Carousel.${name}`);
+    const { count, index, loop, next, previous } = useCarousel(
+      `Carousel.${name}`,
+    );
     // Without a loop the ends are dead. An arrow that stays live and does
     // nothing is worse than one that says it cannot.
-    const disabled = !loop && (direction === 'next' ? index >= count - 1 : index <= 0);
+    const disabled =
+      !loop && (direction === "next" ? index >= count - 1 : index <= 0);
 
     return (
       <Pressable
         {...props}
         disabled={disabled}
-        onPress={direction === 'next' ? next : previous}
+        onPress={direction === "next" ? next : previous}
         accessibilityRole="button"
-        accessibilityLabel={direction === 'next' ? 'Next slide' : 'Previous slide'}
+        accessibilityLabel={
+          direction === "next" ? "Next slide" : "Previous slide"
+        }
         accessibilityState={{ disabled }}
         className={cn(
-          'h-12 w-12 items-center justify-center rounded-full',
-          disabled ? 'opacity-30' : 'active:bg-foreground/10',
-          className
+          "h-12 w-12 items-center justify-center rounded-full",
+          disabled ? "opacity-30" : "active:bg-foreground/10",
+          className,
         )}
       >
         {children ??
-          (direction === 'next' ? (
+          (direction === "next" ? (
             <ChevronRightIcon size={14} />
           ) : (
             <ChevronLeftIcon size={14} />
@@ -923,8 +1023,8 @@ function makeArrow(direction: 'previous' | 'next') {
   return Arrow;
 }
 
-const CarouselPrevious = makeArrow('previous');
-const CarouselNext = makeArrow('next');
+const CarouselPrevious = makeArrow("previous");
+const CarouselNext = makeArrow("next");
 
 export interface CarouselControlsProps extends ViewProps {
   className?: string;
@@ -942,8 +1042,8 @@ function CarouselControls({ className, ...props }: CarouselControlsProps) {
     <View
       {...props}
       className={cn(
-        'flex-row items-center justify-center gap-2 self-center rounded-full border border-border bg-background/80 px-1.5 py-0.5',
-        className
+        "flex-row items-center justify-center gap-2 self-center rounded-full border border-border bg-background/80 px-1.5 py-0.5",
+        className,
       )}
     >
       <CarouselPrevious />

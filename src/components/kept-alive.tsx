@@ -1,5 +1,5 @@
-import React from 'react';
-import { View } from 'react-native';
+import React from "react";
+import { Platform, View } from "react-native";
 
 type KeptAliveProps = {
   /** This is the panel on screen. */
@@ -10,12 +10,24 @@ type KeptAliveProps = {
    * panel is still mounted, and its mount would land mid-slide.
    */
   warm?: boolean;
+  /** Keep its view laid out while another layer hides it (a page transition). */
+  visible?: boolean;
   /** For the view the panel is kept in, which stands where its children did. */
   className?: string;
   children: React.ReactNode;
 };
 
-const HIDDEN = { display: 'none' } as const;
+// iOS never mounts `display: none` views, so gestures built inside would never attach.
+const HIDDEN =
+  Platform.OS === "ios"
+    ? ({
+        position: "absolute",
+        left: 0,
+        right: 0,
+        opacity: 0,
+        pointerEvents: "none",
+      } as const)
+    : ({ display: "none" } as const);
 
 /** Whether the panel this is drawn in is the one on screen. True outside any. */
 const OnScreenContext = React.createContext(true);
@@ -55,7 +67,13 @@ export function useOnScreen(): boolean {
  * hundred animated views in a pane that was measured at a third to two thirds
  * of a second, most of what mounting it cost in the first place.
  */
-export function KeptAlive({ active, warm = false, className, children }: KeptAliveProps) {
+export function KeptAlive({
+  active,
+  warm = false,
+  visible = false,
+  className,
+  children,
+}: KeptAliveProps) {
   const warmed = React.useDeferredValue(warm, false);
   const wanted = active || warmed;
   // Latched: once built, a panel stays for as long as its screen does.
@@ -67,7 +85,12 @@ export function KeptAlive({ active, warm = false, className, children }: KeptAli
 
   return (
     <OnScreenContext.Provider value={onScreen}>
-      <View className={className} style={active ? undefined : HIDDEN}>
+      <View
+        className={className}
+        style={active || visible ? undefined : HIDDEN}
+        accessibilityElementsHidden={!active}
+        importantForAccessibility={active ? "auto" : "no-hide-descendants"}
+      >
         {children}
       </View>
     </OnScreenContext.Provider>

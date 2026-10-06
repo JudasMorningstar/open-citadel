@@ -1,10 +1,9 @@
 import React from 'react';
-import type { ScrollView } from 'react-native';
 
+import { SETTINGS_PANES, stepBack, warmPanes, type SettingsPane } from '@/features/settings/utils/panes';
 import { useBackHandler } from '@/hooks/use-back-handler';
 import { useStagedCount } from '@/hooks/use-staged-count';
 import { useSettledOnce } from '@/navigation/use-settled-once';
-import { SETTINGS_PANES, stepBack, warmPanes, type SettingsPane } from '@/features/settings/utils/panes';
 
 /**
  * Which pane of Settings is showing, and the way between panes.
@@ -23,22 +22,16 @@ export function useSettingsPanes(enteredAt: SettingsPane | null, close: () => vo
   const pane = trail.at(-1) ?? null;
   const back = stepBack(trail, enteredAt);
 
-  // One scroller for every pane, so each arrives at its top.
-  const scrollRef = React.useRef<ScrollView>(null);
-  const toTop = React.useCallback(() => scrollRef.current?.scrollTo({ y: 0, animated: false }), []);
-
   const open = React.useCallback(
     (next: SettingsPane) => {
-      toTop();
       setTrail((current) => [...current, next]);
     },
-    [toTop],
+    [],
   );
   const leave = React.useCallback(() => {
     if (!back) return close();
-    toTop();
     setTrail(back);
-  }, [back, close, toTop]);
+  }, [back, close]);
 
   // The system Back steps out of a pane like the header's button does. Left
   // alone when that step is out of Settings: the navigator's own Back does it.
@@ -53,5 +46,5 @@ export function useSettingsPanes(enteredAt: SettingsPane | null, close: () => vo
   const warmCount = useStagedCount(SETTINGS_PANES.length, 0, 1, !landed);
   const warm = React.useMemo(() => warmPanes(warmCount), [warmCount]);
 
-  return { pane, open, leave, leaves: inside ? ('back' as const) : ('down' as const), scrollRef, warm, landed };
+  return { pane, open, leave, warm, landed };
 }
