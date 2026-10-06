@@ -6,7 +6,7 @@ import { useCarouselState } from '@/components/ui/carousel';
 import { cn } from '@/lib/cn';
 
 const DOT = 6;
-/** One dot and the gap after it: how far the bar travels per voice. */
+/** One dot and the gap after it: how far the bar travels per slide. */
 const PITCH = 12;
 const BAR = 14;
 const ROW_HEIGHT = 24;
@@ -22,12 +22,14 @@ const BAR_BOX = {
 } as const;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }] as const;
 
-export interface VoiceCarouselDotsProps {
+export interface CarouselDotsProps {
   className?: string;
+  /** What the run is a run of, for a screen reader: "Voice", "Plan". */
+  label: string;
 }
 
 /**
- * The carousel's page indicator: a row of square dots with one gold bar that
+ * A carousel's page indicator, the one every run in the app wears: a row of square dots with one gold bar that
  * slides along it under the finger.
  *
  * One animated node, moved by a transform. It used to be every dot growing
@@ -38,9 +40,11 @@ export interface VoiceCarouselDotsProps {
  * One pressable too, which works out the dot from where it was touched. A
  * pressable per dot was nine or ten of them for a row nobody presses often,
  * and each is a noticeable part of what the run costs to build. To a screen
- * reader the row is one adjustable control, stepped a voice at a time.
+ * reader the row is one adjustable control, stepped a slide at a time.
+ *
+ * Goes inside a `Carousel`, which it reads its place from.
  */
-export function VoiceCarouselDots({ className }: VoiceCarouselDotsProps) {
+export function CarouselDots({ className, label }: CarouselDotsProps) {
   const { count, progress, index: active, scrollTo } = useCarouselState();
   const dots = React.useMemo(() => Array.from({ length: count }, (_unused, index) => index), [count]);
 
@@ -62,7 +66,7 @@ export function VoiceCarouselDots({ className }: VoiceCarouselDotsProps) {
       onPress={goToTouched}
       hitSlop={8}
       accessibilityRole="adjustable"
-      accessibilityLabel="Voice"
+      accessibilityLabel={label}
       accessibilityValue={{ min: 1, max: count, now: active + 1 }}
       accessibilityActions={STEPS}
       onAccessibilityAction={step}

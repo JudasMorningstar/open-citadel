@@ -34,6 +34,15 @@ export const CITADEL_FAMILY: CitadelThemeFamily = {
 
 export type Mode = 'light' | 'dark';
 
+/**
+ * The theme the reader has chosen, straight from the setting. For the scopes
+ * that hand it out (`components/theme-scope`); anything drawn reads the theme
+ * of the scope it is under, through `useTheme` or `useThemeMode`.
+ */
+export function useThemeSetting(): AppTheme {
+  return useSettingsStore((s) => s.theme);
+}
+
 /** Reads the active theme name and sets it — the documented `useTheme` API. */
 export function useTheme() {
   const { theme } = useUniwind();

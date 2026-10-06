@@ -15,7 +15,6 @@ import {
   View,
 } from "react-native";
 
-import { Skeleton } from "@/components/ui/skeleton";
 import { Touchable } from "@/components/ui/touchable";
 import type {
   DecorationActivatedEvent,
@@ -49,6 +48,8 @@ import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
+import { ReaderLoading } from "@/features/reader/components/reader-loading";
+import { ReadingSkeleton } from "@/features/reader/components/reading-skeleton";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
 import { sessionExists } from "@/services/chat-sessions";
@@ -89,55 +90,6 @@ function parseLocatorParam(param: string | undefined): Locator | null {
   }
 }
 
-/**
- * The reading area's placeholder: full-measure serif lines in the reader's own
- * gutters, ending mid-line the way a page does.
- *
- * Shared by the two waits this screen has — the book decoding, and the gap
- * between the screen arriving and Readium's first paint — so they read as one
- * continuous load instead of a skeleton that hands over to a black rectangle.
- * `label` belongs on whichever copy stands for the region; a second labelled
- * copy would announce the wait twice.
- */
-/**
- * The placeholder's line rhythm: mostly full measure, with a short line where
- * a paragraph ends. Enough entries to overrun the tallest phone — the block
- * is clipped to the reading area, so the text runs to the bottom of the page
- * the way a real one does instead of stopping halfway down and leaving the
- * lower half of the screen empty.
- *
- * Whole class strings rather than an interpolated width: the styling compiler
- * only sees classes written out in full.
- */
-const READING_SKELETON_LINES = [
-  "h-4 w-full", "h-4 w-[92%]", "h-4 w-[97%]", "h-4 w-[88%]",
-  "h-4 w-[95%]", "h-4 w-[58%]", "h-4 w-[94%]", "h-4 w-full",
-  "h-4 w-[85%]", "h-4 w-[96%]", "h-4 w-[90%]", "h-4 w-[66%]",
-  "h-4 w-[93%]", "h-4 w-full", "h-4 w-[89%]", "h-4 w-[97%]",
-  "h-4 w-[91%]", "h-4 w-[52%]", "h-4 w-[96%]", "h-4 w-[87%]",
-  "h-4 w-full", "h-4 w-[94%]", "h-4 w-[90%]", "h-4 w-[71%]",
-  "h-4 w-[95%]", "h-4 w-full", "h-4 w-[88%]", "h-4 w-[93%]",
-  "h-4 w-[86%]", "h-4 w-[61%]", "h-4 w-[97%]", "h-4 w-[92%]",
-  "h-4 w-full", "h-4 w-[89%]", "h-4 w-[94%]", "h-4 w-[68%]",
-];
-
-function ReadingSkeleton({ label }: { label?: string }) {
-  return (
-    <View
-      className="flex-1 gap-3 px-6"
-      style={{ marginTop: spacing[8], overflow: "hidden" }}
-    >
-      {READING_SKELETON_LINES.map((line, index) => (
-        <Skeleton
-          key={`${line}-${index}`}
-          className={line}
-          label={index === 0 ? label : undefined}
-        />
-      ))}
-    </View>
-  );
-}
-
 export default function ReaderScreen() {
   const appTheme = useSettingsStore((s) => s.theme);
   const [background, foreground, primary, mutedForeground] = useCSSVariable([
@@ -159,6 +111,7 @@ export default function ReaderScreen() {
     currentBook,
     savedLocator,
     currentLocator,
+    progress,
     bookmarkList,
     highlights,
     highlightNotes,
@@ -177,6 +130,7 @@ export default function ReaderScreen() {
     updateNote,
     deleteNote,
     setTableOfContents,
+    setLastFile,
     closeBook,
   } = useReaderStore();
 
@@ -392,6 +346,8 @@ export default function ReaderScreen() {
     (event: PublicationReadyEvent) => {
       setPublicationReady(true);
       setTableOfContents(event.tableOfContents);
+      // Where the book ends: its positions run in reading order.
+      setLastFile(event.positions?.at(-1)?.href ?? null);
 
       if (currentBook) {
         const updates: {
@@ -421,7 +377,7 @@ export default function ReaderScreen() {
         updateBookMetadata(currentBook.id, updates);
       }
     },
-    [currentBook, setTableOfContents, updateBookMetadata],
+    [currentBook, setTableOfContents, setLastFile, updateBookMetadata],
   );
 
   // Text selection
@@ -891,32 +847,14 @@ export default function ReaderScreen() {
   // out against it.
   const ttsControlsZoneHeight = insets.bottom + FOOTER_CONTROLS_HEIGHT;
 
-  if (isLoading || !currentBook || !currentBook.filePath) {
-    // Skeleton, not a spinner: the reader's chrome shape is known before the
-    // book decodes (header bar over a block of serif lines), so the
-    // placeholder mirrors it and the real layout settles in place instead of
-    // swapping out of a centered spinner. Readium wiring is untouched — this
-    // is only the loading branch.
-    return (
-      <View className="flex-1 bg-background">
-        {/* Header bar: back control, title line, trailing icon cluster. */}
-        <View
-          className="flex-row items-center gap-2 px-4"
-          style={{ paddingTop: insets.top + spacing[2], paddingBottom: spacing[3] }}
-        >
-          <Skeleton className="h-9 w-9 rounded-full" />
-          <Skeleton className="h-4 flex-1" />
-          <Skeleton className="h-9 w-9 rounded-full" />
-        </View>
-        {/* Text block: full-measure paragraphs that end mid-line, in the
-            reader's own side gutters. One skeleton carries the region's
-            screen-reader label. */}
-        <ReadingSkeleton label="Loading book" />
-      </View>
-    );
+  // The placeholder until the slide has landed, even when the book is in hand
+  // sooner (it is read from the database while the screen slides in). The
+  // reader's chrome is a large tree, and committing it mid-slide left this
+  // screen undrawn for the whole of its entrance: the Library moved aside,
+  // nothing arrived, and the reader appeared in place afterwards.
+  if (!readerMounted || isLoading || !currentBook || !currentBook.filePath) {
+    return <ReaderLoading top={insets.top} />;
   }
-
-  const progress = currentLocator?.locations?.totalProgression;
 
   return (
     <View className="flex-1 bg-background">
@@ -1022,7 +960,7 @@ export default function ReaderScreen() {
       >
         <ReaderHeader
           title={currentBook.title}
-          progress={progress}
+          progress={progress ?? undefined}
           isBookmarked={isBookmarked}
           isTTSActive={isTTSActive}
           onBookmarkToggle={handleBookmarkToggle}

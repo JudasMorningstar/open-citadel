@@ -32,7 +32,15 @@ export function ensureAudioPlayer(): boolean {
       handleAudioBecomingNoisy: true,
       autoUpdateMetadataFromStream: false,
       progressSync: { intervalSeconds: PROGRESS_TICK_SEC },
-      android: { wakeMode: 'network', taskRemovedBehavior: 'continue' },
+      android: {
+        wakeMode: 'network',
+        taskRemovedBehavior: 'continue',
+        // The app's own mark in the status bar, in place of the player's stock
+        // play triangle. A resource name: `plugins/withNotificationIcon` puts
+        // the drawable in the build. The player only takes an icon along with
+        // a channel of its own.
+        notification: { channelId: 'playback', channelName: 'Playback', smallIcon: 'ic_stat_open_citadel' },
+      },
     });
     ready = true;
   } catch (err) {

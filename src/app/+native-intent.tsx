@@ -1,7 +1,8 @@
 /**
  * What to do with a link the OS hands the app.
  *
- * Only one thing so far, and it is a link that must go nowhere.
+ * Two things so far, and both are links that must go nowhere: the sign-in
+ * callback (below), and a tap on the media notification.
  *
  * ## Why the sign-in callback needs swallowing
  *
@@ -30,10 +31,21 @@
  * Everything else is passed through untouched.
  */
 
+import { isPlayerNotificationLink } from '@/navigation/system-links';
+
 /** The one path that belongs to the browser and not to the router. */
 const AUTH_CALLBACK = 'callback';
 
-export function redirectSystemPath({ path }: { path: string; initial: boolean }): string | null {
+export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string | null {
+  /*
+   * A tap on the media notification. Not a route: `usePlayerNotificationTap`
+   * hears the same link and opens the player if an episode is playing. Left
+   * to the router it would look for a screen called `notification.click`.
+   * When the tap is what launched the app there has to be somewhere to start,
+   * so that case goes to the Library.
+   */
+  if (isPlayerNotificationLink(path)) return initial ? '/' : null;
+
   /*
    * `opencitadel://callback` puts `callback` in the HOST, not the path —
    * there is no third slash — while `opencitadel:///callback` puts it in the

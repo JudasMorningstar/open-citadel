@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { CarouselDots } from '@/components/carousel-dots';
 import { useOnScreen } from '@/components/kept-alive';
 import { ThemedText } from '@/components/themed-text';
 import { Carousel, type CarouselHandle } from '@/components/ui/carousel';
 import { useVoicePreview } from '@/features/tts/hooks/use-voice-preview';
-import { VoiceCarouselDots } from '@/features/tts/components/voice-carousel-dots';
 import { VoiceCarouselSlide } from '@/features/tts/components/voice-carousel-slide';
 import type { AiVoice } from '@/services/device-tts/catalogue';
 import { asColor } from '@/utils/colors';
@@ -41,7 +41,7 @@ const IN_VIEW = 1;
  * One engine's voice roster as a snapping carousel: one voice centred at a
  * time, its neighbours peeking in at each edge. See `VoiceCarouselSlide`/
  * `VoiceCarouselCard` for the per-card content and depth, and
- * `VoiceCarouselDots` for the page indicator.
+ * `CarouselDots` for the page indicator.
  *
  * Only mounted once the voices are downloaded (`AiVoiceSection` shows the
  * download card until then), so every card is playable and selectable.
@@ -111,7 +111,7 @@ export function VoiceCarousel({ voices, selected, onPick, full = true }: VoiceCa
           ))}
         </Carousel.Content>
 
-        <VoiceCarouselDots className="mt-3 self-center" />
+        <CarouselDots className="mt-3 self-center" label="Voice" />
       </Carousel>
       {(previewError || previewNotice) && (
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>

@@ -153,7 +153,8 @@
       "react-native-screen-transitions": "patches/react-native-screen-transitions.patch",
       "expo-modules-core": "patches/expo-modules-core.patch",
       "@rntp/player": "patches/@rntp__player.patch",
-      "react-native-executorch": "patches/react-native-executorch.patch"
+      "react-native-executorch": "patches/react-native-executorch.patch",
+      "uniwind": "patches/uniwind.patch"
     }
   },
   "expo": {

@@ -40,9 +40,10 @@ import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { useAppUpdates } from "@/hooks/use-app-updates";
 import { ToastProvider } from "@/components/toast/toast-provider";
+import { ThemeScope } from "@/components/theme-scope";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
-import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
+import { useThemeMode } from "@/hooks/use-theme";
 import { queryClient } from "@/lib/query-client";
 import { startQueryPersist } from "@/lib/query-persist";
 import { TransitionStack } from "@/navigation/stack";
@@ -63,6 +64,7 @@ import {
     registerTTSBackgroundHandler,
     setupTTSMediaSession,
 } from "@/services/tts-media-session";
+import { usePlayerNotificationTap } from "@/features/podcasts/hooks/use-player-notification-tap";
 import { usePodcastLifecycle } from "@/features/podcasts/hooks/use-podcast-lifecycle";
 import { registerPodcastBackgroundHandler } from "@/services/podcasts/player";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
@@ -100,7 +102,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
-export default function RootLayout() {
+function RootLayoutContent() {
   const [fontsLoaded] = useFonts({
     Newsreader_400Regular,
     Newsreader_400Regular_Italic,
@@ -116,7 +118,9 @@ export default function RootLayout() {
 
   const [dbReady, setDbReady] = useState(false);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const theme = useSettingsStore((s) => s.theme);
+  // The theme this layout is under (see `RootLayout` below), not the setting:
+  // it arrives a little after a change, with the rest of the app.
+  const { mode: theme } = useThemeMode();
   const [background, card, foreground, primary, scrim] = useCSSVariable([
     "--color-background",
     "--color-card",
@@ -141,27 +145,16 @@ export default function RootLayout() {
   // The mini player's episode back, interrupted downloads resumed, new
   // episodes looked for on launch and on return.
   usePodcastLifecycle(dbReady);
+  usePlayerNotificationTap(dbReady);
 
-  // The app's own theme setting is the single source of truth; Uniwind (and
-  // therefore every PanelUI token class in the app) follows the OS color
-  // scheme by default and knows nothing about it. Bridging here — in a layout
-  // effect, before first paint — pins the whole class-driven layer to the
-  // setting, and `setTheme` also forces the native `Appearance` to match so
-  // platform surfaces (dialogs, sheets) agree with it. Without this, a device
-  // in dark mode running the app set to light renders half-dark: class-styled
-  // surfaces resolve the OS scheme while anything still themed in JS resolves
-  // the setting. `setTheme('light' | 'dark')` also switches off Uniwind's
-  // adaptive (follow-the-OS) mode, which is exactly the intent — the user
-  // chose a side. A future 'system' setting would call `setTheme('system')`.
-  // Applied synchronously, before paint. This must NOT be wrapped in
-  // `startTransition`: `Uniwind.setTheme` notifies an external store, and every
-  // `useCSSVariable`/`useUniwind` subscriber answers with its own `setState`.
-  // Deferring that fan-out to a Transition both delays the repaint (the theme
-  // visibly lagging the switch) and drops React's tearing guarantee for the
-  // store — which showed up as a blank screen, and as React's own warning
-  // "Detected a large number of updates inside startTransition ... concurrent
-  // mode guarantees are off the table". The fan-out is the cost to attack (see
-  // `hooks/use-theme-tokens`), not the scheduling.
+  // The app's own theme setting is the single source of truth, and it reaches
+  // everything drawn through `ThemeScope`, as React context. Uniwind's own
+  // app-wide theme is still set, for the two things outside any scope: the
+  // native `Appearance`, which `setTheme` forces to match so platform surfaces
+  // (dialogs, the keyboard) agree with the app, and Uniwind's adaptive
+  // follow-the-OS mode, which choosing a side switches off. Nothing drawn
+  // listens for it any more, so this costs no render. A future 'system'
+  // setting would call `setTheme('system')`.
   useLayoutEffect(() => {
     Uniwind.setTheme(theme);
   }, [theme]);
@@ -310,11 +303,7 @@ export default function RootLayout() {
     // The query cache is outermost: it draws nothing, and anything below may
     // read through it. Its kept catalogues are read back beside it, not in
     // front of it (see `lib/query-persist`), so the library's reads never wait.
-    // ThemeTokensProvider wraps everything else, PanelUIProvider included, so
-    // the portal host that sheets present into resolves its tokens from the
-    // same single subscription as the rest of the tree.
     <QueryClientProvider client={queryClient}>
-      <ThemeTokensProvider>
         {/* PanelUIProvider owns the gesture handler root every gesture recognizer
           in the app needs, plus PanelUI's own portal/toast host and the keyboard
           controller provider. */}
@@ -444,7 +433,20 @@ export default function RootLayout() {
             </BottomSheetModalProvider>
           </ToastProvider>
         </PanelUIProvider>
-      </ThemeTokensProvider>
     </QueryClientProvider>
+  );
+}
+
+/**
+ * The app, under its theme. The scope wraps the layout itself rather than
+ * sitting inside it, so the layout's own colours (the navigator's, the
+ * scrim's) come from the scope too, and so the portal host that sheets and
+ * toasts present into is inside it.
+ */
+export default function RootLayout() {
+  return (
+    <ThemeScope>
+      <RootLayoutContent />
+    </ThemeScope>
   );
 }

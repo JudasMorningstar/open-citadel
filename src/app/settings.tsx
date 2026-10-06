@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { ThemeScope } from '@/components/theme-scope';
 import { CreatorNoteSheet } from '@/components/settings/creator-note-sheet';
 import { SettingsPage } from '@/features/settings/components/settings-page';
 import { SettingsPanes } from '@/features/settings/components/settings-panes';
@@ -19,9 +20,13 @@ export default function SettingsScreen() {
   const screen = useSettingsScreen();
 
   return (
-    <SettingsPage {...screen.page}>
-      <SettingsPanes {...screen.panes} />
-      <CreatorNoteSheet {...screen.note} />
-    </SettingsPage>
+    // The light switch is on this screen, so this screen takes a new theme at
+    // once and the rest of the app follows (`ThemeScope`).
+    <ThemeScope urgent>
+      <SettingsPage {...screen.page}>
+        <SettingsPanes {...screen.panes} />
+        <CreatorNoteSheet {...screen.note} />
+      </SettingsPage>
+    </ThemeScope>
   );
 }

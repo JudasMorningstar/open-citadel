@@ -77,12 +77,12 @@ export function PlanCarouselSkeleton({
           ))}
         </View>
       </View>
-      {/* The dots, as `Carousel.Dots` spaces them: 24 boxes, the resting one
-          active. */}
-      <View className="mt-4 flex-row items-center gap-1 self-center">
+      {/* The dots, as `CarouselDots` draws them: a 24-tall row of square
+          dots twelve apart, the resting one a bar. */}
+      <View className="mt-4 h-6 flex-row items-center self-center">
         {cards.map((dot) => (
-          <View key={dot} className="h-6 w-6 items-center justify-center">
-            <View className={dot === resting ? 'h-1 w-4 bg-skeleton' : 'h-1 w-1 bg-skeleton'} />
+          <View key={dot} className="h-6 w-3 items-center justify-center">
+            <View className={dot === resting ? 'h-1.5 w-3.5 bg-skeleton' : 'h-1.5 w-1.5 bg-skeleton'} />
           </View>
         ))}
       </View>

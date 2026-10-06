@@ -2,6 +2,7 @@ import React from 'react';
 
 import type { EngineMode } from '@/components/settings/engine-info-sheet';
 import { KeptAlive } from '@/components/kept-alive';
+import { ThemeScope } from '@/components/theme-scope';
 import { PodcastSettings } from '@/features/podcasts/components/podcast-settings-section';
 import { AccountCard } from '@/features/settings/components/account-card';
 import { DisplayNameCard } from '@/features/settings/components/display-name-card';
@@ -48,17 +49,23 @@ export function SettingsPanes({ pane, warm, home, samwell }: SettingsPanesProps)
       <KeptAlive active={pane === null} warm>
         <SettingsHome {...home} />
       </KeptAlive>
+      {/* A pane that is put away takes a new theme with the rest of the app,
+          not in the frame of the press: only the one showing is `urgent`. The
+          list above is where the switch is, so it stays under the screen's
+          own scope. */}
       <KeptAlive active={pane === 'profile'} warm={warm.profile} className="gap-4">
-        {PROFILE}
+        <ThemeScope urgent={pane === 'profile'}>{PROFILE}</ThemeScope>
       </KeptAlive>
       <KeptAlive active={pane === 'samwell'} warm={warm.samwell}>
-        <SamwellSection {...samwell} />
+        <ThemeScope urgent={pane === 'samwell'}>
+          <SamwellSection {...samwell} />
+        </ThemeScope>
       </KeptAlive>
       <KeptAlive active={pane === 'voice'} warm={warm.voice}>
-        {VOICE}
+        <ThemeScope urgent={pane === 'voice'}>{VOICE}</ThemeScope>
       </KeptAlive>
       <KeptAlive active={pane === 'podcasts'} warm={warm.podcasts}>
-        {PODCASTS}
+        <ThemeScope urgent={pane === 'podcasts'}>{PODCASTS}</ThemeScope>
       </KeptAlive>
     </>
   );

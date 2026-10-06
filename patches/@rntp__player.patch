@@ -43,7 +43,7 @@ index 7da495f568b686444e13e4a3857911e5641ff7d0..c82e3a6e8920353b75055e185aaebdf2
      }
      context.emitEvent(QueueChangedEvent())
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
-index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..7674898bc73d09c3d719c78d36ee88d5b9cf82e0 100644
+index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c41621e71bbe0 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
 @@ -36,6 +36,9 @@ import androidx.media3.exoplayer.hls.offline.HlsDownloader
@@ -88,7 +88,22 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..7674898bc73d09c3d719c78d36ee88d5
        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
          val currentIndex = activePlayer?.currentMediaItemIndex ?: 0
          sleepTimerController?.handleItemTransition(currentIndex)
-@@ -232,6 +251,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -222,6 +241,14 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+ 
+     val sessionActivityIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+       flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
++      // PATCHED (Open Citadel): a tap on the notification says where it came
++      // from. A bare launch intent only brings the app forward, on whatever
++      // screen it was left on, and the app cannot tell that tap from its icon
++      // being pressed. React Native hands an intent's data to `Linking` when
++      // its action is VIEW; the activity is still named explicitly, so no
++      // intent filter is needed for this address.
++      action = Intent.ACTION_VIEW
++      data = android.net.Uri.parse("trackplayer://notification.click")
+     }
+     val sessionActivity = sessionActivityIntent?.let {
+       PendingIntent.getActivity(
+@@ -232,6 +259,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
  
      mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, player, this)
        .apply { sessionActivity?.let { setSessionActivity(it) } }
@@ -97,7 +112,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..7674898bc73d09c3d719c78d36ee88d5
        .build()
  
      setupNotificationProvider(config)
-@@ -282,28 +303,161 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -282,28 +311,161 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
          emitRemoteEventIfNeeded(RemotePreviousEvent(), PlayerCommand.PREVIOUS)
        }
  
@@ -263,7 +278,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..7674898bc73d09c3d719c78d36ee88d5
    @OptIn(UnstableApi::class)
    private fun setupNotificationProvider(config: PlayerConfig) {
      val channelId = config.notificationChannelId ?: return
-@@ -388,11 +542,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -388,11 +550,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
      session: MediaSession,
      controller: MediaSession.ControllerInfo
    ): MediaSession.ConnectionResult {
@@ -285,7 +300,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..7674898bc73d09c3d719c78d36ee88d5
        .build()
    }
  
-@@ -404,12 +566,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -404,12 +574,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
    ): ListenableFuture<SessionResult> {
      when (customCommand.customAction) {
        COMMAND_UPDATE_COMMANDS -> {

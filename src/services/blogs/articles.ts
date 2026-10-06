@@ -136,6 +136,21 @@ export async function setArticleFinished(id: string, finished: boolean): Promise
     .where(eq(blogArticles.id, id));
 }
 
+/**
+ * The post opened in the reader as `bookId` was read to its end: finished, as
+ * `setArticleFinished` would make it. Only one not finished already, so the
+ * day it was finished stays the first one. Answers whether anything changed.
+ */
+export async function finishArticleOfBook(bookId: string): Promise<boolean> {
+  const at = nowIso();
+  const changed = await db
+    .update(blogArticles)
+    .set({ finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` })
+    .where(and(eq(blogArticles.bookId, bookId), isNull(blogArticles.finishedAt)))
+    .returning({ id: blogArticles.id });
+  return changed.length > 0;
+}
+
 /** Everything in one blog read, or every followed blog's when no blog is named. */
 export async function markAllRead(blogId?: string): Promise<void> {
   const unread = isNull(blogArticles.readAt);

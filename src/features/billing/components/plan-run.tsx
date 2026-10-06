@@ -7,6 +7,7 @@ import {
     useFadeColor,
     type FadeSurface,
 } from "@/components/scroll-fades";
+import { CarouselDots } from "@/components/carousel-dots";
 import { Carousel, useCarouselState } from "@/components/ui/carousel";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { PlanCard } from "@/features/billing/components/plan-card";
@@ -135,7 +136,8 @@ export const PlanRun = React.memo(function PlanRun({
           ))}
         </Carousel.Content>
       </CarouselEdgeFade>
-      <Carousel.Dots className="mt-4 self-center" />
+      {/* The same dots as the voices: square, with one gold bar. */}
+      <CarouselDots className="mt-4 self-center" label="Plan" />
     </Carousel>
   );
 });

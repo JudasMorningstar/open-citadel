@@ -26,3 +26,8 @@ node_modules/react-native-executorch/third-party/ios/**
 node_modules/react-native-executorch/third-party/android/libs/**
 node_modules/react-native-executorch/third-party/include/**
 node_modules/react-native-executorch/rne-build-config.json
+# The same postinstall's archives were packed on a Mac, and unpacking them on
+# Linux leaves AppleDouble files (`._include`, `._.`) beside what they held.
+# Version 0.10.4's did; a fresh install in the build's own folder had none, and
+# the two fingerprints stopped matching.
+node_modules/react-native-executorch/third-party/._*
