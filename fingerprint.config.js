@@ -10,6 +10,16 @@ const pkg = require("./package.json");
 const NATIVE_CONFIG_KEYS = ["react-native-executorch", "enriched-markdown"];
 
 module.exports = {
+  // `extra` is what the JavaScript reads through expo-constants: server
+  // addresses, public keys, and the release notes the update dialog shows.
+  // None of it is compiled in, and an update brings its own copy, so it has no
+  // say in which builds an update may reach. Left in, every new set of notes
+  // would be a new runtime version. The second entry is the library's own
+  // default, which naming any skip here would otherwise drop.
+  sourceSkips: [
+    "ExpoConfigExtraSection",
+    "PackageJsonAndroidAndIosScriptsIfNotContainRun",
+  ],
   extraSources: NATIVE_CONFIG_KEYS.map((key) => ({
     type: "contents",
     id: `packageJson:${key}`,

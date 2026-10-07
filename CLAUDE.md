@@ -129,3 +129,8 @@ person: "he", never "it".
 - **pnpm**, never npm or npx.
 - Build: `eas build --local --platform android --profile development`.
 - Check work with `pnpm exec tsc --noEmit` and `pnpm exec eslint <paths>`.
+- Publish an over-the-air update with `scripts/publish-update.sh`, never a
+  bare `eas update`. Write `release-notes.json` first: it is what the update
+  dialog shows, two or three words a note, most important first (the first
+  four are drawn, the rest sit behind "+ N more"). Notes are written for
+  readers, by hand; commit titles stay written for developers.

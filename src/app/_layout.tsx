@@ -38,9 +38,9 @@ import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
-import { useAppUpdates } from "@/hooks/use-app-updates";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { ThemeScope } from "@/components/theme-scope";
+import { AppUpdates } from "@/features/updates/components/app-updates";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { useThemeMode } from "@/hooks/use-theme";
@@ -139,9 +139,6 @@ function RootLayoutContent() {
   // Samwell's journal: what he writes down about them once a conversation
   // goes quiet, for him to recall in later chats.
   useJourneyWriter();
-  // Over-the-air updates: checked on return as well as launch, and offered
-  // with a toast once one is downloaded.
-  useAppUpdates(fontsLoaded && dbReady);
   // The mini player's episode back, interrupted downloads resumed, new
   // episodes looked for on launch and on return.
   usePodcastLifecycle(dbReady);
@@ -429,6 +426,9 @@ function RootLayoutContent() {
                   />
                 </TransitionStack>
                 <ApprovalSheet />
+                {/* Over-the-air updates: checked on return as well as launch,
+                and asked for in a dialog once one is downloaded. */}
+                <AppUpdates />
               </ThemeProvider>
             </BottomSheetModalProvider>
           </ToastProvider>
