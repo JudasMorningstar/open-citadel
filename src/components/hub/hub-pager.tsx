@@ -11,6 +11,8 @@ import { SamwellPage } from '@/components/hub/samwell-page';
 import { TimelinePage } from '@/components/hub/timeline-page';
 import { useAfterIdle } from '@/navigation/use-after-idle';
 import { HUB, useHubStore, type HubPage } from '@/stores/hub';
+import { ThemeScope } from '@/components/theme-scope';
+import { hubPageOrder } from '@/utils/theme-order';
 
 /** The longest the neighbours wait for a Library that never reports (a failed load). */
 const NEIGHBOUR_CAP_MS = 2500;
@@ -113,13 +115,24 @@ export function HubPager() {
       offscreenPageLimit={2}
     >
       <View key="timeline" collapsable={false} style={{ flex: 1 }}>
-        {neighbours ? <TimelinePage /> : null}
+        {/* Each page is a theme scope: a new theme reaches the one in view
+            first and the others after it (`utils/theme-order`). The Library
+            scopes its own parts, so its sides can take their turns apart. */}
+        {neighbours ? (
+          <ThemeScope order={hubPageOrder(HUB.timeline, requested)}>
+            <TimelinePage />
+          </ThemeScope>
+        ) : null}
       </View>
       <View key="library" collapsable={false} style={{ flex: 1 }}>
-        <LibraryPage />
+        <LibraryPage themeOrder={hubPageOrder(HUB.library, requested)} />
       </View>
       <View key="samwell" collapsable={false} style={{ flex: 1 }}>
-        {neighbours ? <SamwellPage /> : null}
+        {neighbours ? (
+          <ThemeScope order={hubPageOrder(HUB.samwell, requested)}>
+            <SamwellPage />
+          </ThemeScope>
+        ) : null}
       </View>
     </PagerView>
   );

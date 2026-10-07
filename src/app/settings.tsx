@@ -1,6 +1,5 @@
 
 import { CreatorNoteSheet } from "@/components/settings/creator-note-sheet";
-import { ThemeScope } from "@/components/theme-scope";
 import { SettingsPanes } from "@/features/settings/components/settings-panes";
 import { useSettingsScreen } from "@/features/settings/hooks/use-settings-screen";
 
@@ -18,11 +17,9 @@ export default function SettingsScreen() {
   const screen = useSettingsScreen();
 
   return (
-    // The light switch is on this screen, so this screen takes a new theme at
-    // once and the rest of the app follows (`ThemeScope`).
-    <ThemeScope urgent>
+    <>
       <SettingsPanes {...screen.panes} />
       <CreatorNoteSheet {...screen.note} />
-    </ThemeScope>
+    </>
   );
 }

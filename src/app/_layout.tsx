@@ -26,8 +26,7 @@ import {
     ThemeProvider,
 } from "expo-router/react-navigation";
 import * as SplashScreen from "expo-splash-screen";
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
@@ -39,7 +38,9 @@ import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { ToastProvider } from "@/components/toast/toast-provider";
-import { ThemeScope } from "@/components/theme-scope";
+import { ThemeRelease } from "@/components/theme-scope";
+import { RootThemeTokens } from "@/hooks/use-theme-tokens";
+import { ThemeStatusBar } from "@/components/theme-status-bar";
 import { AppUpdates } from "@/features/updates/components/app-updates";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
@@ -118,8 +119,8 @@ function RootLayoutContent() {
 
   const [dbReady, setDbReady] = useState(false);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
-  // The theme this layout is under (see `RootLayout` below), not the setting:
-  // it arrives a little after a change, with the rest of the app.
+  // Uniwind's app-wide theme, not the setting: this layout is outside every
+  // `ThemeScope`, and takes a change a step after the screen it was made on.
   const { mode: theme } = useThemeMode();
   const [background, card, foreground, primary, scrim] = useCSSVariable([
     "--color-background",
@@ -144,17 +145,6 @@ function RootLayoutContent() {
   usePodcastLifecycle(dbReady);
   usePlayerNotificationTap(dbReady);
 
-  // The app's own theme setting is the single source of truth, and it reaches
-  // everything drawn through `ThemeScope`, as React context. Uniwind's own
-  // app-wide theme is still set, for the two things outside any scope: the
-  // native `Appearance`, which `setTheme` forces to match so platform surfaces
-  // (dialogs, the keyboard) agree with the app, and Uniwind's adaptive
-  // follow-the-OS mode, which choosing a side switches off. Nothing drawn
-  // listens for it any more, so this costs no render. A future 'system'
-  // setting would call `setTheme('system')`.
-  useLayoutEffect(() => {
-    Uniwind.setTheme(theme);
-  }, [theme]);
 
   // Free the on-device engine + image memory when the OS is under pressure or
   // the app is backgrounded — the guard against the long-session black screen.
@@ -178,6 +168,11 @@ function RootLayoutContent() {
         ]),
       )
       .then(() => {
+        // The theme as saved, set outright before anything is drawn. Choosing
+        // a side also switches off Uniwind's follow-the-phone mode. Later
+        // changes are handed out by `ThemeRelease`; a future 'system' setting
+        // would call `setTheme('system')` here and there.
+        Uniwind.setTheme(useSettingsStore.getState().theme);
         setupTTSMediaSession();
         setDbReady(true);
         // Which voice packs are on the phone, read here rather than when the
@@ -315,7 +310,7 @@ function RootLayoutContent() {
             that screen's transition. */}
             <BottomSheetModalProvider>
               <ThemeProvider value={navTheme}>
-                <StatusBar style={theme === "light" ? "dark" : "light"} />
+                <ThemeStatusBar />
                 {/* Hub and spokes. The hub is one route — Timeline, Library and
                 Samwell are pages of a pager inside it (`components/hub/hub-pager`),
                 because they are peers and a swipe between peers should track the
@@ -438,15 +433,19 @@ function RootLayoutContent() {
 }
 
 /**
- * The app, under its theme. The scope wraps the layout itself rather than
- * sitting inside it, so the layout's own colours (the navigator's, the
- * scrim's) come from the scope too, and so the portal host that sheets and
- * toasts present into is inside it.
+ * The app, and how a theme reaches it. The layout itself is under no
+ * `ThemeScope`: one round the whole app made every part inside it work twice
+ * on a change (see `components/theme-scope`). It follows Uniwind's app-wide
+ * theme, which `ThemeRelease` moves in its turn, and the app-wide tokens sit
+ * above the layout so the portal host that sheets and toasts present into is
+ * inside them.
  */
 export default function RootLayout() {
   return (
-    <ThemeScope>
-      <RootLayoutContent />
-    </ThemeScope>
+    <ThemeRelease>
+      <RootThemeTokens>
+        <RootLayoutContent />
+      </RootThemeTokens>
+    </ThemeRelease>
   );
 }

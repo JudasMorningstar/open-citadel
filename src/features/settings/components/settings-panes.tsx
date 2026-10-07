@@ -18,6 +18,7 @@ import {
     type SettingsPane,
 } from "@/features/settings/utils/panes";
 import { TtsSettingsPanel } from "@/features/tts/components/tts-settings-panel";
+import { THEME_ORDER, settingsPaneOrder } from "@/utils/theme-order";
 
 export type SettingsPanesProps = {
   /** The pane showing, or null for the list. */
@@ -61,77 +62,95 @@ export function SettingsPanes({
   samwell,
   onLeave,
 }: SettingsPanesProps) {
+  // Each page is a theme scope of its own, header and all, side by side: the
+  // page showing takes a new theme with the press, and the ones hidden take
+  // it last. One scope round the lot would have had the hidden panes run
+  // again with the list (`components/theme-scope`).
+  const orders = {
+    profile: settingsPaneOrder(0, pane === "profile"),
+    samwell: settingsPaneOrder(1, pane === "samwell"),
+    voice: settingsPaneOrder(2, pane === "voice"),
+    podcasts: settingsPaneOrder(3, pane === "podcasts"),
+  };
   const pages = {
     home: (
-      <SettingsPage
-        title="Settings"
-        leaves="down"
-        onLeave={onLeave}
-        active={pane === null}
-      >
-        <KeptAlive active={pane === null} visible warm>
-          <SettingsHome {...home} />
-        </KeptAlive>
-      </SettingsPage>
+      <ThemeScope order={THEME_ORDER.now}>
+        <SettingsPage
+          title="Settings"
+          leaves="down"
+          onLeave={onLeave}
+          active={pane === null}
+        >
+          <KeptAlive active={pane === null} visible warm>
+            <SettingsHome {...home} />
+          </KeptAlive>
+        </SettingsPage>
+      </ThemeScope>
     ),
     profile:
       warm.profile || pane === "profile" ? (
-        <SettingsPage
-          title={PANE_TITLES.profile}
-          leaves="back"
-          onLeave={onLeave}
-          active={pane === "profile"}
-        >
-          <KeptAlive
+        <ThemeScope order={orders.profile}>
+          <SettingsPage
+            title={PANE_TITLES.profile}
+            leaves="back"
+            onLeave={onLeave}
             active={pane === "profile"}
-            visible
-            warm={warm.profile}
-            className="gap-4"
           >
-            <ThemeScope urgent={pane === "profile"}>{PROFILE}</ThemeScope>
-          </KeptAlive>
-        </SettingsPage>
+            <KeptAlive
+              active={pane === "profile"}
+              visible
+              warm={warm.profile}
+              className="gap-4"
+            >
+              {PROFILE}
+            </KeptAlive>
+          </SettingsPage>
+        </ThemeScope>
       ) : null,
     samwell:
       warm.samwell || pane === "samwell" ? (
-        <SettingsPage
-          title={PANE_TITLES.samwell}
-          leaves="back"
-          onLeave={onLeave}
-          active={pane === "samwell"}
-        >
-          <KeptAlive active={pane === "samwell"} visible warm={warm.samwell}>
-            <ThemeScope urgent={pane === "samwell"}>
+        <ThemeScope order={orders.samwell}>
+          <SettingsPage
+            title={PANE_TITLES.samwell}
+            leaves="back"
+            onLeave={onLeave}
+            active={pane === "samwell"}
+          >
+            <KeptAlive active={pane === "samwell"} visible warm={warm.samwell}>
               <SamwellSection {...samwell} />
-            </ThemeScope>
-          </KeptAlive>
-        </SettingsPage>
+            </KeptAlive>
+          </SettingsPage>
+        </ThemeScope>
       ) : null,
     voice:
       warm.voice || pane === "voice" ? (
-        <SettingsPage
-          title={PANE_TITLES.voice}
-          leaves="back"
-          onLeave={onLeave}
-          active={pane === "voice"}
-        >
-          <KeptAlive active={pane === "voice"} visible warm={warm.voice}>
-            <ThemeScope urgent={pane === "voice"}>{VOICE}</ThemeScope>
-          </KeptAlive>
-        </SettingsPage>
+        <ThemeScope order={orders.voice}>
+          <SettingsPage
+            title={PANE_TITLES.voice}
+            leaves="back"
+            onLeave={onLeave}
+            active={pane === "voice"}
+          >
+            <KeptAlive active={pane === "voice"} visible warm={warm.voice}>
+              {VOICE}
+            </KeptAlive>
+          </SettingsPage>
+        </ThemeScope>
       ) : null,
     podcasts:
       warm.podcasts || pane === "podcasts" ? (
-        <SettingsPage
-          title={PANE_TITLES.podcasts}
-          leaves="back"
-          onLeave={onLeave}
-          active={pane === "podcasts"}
-        >
-          <KeptAlive active={pane === "podcasts"} visible warm={warm.podcasts}>
-            <ThemeScope urgent={pane === "podcasts"}>{PODCASTS}</ThemeScope>
-          </KeptAlive>
-        </SettingsPage>
+        <ThemeScope order={orders.podcasts}>
+          <SettingsPage
+            title={PANE_TITLES.podcasts}
+            leaves="back"
+            onLeave={onLeave}
+            active={pane === "podcasts"}
+          >
+            <KeptAlive active={pane === "podcasts"} visible warm={warm.podcasts}>
+              {PODCASTS}
+            </KeptAlive>
+          </SettingsPage>
+        </ThemeScope>
       ) : null,
   };
 

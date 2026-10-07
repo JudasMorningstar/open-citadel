@@ -1,20 +1,18 @@
 import React from "react";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCSSVariable } from "uniwind";
 
 import { BlogsPage } from "@/components/hub/blogs-page";
 import { BooksPage } from "@/components/hub/books-page";
+import { LibraryHeader } from "@/components/hub/library-header";
 import { PodcastsPage } from "@/components/hub/podcasts-page";
-import { ChartNoAxesGantt, ZodiacPisces } from "@/components/icons";
-import { ThemedView } from "@/components/themed-view";
+import { ThemeScope } from "@/components/theme-scope";
 import { ViewSwitcher } from "@/components/view-switcher";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { iconSize } from "@/constants/theme";
 import { useLibraryPage } from "@/features/library/hooks/use-library-page";
-import { LIBRARY_TAB_ORDER, LibraryTabs } from "@/features/library/components/library-tabs";
+import { LIBRARY_TAB_ORDER } from "@/features/library/components/library-tabs";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
-import { asColor } from "@/utils/colors";
+import { librarySideOrder } from "@/utils/theme-order";
 
 /**
  * The Library: books, podcasts and blogs, one header, one switch between them.
@@ -25,36 +23,52 @@ import { asColor } from "@/utils/colors";
  * owns everything under the header, its own skeleton included, and is mounted
  * when it is first opened; this only decides which one is showing and keeps
  * the mini player above them.
+ *
+ * `themeOrder` is the Library's turn when the theme changes. The header, the
+ * mini player and each side are theme scopes side by side, never one inside
+ * another (`components/theme-scope`): the side showing changes with the
+ * header, the other two after every page of the hub has.
  */
-export function LibraryPage() {
+export function LibraryPage({ themeOrder }: { themeOrder: number }) {
   const insets = useSafeAreaInsets();
-  const [foreground, primary] = useCSSVariable(["--color-foreground", "--color-primary"]);
   const page = useLibraryPage();
   const miniPlayer = useMiniPlayer(insets.bottom);
   const chrome = miniPlayer.clearance;
-  const { mounted, settleMs } = page;
+  const { mounted, settleMs, tab } = page;
   const sides = {
-    books: mounted.books ? <BooksPage bottomChrome={chrome} booted={page.booted} settleMs={settleMs.books} /> : null,
-    podcasts: mounted.podcasts ? <PodcastsPage bottomChrome={chrome} settleMs={settleMs.podcasts} /> : null,
-    blogs: mounted.blogs ? <BlogsPage bottomChrome={chrome} settleMs={settleMs.blogs} /> : null,
+    books: mounted.books ? (
+      <ThemeScope order={librarySideOrder(0, tab === "books", themeOrder)}>
+        <BooksPage bottomChrome={chrome} booted={page.booted} settleMs={settleMs.books} />
+      </ThemeScope>
+    ) : null,
+    podcasts: mounted.podcasts ? (
+      <ThemeScope order={librarySideOrder(1, tab === "podcasts", themeOrder)}>
+        <PodcastsPage bottomChrome={chrome} settleMs={settleMs.podcasts} />
+      </ThemeScope>
+    ) : null,
+    blogs: mounted.blogs ? (
+      <ThemeScope order={librarySideOrder(2, tab === "blogs", themeOrder)}>
+        <BlogsPage bottomChrome={chrome} settleMs={settleMs.blogs} />
+      </ThemeScope>
+    ) : null,
   };
 
   return (
-    <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <ScreenHeader
-        title="Library"
-        center={<LibraryTabs value={page.tab} onChange={page.changeTab} />}
-        leftIcon={<ChartNoAxesGantt size={iconSize.default} color={asColor(foreground)} />}
-        leftLabel="Timeline"
-        onLeftPress={page.openTimeline}
-        // His mark carries the gold everywhere it appears, so the one control
-        // on this header that is him reads as him.
-        rightIcon={<ZodiacPisces size={iconSize.default} color={asColor(primary)} />}
-        rightLabel="Samwell"
-        onRightPress={page.openSamwell}
-      />
-      <ViewSwitcher order={LIBRARY_TAB_ORDER} value={page.tab} sides={sides} />
-      {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
-    </ThemedView>
+    <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <ThemeScope order={themeOrder}>
+        <LibraryHeader
+          tab={tab}
+          onChangeTab={page.changeTab}
+          onOpenTimeline={page.openTimeline}
+          onOpenSamwell={page.openSamwell}
+        />
+      </ThemeScope>
+      <ViewSwitcher order={LIBRARY_TAB_ORDER} value={tab} sides={sides} />
+      {miniPlayer.props ? (
+        <ThemeScope order={themeOrder}>
+          <MiniPlayer {...miniPlayer.props} />
+        </ThemeScope>
+      ) : null}
+    </View>
   );
 }
