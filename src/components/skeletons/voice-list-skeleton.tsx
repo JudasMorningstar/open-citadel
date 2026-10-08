@@ -11,7 +11,7 @@ import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-grou
  * down, which is the jolt the placeholder exists to avoid.
  *
  * Each row is the voice name over its language tag, with the quality chip
- * ("ENHANCED") right-aligned — the same three parts, in the same places, as
+ * ("HD") right-aligned — the same three parts, in the same places, as
  * `VoiceRow`.
  */
 const NAME_WIDTHS = ['w-2/5', 'w-3/5', 'w-1/2', 'w-2/3', 'w-1/2', 'w-3/5'] as const;

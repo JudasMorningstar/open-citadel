@@ -40,7 +40,11 @@ export async function listDeviceVoices(): Promise<DeviceVoice[]> {
       identifier: voice.identifier,
       name: voice.name,
       language: voice.language,
-      quality: voice.quality === speech.VoiceQuality.Enhanced ? 'ENHANCED' : 'DEFAULT',
+      // The phone calls its better voices "enhanced". That word is taken:
+      // Enhanced is this app's name for the voices it downloads, and the
+      // same word on a Lite voice said it was one of those. So the phone's
+      // better voices are marked HD, and its ordinary ones carry no mark.
+      quality: voice.quality === speech.VoiceQuality.Enhanced ? 'HD' : '',
     })),
   );
 }
