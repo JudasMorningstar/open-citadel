@@ -25,7 +25,9 @@ export interface VoicePickerRowProps {
 export function VoicePickerRow({ name, onPress, accessibilityLabel }: VoicePickerRowProps) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
   return (
-    <Touchable onPress={onPress} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+    // A tap is felt: the row opens something, and a press with no answer
+    // under the finger reads as missed until the sheet has started to rise.
+    <Touchable onPress={onPress} haptic="tap" accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
       <Card className="flex-row items-center justify-between p-3">
         <View className="flex-row items-center gap-3">
           <PrefixIcon icon={AudioLines} size={28} />
