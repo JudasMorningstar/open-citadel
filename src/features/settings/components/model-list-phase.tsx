@@ -1,12 +1,12 @@
-import React from 'react';
 import { useCSSVariable } from 'uniwind';
 
 import { PageFade } from '@/components/scroll-fades';
 import { ModelListSkeleton } from '@/components/skeletons/model-list-skeleton';
-import { Sheet } from '@/components/ui/sheet';
+import { Sheet, useSheetSettled } from '@/components/ui/sheet';
 import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { ModelPickerHeader } from '@/features/settings/components/model-picker-header';
 import { ModelRow } from '@/features/settings/components/model-row';
+import { useStagedCount } from '@/hooks/use-staged-count';
 import type { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import type { LocalModel } from '@/stores/model';
 import { asColor } from '@/utils/colors';
@@ -14,7 +14,10 @@ import { asColor } from '@/utils/colors';
 type SheetState = ReturnType<typeof useModelSheet>;
 
 const FILL: { flex: 1 } = { flex: 1 };
-const keyOf = (model: LocalModel) => model.id;
+/** The rows a sheet this tall shows before it is scrolled. */
+const FIRST_ROWS = 9;
+/** How many more are drawn each time the thread is idle. */
+const ROW_STEP = 6;
 
 /**
  * Every brain Samwell offers that this phone could run.
@@ -36,36 +39,42 @@ export function ModelListPhase({
   /** A full swipe or the tile deletes the download at once: the swipe's reach point is the confirmation. */
   onDelete: (id: string) => void;
 }) {
-  const skeleton = <ModelListSkeleton count={6} />;
-
   return (
     <>
       <ModelPickerHeader title="Choose Brain" />
-      {/* Every row is a `Swipe`, a gesture and animated styles apiece, so the
-          rows mount once the sheet has settled rather than during its rise. */}
-      <Sheet.Deferred skeleton={skeleton}>
-        {sheet.modelsHydrated ? (
-          // `flex-1` on the group: the list inside has nothing to grow into
-          // under an auto-height parent.
-          <Swipe.Group className="flex-1">
-            <ModelList
-              models={sheet.models}
-              activeModelId={sheet.activeModelId}
-              onChoose={sheet.chooseModel}
-              onDelete={onDelete}
-              mutedForeground={mutedForeground}
-              primary={primary}
-            />
-          </Swipe.Group>
-        ) : (
-          skeleton
-        )}
-      </Sheet.Deferred>
+      {/* The rows rise with the sheet: they are plain rows but for the
+          downloads (see `ModelRow`), and a first screenful of those costs
+          less than the placeholder that used to stand in for them. The
+          skeleton is for the one real wait, a list not yet read from disk. */}
+      {sheet.modelsHydrated ? (
+        // `flex-1` on the group: the list inside has nothing to grow into
+        // under an auto-height parent.
+        <Swipe.Group className="flex-1">
+          <ModelList
+            models={sheet.models}
+            activeModelId={sheet.activeModelId}
+            onChoose={sheet.chooseModel}
+            onDelete={onDelete}
+            mutedForeground={mutedForeground}
+            primary={primary}
+          />
+        </Swipe.Group>
+      ) : (
+        <ModelListSkeleton count={6} />
+      )}
     </>
   );
 }
 
-/** The list itself, below `Swipe.Group` so it can close rows as a scroll starts. */
+/**
+ * The list itself, below `Swipe.Group` so it can close rows as a scroll starts.
+ *
+ * A plain scroll view, not `Sheet.FlatList`: that list settles on its rows
+ * over several passes of measuring and drawing again, eight of them here, and
+ * the sheet waited through every one before it moved (1.4s on a Galaxy A33).
+ * Fifteen rows need no recycling. The first screenful is drawn with the sheet
+ * and the rest once it has landed (`useStagedCount`).
+ */
 function ModelList({
   models,
   activeModelId,
@@ -83,35 +92,32 @@ function ModelList({
 }) {
   const { closeAll } = useSwipeGroup();
   const foreground = asColor(useCSSVariable('--color-foreground'));
-
-  const renderItem = React.useCallback(
-    ({ item }: { item: LocalModel }) => (
-      <ModelRow
-        model={item}
-        active={item.id === activeModelId}
-        onChoose={onChoose}
-        onDelete={onDelete}
-        mutedForeground={mutedForeground}
-        primary={primary}
-        foreground={foreground}
-      />
-    ),
-    [activeModelId, onChoose, onDelete, mutedForeground, primary, foreground],
-  );
+  const settled = useSheetSettled();
+  const count = useStagedCount(models.length, FIRST_ROWS, ROW_STEP, !settled);
+  const drawn = count < models.length ? models.slice(0, count) : models;
 
   return (
     // `popover`, so the fade resolves to the sheet's own ground.
     <PageFade edges="both" surface="popover">
-      <Sheet.FlatList
+      <Sheet.ScrollView
         style={FILL}
-        data={models}
-        keyExtractor={keyOf}
-        extraData={activeModelId}
-        // A row dragged open is put back the moment a scroll begins, so it
-        // never rides along into a recycled cell.
+        // A row dragged open is put back the moment a scroll begins.
         onScrollBeginDrag={closeAll}
-        renderItem={renderItem}
-      />
+      >
+        {drawn.map((model) => (
+          <ModelRow
+            key={model.id}
+            model={model}
+            active={model.id === activeModelId}
+            onChoose={onChoose}
+            onDelete={onDelete}
+            mutedForeground={mutedForeground}
+            primary={primary}
+            foreground={foreground}
+            swipes={settled}
+          />
+        ))}
+      </Sheet.ScrollView>
     </PageFade>
   );
 }

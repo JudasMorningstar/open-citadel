@@ -67,3 +67,6 @@ build-*.tar.gz
 *.ipa
 *.aab
 *.apk
+
+# Local Expo modules: Gradle output
+modules/*/android/build/

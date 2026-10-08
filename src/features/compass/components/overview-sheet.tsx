@@ -11,7 +11,7 @@ import { PageFade } from '@/components/scroll-fades';
 import { Card } from '@/components/ui/card';
 import { RadarChart } from '@/components/ui/radar-chart';
 import { Sheet } from '@/components/ui/sheet';
-import { OverviewSkeleton } from '@/components/skeletons/compass-skeletons';
+import { RadarCardSkeleton } from '@/components/skeletons/compass-skeletons';
 import { GoalAbandonDialog } from '@/features/compass/components/goal-abandon-dialog';
 import { GoalAwardDialog } from '@/features/compass/components/goal-award-dialog';
 import { GoalDetailPanel } from '@/features/compass/components/goal-detail-panel';
@@ -92,9 +92,9 @@ function categoryRows(
 /**
  * The shape of execution across the categories the goals fall in.
  *
- * Gated on the sheet's settled context: the whole body mounts through
- * `Sheet.Deferred` once the rise is over, so the chart is born still and plays
- * then, rather than animating against the sheet's own spring.
+ * Gated on the sheet's settled context: it mounts through
+ * `Sheet.DeferredRegion` once the rise is over, so the chart is born still and
+ * plays then, rather than animating against the sheet's own spring.
  */
 function CategoryRadar({ rows, gold }: { rows: CategoryRow[]; gold: string }) {
   const data = React.useMemo(
@@ -285,92 +285,93 @@ export function OverviewSheet({
       scrollable
       contentPanning={false}
     >
-      {/* Charts and a list of meters: held until the sheet has settled, like
-          the insights body, so the mount never competes with the rise. */}
-      <Sheet.Deferred skeleton={<OverviewSkeleton />}>
-        {/* Pinned above the scroll, so the way back is never something you
-            have to scroll up to find. No transition between the two levels:
-            the goal's view mounts rings and a heatmap, and the house rule is
-            not to mount expensive content while anything is still moving. */}
-        {openGoal && (
-          /*
-           * A Gesture Handler `Pressable`, not the app's `Touchable`, and the
-           * whole 44pt row rather than the words.
-           *
-           * This row is the sheet's only chrome OUTSIDE `Sheet.ScrollView`,
-           * and that turns out to matter a great deal. The backdrop's
-           * press-to-close is a Gesture Handler tap over the WHOLE screen,
-           * including the part the sheet covers. Gesture Handler does not
-           * take part in React Native's responder system, so an ordinary
-           * Pressable cannot claim a touch away from it: both fired for the
-           * same press, and tapping this control went back AND dismissed the
-           * sheet underneath. Missing it dismissed without going back. Inside
-           * the scroll view none of this happens, because a scrollable
-           * registers a native handler that wins the arbitration — which is
-           * why the gutter beside a card is harmless and this row was not.
-           *
-           * So the control has to be a gesture too, and then it wins the same
-           * way. Its own press dim stands in for `Touchable`'s, since that is
-           * the piece being given up. Anything else ever pinned above the
-           * scroll in a sheet needs the same treatment.
-           */
-          <View className="flex-none px-4 pb-1 pt-2">
-            <Pressable
-              onPress={() => {
-                haptics.select();
-                closeGoal();
-              }}
-              hitSlop={{ top: 4, bottom: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="Back to all goals"
-              style={({ pressed }) => ({
-                height: 44,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 4,
-                opacity: pressed ? 0.6 : 1,
-              })}
-            >
-              <ChevronLeft size={18} color={gold} strokeWidth={2} />
-              <ThemedText type="labelSm" color={gold}>
-                ALL GOALS
-              </ThemedText>
-            </Pressable>
-          </View>
-        )}
+      {/* The main goal's card and the meters are plain, over the Compass store
+          in memory, and rise with the sheet. Only the radar, an animated SVG
+          chart, waits for the rise to end (`Sheet.DeferredRegion` below). */}
+      {/* Pinned above the scroll, so the way back is never something you
+          have to scroll up to find. No transition between the two levels:
+          the goal's view mounts rings and a heatmap, and the house rule is
+          not to mount expensive content while anything is still moving. */}
+      {openGoal && (
+        /*
+         * A Gesture Handler `Pressable`, not the app's `Touchable`, and the
+         * whole 44pt row rather than the words.
+         *
+         * This row is the sheet's only chrome OUTSIDE `Sheet.ScrollView`,
+         * and that turns out to matter a great deal. The backdrop's
+         * press-to-close is a Gesture Handler tap over the WHOLE screen,
+         * including the part the sheet covers. Gesture Handler does not
+         * take part in React Native's responder system, so an ordinary
+         * Pressable cannot claim a touch away from it: both fired for the
+         * same press, and tapping this control went back AND dismissed the
+         * sheet underneath. Missing it dismissed without going back. Inside
+         * the scroll view none of this happens, because a scrollable
+         * registers a native handler that wins the arbitration — which is
+         * why the gutter beside a card is harmless and this row was not.
+         *
+         * So the control has to be a gesture too, and then it wins the same
+         * way. Its own press dim stands in for `Touchable`'s, since that is
+         * the piece being given up. Anything else ever pinned above the
+         * scroll in a sheet needs the same treatment.
+         */
+        <View className="flex-none px-4 pb-1 pt-2">
+          <Pressable
+            onPress={() => {
+              haptics.select();
+              closeGoal();
+            }}
+            hitSlop={{ top: 4, bottom: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back to all goals"
+            style={({ pressed }) => ({
+              height: 44,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <ChevronLeft size={18} color={gold} strokeWidth={2} />
+            <ThemedText type="labelSm" color={gold}>
+              ALL GOALS
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
 
-        <PageFade edges="both" surface="popover">
-          <Sheet.ScrollView contentContainerClassName="gap-4 px-4 pb-6 pt-2">
-            {openGoal ? (
-              <GoalDetailPanel
-                goal={openGoal}
-                consistency={consistencyByGoal.get(openGoal.id) ?? null}
-                isPrimary={openGoal.id === primaryGoalId}
-                onMakePrimary={() => onMakePrimary(openGoal.id)}
-                onFinish={finishGoal}
-                onAbandon={startAbandon}
-              />
-            ) : (
-              <>
-                {primary && (
-                  <OverviewMainGoal
-                    goal={primary}
-                    consistency={consistencyByGoal.get(primary.id) ?? null}
-                    today={today}
-                    outpacedBy={outpacedBy}
-                    onOpen={() => setOpenGoalId(primary.id)}
-                  />
-                )}
+      <PageFade edges="both" surface="popover">
+        <Sheet.ScrollView contentContainerClassName="gap-4 px-4 pb-6 pt-2">
+          {openGoal ? (
+            <GoalDetailPanel
+              goal={openGoal}
+              consistency={consistencyByGoal.get(openGoal.id) ?? null}
+              isPrimary={openGoal.id === primaryGoalId}
+              onMakePrimary={() => onMakePrimary(openGoal.id)}
+              onFinish={finishGoal}
+              onAbandon={startAbandon}
+            />
+          ) : (
+            <>
+              {primary && (
+                <OverviewMainGoal
+                  goal={primary}
+                  consistency={consistencyByGoal.get(primary.id) ?? null}
+                  today={today}
+                  outpacedBy={outpacedBy}
+                  onOpen={() => setOpenGoalId(primary.id)}
+                />
+              )}
 
-                {/* Straight after the hero, and before the goals it is made
-                    of. The screen then reads main goal, then the shape of the
-                    whole set, then the members: summary before detail, with
-                    the longest and most specific thing last. It answers a
-                    question the list below cannot — whether the effort is
-                    spread or lopsided — which is why it is worth a card, and
-                    why it is not worth one when there are too few axes to
-                    have a shape. */}
-                {rows.length >= MIN_RADAR_AXES && (
+              {/* Straight after the hero, and before the goals it is made
+                  of. The screen then reads main goal, then the shape of the
+                  whole set, then the members: summary before detail, with
+                  the longest and most specific thing last. It answers a
+                  question the list below cannot — whether the effort is
+                  spread or lopsided — which is why it is worth a card, and
+                  why it is not worth one when there are too few axes to
+                  have a shape. */}
+              {rows.length >= MIN_RADAR_AXES && (
+                <Sheet.DeferredRegion skeleton={<RadarCardSkeleton />}>
                   <Card>
                     <Card.Content className="gap-3 p-4">
                       <ThemedText type="labelSm" color={dim}>
@@ -398,29 +399,29 @@ export function OverviewSheet({
                       </View>
                     </Card.Content>
                   </Card>
-                )}
-                {others.length > 0 && (
-                  <View className="gap-2">
-                    <ThemedText type="labelSm" color={dim}>
-                      SIDE GOALS
-                    </ThemedText>
-                    {others.map((goal) => (
-                      <OverviewGoalRow
-                        key={goal.id}
-                        goal={goal}
-                        consistency={consistencyByGoal.get(goal.id) ?? null}
-                        today={today}
-                        onOpen={() => setOpenGoalId(goal.id)}
-                      />
-                    ))}
-                  </View>
-                )}
+                </Sheet.DeferredRegion>
+              )}
+              {others.length > 0 && (
+                <View className="gap-2">
+                  <ThemedText type="labelSm" color={dim}>
+                    SIDE GOALS
+                  </ThemedText>
+                  {others.map((goal) => (
+                    <OverviewGoalRow
+                      key={goal.id}
+                      goal={goal}
+                      consistency={consistencyByGoal.get(goal.id) ?? null}
+                      today={today}
+                      onOpen={() => setOpenGoalId(goal.id)}
+                    />
+                  ))}
+                </View>
+              )}
 
-              </>
-            )}
-          </Sheet.ScrollView>
-        </PageFade>
-      </Sheet.Deferred>
+            </>
+          )}
+        </Sheet.ScrollView>
+      </PageFade>
 
       {/* Siblings of the sheet's body, drawn through a portal above it: a
           second modal would dismiss the sheet underneath, and these are

@@ -1,11 +1,12 @@
 import {
-  Extrapolation,
-  interpolate,
-  interpolateColor,
-  type SharedValue,
-} from 'react-native-reanimated';
-import Transition from 'react-native-screen-transitions';
-import type { ScreenTransitionConfig } from 'react-native-screen-transitions';
+    Easing,
+    Extrapolation,
+    interpolate,
+    interpolateColor,
+    type SharedValue,
+} from "react-native-reanimated";
+import type { ScreenTransitionConfig } from "react-native-screen-transitions";
+import Transition from "react-native-screen-transitions";
 
 /*
  * There is deliberately no custom `contentComponent` here.
@@ -56,7 +57,21 @@ export type ScreenSide = -1 | 0 | 1;
  * quarter is enough to read as one connected surface sliding under the next;
  * more than that and the two screens stop feeling adjacent.
  */
-const PARALLAX = 0.25;
+export const PARALLAX = 0.25;
+
+/**
+ * How much of the scrim a side screen lays over the screen it slides across.
+ *
+ * The full scrim is right for a drawer or a sheet, which covers the page and
+ * means "this is in front now". A side screen is a neighbour arriving, and
+ * the only part of the page beneath it that shows is the strip it has not yet
+ * covered, which is darkest exactly when it is thinnest: at the end of an
+ * open (and the start of a close), while the slide's last few pixels settle.
+ * At the full scrim that strip read as a black bar wiping along the edge.
+ * A third of it still says one page is over another, the way iOS dims under
+ * a push.
+ */
+export const SIDE_DIM = 0.33;
 
 /**
  * How far a screen shrinks when a drawer rises over it.
@@ -69,25 +84,27 @@ const PARALLAX = 0.25;
 const RECEDE_SCALE = 0.94;
 
 /**
- * `duration` on these specs is the spring's *perceptual* duration; the real
- * settle is 1.5x it. Every number below is therefore two-thirds of the time it
- * should feel like, and that multiplier is the reason the old 350/400 values
- * ran 525ms and 600ms on screen — half again longer than iOS's own push, which
- * is what made a tap feel like it was waiting on something.
+ * The side screens move on a timing curve, not a spring.
  *
- * Open and close are separate on purpose. A push is tap-driven: no finger was
- * in it, so it settles critically damped with no overshoot. A dismiss is
- * finger-driven and arrives carrying the release velocity, so it gets a little
- * bounce — momentum has to land somewhere or the screen reads as hitting a
- * wall — and it is faster than the open, because an exit is the system
- * responding rather than the user deciding.
+ * They were a spring, and a spring fast enough to feel responsive is a spring
+ * that does most of its travel at once: measured on the emulator, the page
+ * covered 70% of the screen in its first four frames and then crawled the
+ * last 30% for another twelve, the screen beneath showing as a strip creeping
+ * along the edge. A snap then a crawl, both ways, which read as a judder and
+ * a dark band rather than as one page sliding over another. A close also
+ * bounced (a 0.86 damping ratio, there for a flick's momentum) on every tap
+ * of the back button, overshooting its place by a few pixels.
+ *
+ * The standard ease (Material's, the one Android's own screens use) starts
+ * gently, keeps the middle even and finishes at a set time, so the strip
+ * crosses at a steady pace and is gone when the curve ends. The close is a
+ * little faster, an exit being the system responding rather than the user
+ * deciding. A timing curve takes no release velocity, so a swipe back runs
+ * the rest of the way on the same curve from wherever the finger let go.
  */
-
-/** Tap-driven and frequent, so it settles fast and never overshoots. */
-const SIDE_OPEN = { duration: 220, dampingRatio: 1 } as const;
-
-/** Finger-driven, so it keeps the flick's momentum and leaves faster than it came. */
-const SIDE_CLOSE = { duration: 190, dampingRatio: 0.86 } as const;
+const SIDE_EASE = Easing.bezier(0.4, 0, 0.2, 1);
+export const SIDE_OPEN = { duration: 400, easing: SIDE_EASE } as const;
+export const SIDE_CLOSE = { duration: 340, easing: SIDE_EASE } as const;
 
 /** Reduce Motion collapses every spatial transition to this. */
 const FADE_SPEC = { duration: 150, dampingRatio: 1 } as const;
@@ -128,29 +145,40 @@ type SideOptions = {
  * drawer) report 0, which zeroes the parallax below rather than shoving the
  * covered screen sideways for a transition that has no sideways in it.
  */
-function coveringSide(next: { meta?: Record<string, unknown> } | undefined): number {
-  'worklet';
+function coveringSide(
+  next: { meta?: Record<string, unknown> } | undefined,
+): number {
+  "worklet";
   if (!next) return 0;
   const from = next.meta?.enterFrom;
-  return typeof from === 'number' ? from : 1;
+  return typeof from === "number" ? from : 1;
 }
 
 /** A screen that lives to one side of the hub. */
-export function sideTransition({ side, scrim, edgeOnly }: SideOptions): ScreenTransitionConfig {
+export function sideTransition({
+  side,
+  scrim,
+  edgeOnly,
+}: SideOptions): ScreenTransitionConfig {
   return {
     gestureEnabled: true,
     // "horizontal" is a drag to the right, "horizontal-inverted" a drag to the
     // left: a screen is always pushed back out the edge it came in through.
     gestureDirection: edgeOnly
-      ? [{ gesture: side === 1 ? 'horizontal' : 'horizontal-inverted', area: 'edge' }]
+      ? [
+          {
+            gesture: side === 1 ? "horizontal" : "horizontal-inverted",
+            area: "edge",
+          },
+        ]
       : side === 1
-        ? 'horizontal'
-        : 'horizontal-inverted',
+        ? "horizontal"
+        : "horizontal-inverted",
     meta: { enterFrom: side },
     transitionSpec: { open: SIDE_OPEN, close: SIDE_CLOSE },
     gestureVelocityImpact: VELOCITY_IMPACT,
     screenStyleInterpolator: (args) => {
-      'worklet';
+      "worklet";
       // Read defensively rather than destructuring in the signature. The
       // library runs this inside a try/catch and answers ANY throw by handing
       // the screen `NO_STYLES` — which paints as a blank screen, under a
@@ -174,7 +202,7 @@ export function sideTransition({ side, scrim, edgeOnly }: SideOptions): ScreenTr
         [1, covering === 0 ? RECEDE_SCALE : 1],
         Extrapolation.CLAMP,
       );
-      const dim = scrim.value || 'transparent';
+      const dim = scrim.value || "transparent";
       return {
         content: { style: { transform: [{ translateX }, { scale }] } },
         backdrop: {
@@ -185,9 +213,13 @@ export function sideTransition({ side, scrim, edgeOnly }: SideOptions): ScreenTr
             // so the screen underneath does the dimming for it.
             backgroundColor: next
               ? covering === 0
-                ? interpolateColor(progress, [1, 2], ['transparent', dim])
-                : 'transparent'
-              : interpolateColor(progress, [0, 1], ['transparent', dim]),
+                ? interpolateColor(progress, [1, 2], ["transparent", dim])
+                : "transparent"
+              : interpolateColor(
+                  progress * SIDE_DIM,
+                  [0, 1],
+                  ["transparent", dim],
+                ),
           },
         },
       };
@@ -201,7 +233,11 @@ export function sideTransition({ side, scrim, edgeOnly }: SideOptions): ScreenTr
  * below the Library to go back to, and a live gesture here would compete with
  * the swipe that opens its neighbours (see `components/navigation/hub-swipe`).
  */
-export function hubTransition({ scrim }: { scrim: SharedValue<string> }): ScreenTransitionConfig {
+export function hubTransition({
+  scrim,
+}: {
+  scrim: SharedValue<string>;
+}): ScreenTransitionConfig {
   return { ...sideTransition({ side: 1, scrim }), gestureEnabled: false };
 }
 
@@ -227,37 +263,138 @@ export function hubTransition({ scrim }: { scrim: SharedValue<string> }): Screen
  * one arrives from below — the same crossing motion, one level down. Clamped
  * here: a covered drawer recedes in place like any other covered screen.
  */
-export function drawerTransition({ scrim }: { scrim: SharedValue<string> }): ScreenTransitionConfig {
+export function drawerTransition({
+  scrim,
+}: {
+  scrim: SharedValue<string>;
+}): ScreenTransitionConfig {
   return {
     ...Transition.Presets.SlideFromBottom(),
     meta: { enterFrom: 0 },
     screenStyleInterpolator: (args) => {
-      'worklet';
+      "worklet";
       // Defensive reads — see the note in `sideTransition`.
       const { progress, next } = args;
       const height = args.layouts?.screen?.height ?? 0;
       const covering = coveringSide(next);
       // Clamped at 1: the rise is the whole of this screen's own motion, and
       // being covered must not send it travelling again.
-      const translateY = interpolate(progress, [0, 1], [height, 0], Extrapolation.CLAMP);
+      const translateY = interpolate(
+        progress,
+        [0, 1],
+        [height, 0],
+        Extrapolation.CLAMP,
+      );
       const scale = interpolate(
         progress,
         [1, 2],
         [1, covering === 0 ? RECEDE_SCALE : 1],
         Extrapolation.CLAMP,
       );
-      const dim = scrim.value || 'transparent';
+      const dim = scrim.value || "transparent";
       return {
         content: { style: { transform: [{ translateY }, { scale }] } },
         backdrop: {
           style: {
             backgroundColor:
               next && covering === 0
-                ? interpolateColor(progress, [1, 2], ['transparent', dim])
-                : 'transparent',
+                ? interpolateColor(progress, [1, 2], ["transparent", dim])
+                : "transparent",
           },
         },
       };
+    },
+  };
+}
+
+/**
+ * The tag shared by the mini player's artwork and the full player's, which is
+ * what the player grows out of and shrinks back into.
+ */
+export const NOW_PLAYING_ART = "now-playing-art";
+
+/**
+ * The open is a timing curve, for the reason the side screens' is (see
+ * `SIDE_EASE`), only more so. It was a spring with no overshoot, and such a
+ * spring does most of its travel at once: the player was past a quarter of
+ * its growth, which is also the whole of the reveal's fade in, some 40ms in.
+ * Those are the frames a slow phone spends drawing the new screen for the
+ * first time, so they were never shown. The player appeared half grown and
+ * crept the rest of the way, which read as a jump rather than as growing.
+ *
+ * The standard ease starts gently: the frames lost to the first draw cover a
+ * few percent of the way, and the growth happens where it can be seen. About
+ * as long overall as the spring took to settle (its `duration` was the
+ * perceptual one; the real settle ran half again longer).
+ *
+ * The close stays a spring with no overshoot: it is the one a finger throws
+ * (the drag down), it mounts nothing, and a bounce on the way back into the
+ * mini player read as a blip.
+ */
+const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
+const PLAYER_CLOSE = { duration: 240, dampingRatio: 1 } as const;
+
+/**
+ * Whether the reveal is clipped by the library's navigation mask. Not on
+ * Android, going by the source of `@react-native-masked-view` (0.3.2), which
+ * is what the mask is there:
+ *
+ * - It keeps the whole player in an offscreen layer for as long as the screen
+ *   is mounted (`setLayerType` in `RNCMaskedView.dispatchDraw`), the cost the
+ *   note at the top of this file is about.
+ * - It redraws the mask into a new bitmap the size of the screen whenever the
+ *   mask element is invalidated (`updateBitmapMask`), and the reveal moves
+ *   that element on every frame.
+ * - It draws that bitmap with `View.draw`, which leaves out a view's own
+ *   transform, and the library sizes its Android mask with a transform
+ *   (`REVEAL_USES_TRANSFORM_MASK`). So the mask comes out the full screen
+ *   whatever the reveal asked for, and clips nothing.
+ *
+ * Without it the player grows by its content's scale and fade alone, which is
+ * what Android was showing already. Read from source, not yet measured on a
+ * phone: if the open looks different there, this is the line to revisit.
+ */
+const PLAYER_MASK = process.env.EXPO_OS !== "android";
+
+/**
+ * The full player, grown out of the mini player.
+ *
+ * The mini player's artwork and the player's are one element: on a tap the
+ * small square grows into the large one while the rest of the player opens
+ * around it, and dragging the player down shrinks it back into the card it
+ * came from. That is the mini player and the player read as one object,
+ * which a drawer rising over the card never quite did: the card vanished
+ * under a screen that came from the bottom edge, not from it.
+ *
+ * Square: the mask keeps no corner radius, like everything else here. The
+ * screen underneath recedes by its own covered phase (`RECEDE_SCALE` and the
+ * scrim), so the reveal's own background scale is turned off rather than
+ * doubled.
+ *
+ * With nothing to grow from (the player opened with no mini player on
+ * screen), the link never completes and the reveal returns nothing; the
+ * drawer's rise takes over, so the player still arrives from where the mini
+ * player would have been.
+ */
+export function playerTransition({
+  scrim,
+}: {
+  scrim: SharedValue<string>;
+}): ScreenTransitionConfig {
+  const drawer = drawerTransition({ scrim });
+  const rise = drawer.screenStyleInterpolator!;
+  return {
+    ...drawer,
+    navigationMaskEnabled: PLAYER_MASK,
+    transitionSpec: { open: PLAYER_OPEN, close: PLAYER_CLOSE },
+    screenStyleInterpolator: (args) => {
+      "worklet";
+      const reveal = args.bounds({ id: NOW_PLAYING_ART }).navigation.reveal({
+        borderRadius: 0,
+        borderContinuous: false,
+        backgroundScale: 1,
+      });
+      return reveal.content ? reveal : rise(args);
     },
   };
 }
@@ -274,11 +411,16 @@ export function fadeTransition(): ScreenTransitionConfig {
     meta: { enterFrom: 0 },
     transitionSpec: { open: FADE_SPEC, close: FADE_SPEC },
     screenStyleInterpolator: (args) => {
-      'worklet';
+      "worklet";
       return {
         content: {
           style: {
-            opacity: interpolate(args.progress, [0, 1, 2], [0, 1, 1], Extrapolation.CLAMP),
+            opacity: interpolate(
+              args.progress,
+              [0, 1, 2],
+              [0, 1, 1],
+              Extrapolation.CLAMP,
+            ),
           },
         },
       };

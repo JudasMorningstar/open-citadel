@@ -26,25 +26,31 @@ import {
     ThemeProvider,
 } from "expo-router/react-navigation";
 import * as SplashScreen from "expo-splash-screen";
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
-import { useAppUpdates } from "@/hooks/use-app-updates";
 import { ToastProvider } from "@/components/toast/toast-provider";
+import { ThemeRelease } from "@/components/theme-scope";
+import { RootThemeTokens } from "@/hooks/use-theme-tokens";
+import { ThemeStatusBar } from "@/components/theme-status-bar";
+import { AppUpdates } from "@/features/updates/components/app-updates";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
-import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
+import { useThemeMode } from "@/hooks/use-theme";
+import { queryClient } from "@/lib/query-client";
+import { startQueryPersist } from "@/lib/query-persist";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
+    playerTransition,
     fadeTransition,
     hubTransition,
     sideTransition,
@@ -59,10 +65,15 @@ import {
     registerTTSBackgroundHandler,
     setupTTSMediaSession,
 } from "@/services/tts-media-session";
+import { usePlayerNotificationTap } from "@/features/podcasts/hooks/use-player-notification-tap";
+import { usePodcastLifecycle } from "@/features/podcasts/hooks/use-podcast-lifecycle";
+import { registerPodcastBackgroundHandler } from "@/services/podcasts/player";
+import { usePodcastPrefs } from "@/stores/podcast-prefs";
 import { useAccountStore } from "@/stores/account";
 import { useGuestStore } from "@/stores/guest";
 import { useBooksStore } from "@/stores/books";
 import { useModelStore } from "@/stores/model";
+import { useTtsStore } from "@/stores/tts";
 import { useSettingsStore } from "@/stores/settings";
 import { Uniwind, useCSSVariable } from "uniwind";
 
@@ -72,6 +83,12 @@ SplashScreen.preventAutoHideAsync();
 
 // Register Android background event handler at module level (before app renders)
 registerTTSBackgroundHandler();
+// Podcasts save positions and move through Up Next from the player's events,
+// which on Android arrive through the same headless task while backgrounded.
+registerPodcastBackgroundHandler();
+// Explore's kept catalogues start reading back now, while fonts and the
+// database are still loading, and are saved when the app leaves the front.
+startQueryPersist(queryClient);
 
 // Catches throws from route module evaluation / rendering that would otherwise
 // crash the app with an unhandled JS exception on startup.
@@ -86,7 +103,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
-export default function RootLayout() {
+function RootLayoutContent() {
   const [fontsLoaded] = useFonts({
     Newsreader_400Regular,
     Newsreader_400Regular_Italic,
@@ -102,7 +119,9 @@ export default function RootLayout() {
 
   const [dbReady, setDbReady] = useState(false);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const theme = useSettingsStore((s) => s.theme);
+  // Uniwind's app-wide theme, not the setting: this layout is outside every
+  // `ThemeScope`, and takes a change a step after the screen it was made on.
+  const { mode: theme } = useThemeMode();
   const [background, card, foreground, primary, scrim] = useCSSVariable([
     "--color-background",
     "--color-card",
@@ -121,33 +140,11 @@ export default function RootLayout() {
   // Samwell's journal: what he writes down about them once a conversation
   // goes quiet, for him to recall in later chats.
   useJourneyWriter();
-  // Over-the-air updates: checked on return as well as launch, and offered
-  // with a toast once one is downloaded.
-  useAppUpdates(fontsLoaded && dbReady);
+  // The mini player's episode back, interrupted downloads resumed, new
+  // episodes looked for on launch and on return.
+  usePodcastLifecycle(dbReady);
+  usePlayerNotificationTap(dbReady);
 
-  // The app's own theme setting is the single source of truth; Uniwind (and
-  // therefore every PanelUI token class in the app) follows the OS color
-  // scheme by default and knows nothing about it. Bridging here — in a layout
-  // effect, before first paint — pins the whole class-driven layer to the
-  // setting, and `setTheme` also forces the native `Appearance` to match so
-  // platform surfaces (dialogs, sheets) agree with it. Without this, a device
-  // in dark mode running the app set to light renders half-dark: class-styled
-  // surfaces resolve the OS scheme while anything still themed in JS resolves
-  // the setting. `setTheme('light' | 'dark')` also switches off Uniwind's
-  // adaptive (follow-the-OS) mode, which is exactly the intent — the user
-  // chose a side. A future 'system' setting would call `setTheme('system')`.
-  // Applied synchronously, before paint. This must NOT be wrapped in
-  // `startTransition`: `Uniwind.setTheme` notifies an external store, and every
-  // `useCSSVariable`/`useUniwind` subscriber answers with its own `setState`.
-  // Deferring that fan-out to a Transition both delays the repaint (the theme
-  // visibly lagging the switch) and drops React's tearing guarantee for the
-  // store — which showed up as a blank screen, and as React's own warning
-  // "Detected a large number of updates inside startTransition ... concurrent
-  // mode guarantees are off the table". The fan-out is the cost to attack (see
-  // `hooks/use-theme-tokens`), not the scheduling.
-  useLayoutEffect(() => {
-    Uniwind.setTheme(theme);
-  }, [theme]);
 
   // Free the on-device engine + image memory when the OS is under pressure or
   // the app is backgrounded — the guard against the long-session black screen.
@@ -162,10 +159,26 @@ export default function RootLayout() {
       // each other — settings never touches book paths — so they overlap here
       // rather than chaining. `setDbReady` still waits for both, so nothing
       // reads a book/cover before the paths are repaired.
-      .then(() => Promise.all([reanchorLocalPaths(), loadSettings()]))
+      .then(() =>
+        Promise.all([
+          reanchorLocalPaths(),
+          loadSettings(),
+          // Before first paint, so the Library opens on the side it was left on.
+          usePodcastPrefs.getState().load(),
+        ]),
+      )
       .then(() => {
+        // The theme as saved, set outright before anything is drawn. Choosing
+        // a side also switches off Uniwind's follow-the-phone mode. Later
+        // changes are handed out by `ThemeRelease`; a future 'system' setting
+        // would call `setTheme('system')` here and there.
+        Uniwind.setTheme(useSettingsStore.getState().theme);
         setupTTSMediaSession();
         setDbReady(true);
+        // Which voice packs are on the phone, read here rather than when the
+        // voice settings mount: read there, the settings drew their download
+        // card for a frame before the voices they already had.
+        void useTtsStore.getState().loadState();
         // Hydrate the local model list at startup — previously only the
         // Settings screen loaded it, so the chat tab's first open saw an
         // empty store and claimed Samwell wasn't set up. Fire-and-forget:
@@ -252,13 +265,15 @@ export default function RootLayout() {
   const screenTransitions = useMemo(() => {
     const fade = fadeTransition();
     if (reduceMotion) {
-      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, fade };
+      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, player: fade, fade };
     }
     return {
       hub: hubTransition({ scrim: scrimValue }),
       side: sideTransition({ side: 1, scrim: scrimValue }),
       sideEdge: sideTransition({ side: 1, scrim: scrimValue, edgeOnly: true }),
       drawer: drawerTransition({ scrim: scrimValue }),
+      // The player grows out of the mini player (see `playerTransition`).
+      player: playerTransition({ scrim: scrimValue }),
       // Onboarding's own, and it is a fade in both branches: the first screen
       // anyone sees has nowhere to slide in from. It belongs in this memo
       // rather than being built inline at the call site for the reason spelled
@@ -267,106 +282,170 @@ export default function RootLayout() {
       fade,
     };
   }, [reduceMotion, scrimValue]);
+  // Every screen stays attached while covered: see the note on the stack.
+  // Memoized with the transitions, for the same reason they are.
+  const stackOptions = useMemo(
+    () => ({ ...screenTransitions.side, inactiveBehavior: "keep" as const }),
+    [screenTransitions],
+  );
 
   if (!fontsLoaded || !dbReady) return null;
 
   return (
-    // ThemeTokensProvider wraps everything, PanelUIProvider included, so the
-    // portal host that sheets present into resolves its tokens from the same
-    // single subscription as the rest of the tree.
-    <ThemeTokensProvider>
-      {/* PanelUIProvider owns the gesture handler root every gesture recognizer
-        in the app needs, plus PanelUI's own portal/toast host and the keyboard
-        controller provider. */}
-      <PanelUIProvider>
-        {/* Toasts portal into PanelUIProvider's host so they draw above every
-          sheet, so this has to sit inside it. */}
-        <ToastProvider>
-          {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
-          components/ui/sheet), and they present into this provider's own
-          portal host. It sits above the navigator rather than inside it, so a
-          sheet is drawn over whatever screen opened it and is never clipped by
-          that screen's transition. */}
-          <BottomSheetModalProvider>
-            <ThemeProvider value={navTheme}>
-              <StatusBar style={theme === "light" ? "dark" : "light"} />
-              {/* Hub and spokes. The hub is one route — Timeline, Library and
-              Samwell are pages of a pager inside it (`components/hub/hub-pager`),
-              because they are peers and a swipe between peers should track the
-              finger rather than push a route. Everything else here is a spoke
-              that rises or slides over whichever page is showing.
-              `navigation/transitions` holds the choreography; these options only
-              say where each screen belongs. */}
-              <TransitionStack screenOptions={screenTransitions.side}>
-                <TransitionStack.Screen
-                  name="index"
-                  options={screenTransitions.hub}
-                />
-                {/* The first run. A cross-fade rather than a slide: this is the
-                first thing anyone sees and there is nowhere for it to come in
-                from. It leaves by `router.replace`, so it is never on the
-                stack behind the hub and the system Back button cannot walk
-                into it. */}
-                <TransitionStack.Screen
-                  name="onboarding"
-                  options={screenTransitions.fade}
-                />
-                <TransitionStack.Screen
-                  name="settings"
-                  options={{
-                    ...screenTransitions.drawer,
-                    // `hide` (the default) detaches a hidden screen's view, and the
-                    // re-attach layout of this screen's large tree lands in the same
-                    // burst as the first frames of the rise — the open measured three
-                    // times the close's jank. `keep` leaves the view attached while
-                    // hidden, so both directions are a plain translate of a laid-out
-                    // layer. Its per-open work is settle-gated, so nothing hidden
-                    // actually runs.
-                    inactiveBehavior: "keep",
-                  }}
-                />
-                {/* Edge-only: the reader turns pages with the same horizontal
-                swipe, so a screen-wide back gesture would eat every page turn. */}
-                <TransitionStack.Screen
-                  name="reader/[id]"
-                  options={{
-                    ...screenTransitions.sideEdge,
-                    // Same reason `settings` above uses it, plus a worse failure of
-                    // its own. `hide` detaches a hidden screen's view; on re-attach
-                    // the reader's screen container stopped receiving its animated
-                    // style, so it stayed at whatever the hidden state last wrote —
-                    // the visibility-block offset, two viewports down. The screen
-                    // was then invisible while still laid out full-size and still
-                    // hit-testing, so it covered the Library and swallowed every
-                    // touch: the app looked frozen with every thread idle.
-                    //
-                    // Measured, not inferred: an un-animated probe painted from the
-                    // screen's outer wrapper while an identical probe one level in
-                    // (inside the animated container) did not, with the JS side
-                    // reporting the block clear the whole time.
-                    //
-                    // `keep` never detaches, so there is no re-attach to lose.
-                    inactiveBehavior: "keep",
-                  }}
-                />
-                <TransitionStack.Screen
-                  name="chat/[id]"
-                  options={screenTransitions.side}
-                />
-                <TransitionStack.Screen
-                  name="section/[type]"
-                  options={screenTransitions.drawer}
-                />
-                <TransitionStack.Screen
-                  name="collection/[id]"
-                  options={screenTransitions.drawer}
-                />
-              </TransitionStack>
-              <ApprovalSheet />
-            </ThemeProvider>
-          </BottomSheetModalProvider>
-        </ToastProvider>
-      </PanelUIProvider>
-    </ThemeTokensProvider>
+    // The query cache is outermost: it draws nothing, and anything below may
+    // read through it. Its kept catalogues are read back beside it, not in
+    // front of it (see `lib/query-persist`), so the library's reads never wait.
+    <QueryClientProvider client={queryClient}>
+        {/* PanelUIProvider owns the gesture handler root every gesture recognizer
+          in the app needs, plus PanelUI's own portal/toast host and the keyboard
+          controller provider. */}
+        <PanelUIProvider>
+          {/* Toasts portal into PanelUIProvider's host so they draw above every
+            sheet, so this has to sit inside it. */}
+          <ToastProvider>
+            {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
+            components/ui/sheet), and they present into this provider's own
+            portal host. It sits above the navigator rather than inside it, so a
+            sheet is drawn over whatever screen opened it and is never clipped by
+            that screen's transition. */}
+            <BottomSheetModalProvider>
+              <ThemeProvider value={navTheme}>
+                <ThemeStatusBar />
+                {/* Hub and spokes. The hub is one route — Timeline, Library and
+                Samwell are pages of a pager inside it (`components/hub/hub-pager`),
+                because they are peers and a swipe between peers should track the
+                finger rather than push a route. Everything else here is a spoke
+                that rises or slides over whichever page is showing.
+                `navigation/transitions` holds the choreography; these options only
+                say where each screen belongs. */}
+                {/* `inactiveBehavior: "keep"` for every screen. The library's
+                default, `hide`, detaches and pauses a screen once it is two
+                below the top, and re-attaches it when the screen above closes:
+                that re-attach (layout plus every effect in the tree) landed in
+                the first frames of the back slide and froze it, wherever the
+                stack was three deep (Explore under a show under an episode, the
+                hub under anything opened from Explore). Settings and the reader
+                found it first: Settings' open measured three times its close's
+                jank, and the reader's container stopped receiving its animated
+                style on re-attach, sat invisible two viewports down and still
+                swallowed every touch. `keep` never detaches, so there is nothing
+                to re-attach. Work a covered screen would do is settle-gated
+                (`useSettledOnce`), so nothing hidden runs. */}
+                <TransitionStack screenOptions={stackOptions}>
+                  <TransitionStack.Screen
+                    name="index"
+                    options={screenTransitions.hub}
+                  />
+                  {/* The first run. A cross-fade rather than a slide: this is the
+                  first thing anyone sees and there is nowhere for it to come in
+                  from. It leaves by `router.replace`, so it is never on the
+                  stack behind the hub and the system Back button cannot walk
+                  into it. */}
+                  <TransitionStack.Screen
+                    name="onboarding"
+                    options={screenTransitions.fade}
+                  />
+                  <TransitionStack.Screen
+                    name="settings"
+                    options={screenTransitions.drawer}
+                  />
+                  {/* Edge-only: the reader turns pages with the same horizontal
+                  swipe, so a screen-wide back gesture would eat every page turn. */}
+                  <TransitionStack.Screen
+                    name="reader/[id]"
+                    options={screenTransitions.sideEdge}
+                  />
+                  <TransitionStack.Screen
+                    name="section/[type]"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="collection/[id]"
+                    options={screenTransitions.drawer}
+                  />
+                  {/* Podcasts. A show and an episode are places you go into, so
+                  they come in from the side like a chat. The player grows out
+                  of the mini player's artwork and shrinks back into it.
+                  Explore and a "View all" list rise from the bottom over
+                  whatever opened them, like the books side's lists. */}
+                  <TransitionStack.Screen
+                    name="podcasts/show/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/episode/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/player"
+                    options={screenTransitions.player}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/section/[type]"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="podcasts/genre/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="free-books/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="free-books/shelf/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="free-books/book/[id]"
+                    options={screenTransitions.side}
+                  />
+                  {/* Blogs, laid out as podcasts are: a blog is a place you go
+                  into, from the side; Explore and a "View all" rise from the
+                  bottom. A post opens in the reader, like a book. */}
+                  <TransitionStack.Screen
+                    name="blogs/blog/[id]"
+                    options={screenTransitions.side}
+                  />
+                  <TransitionStack.Screen
+                    name="blogs/explore"
+                    options={screenTransitions.drawer}
+                  />
+                  <TransitionStack.Screen
+                    name="blogs/section/[type]"
+                    options={screenTransitions.drawer}
+                  />
+                </TransitionStack>
+                <ApprovalSheet />
+                {/* Over-the-air updates: checked on return as well as launch,
+                and asked for in a dialog once one is downloaded. */}
+                <AppUpdates />
+              </ThemeProvider>
+            </BottomSheetModalProvider>
+          </ToastProvider>
+        </PanelUIProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * The app, and how a theme reaches it. The layout itself is under no
+ * `ThemeScope`: one round the whole app made every part inside it work twice
+ * on a change (see `components/theme-scope`). It follows Uniwind's app-wide
+ * theme, which `ThemeRelease` moves in its turn, and the app-wide tokens sit
+ * above the layout so the portal host that sheets and toasts present into is
+ * inside them.
+ */
+export default function RootLayout() {
+  return (
+    <ThemeRelease>
+      <RootThemeTokens>
+        <RootLayoutContent />
+      </RootThemeTokens>
+    </ThemeRelease>
   );
 }

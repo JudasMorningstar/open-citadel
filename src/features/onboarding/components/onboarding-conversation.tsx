@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { MaxContentWidth } from '@/constants/theme';
+import { contentColumn } from '@/constants/theme';
 import {
   OnboardingComposer,
   type OnboardingPhase,
@@ -16,11 +16,6 @@ import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
 /** Centred and capped on wide screens, pixel-identical on phones. */
-const COLUMN = {
-  maxWidth: MaxContentWidth,
-  width: '100%',
-  alignSelf: 'center',
-} as const;
 
 /**
  * The concierge conversation itself.
@@ -62,7 +57,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   const toolStatus = useOnboardingChatStore((s) => s.toolStatus);
   const toolName = useOnboardingChatStore((s) => s.toolName);
   const error = useOnboardingChatStore((s) => s.error);
-  const libraryReady = useOnboardingChatStore((s) => s.libraryReady);
 
   const onboarding = useSettingsStore((s) => s.onboarding);
 
@@ -72,24 +66,17 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   /*
    * Where the conversation is, derived rather than stored.
    *
-   * Two facts, one decision. `onboarding === 'done'` is the settings flag the
-   * router also reads, written by `finish_onboarding`. `libraryReady` is the
-   * separate, smaller claim that the books are actually on the device, written
-   * by the tools that put them there. Either one is enough to earn the way out.
+   * One way out, and it is Samwell's to open. `onboarding === 'done'` is the
+   * settings flag the router also reads, written by `finish_onboarding` with
+   * his goodbye, and only then does the field give way to GO TO MY LIBRARY.
+   * There used to be a second, quieter exit once anything was in the library,
+   * but the conversation is not over when the books land: podcasts and blogs
+   * come after them, and a way out on screen then cut the concierge short.
    *
-   * The second exists because the first is not reliable: it depends on the
-   * model choosing to call a tool after it has finished speaking, and on the
-   * run that prompted this it said its goodbye and called nothing, three times
-   * over. The reader was left in a finished conversation with a full library
-   * and a text field. A screen must not trap somebody because a model forgot
-   * its last instruction.
-   *
-   * `!busy` on that branch matters. `finish_onboarding` runs mid-turn, so the
-   * flag flips while Samwell's goodbye is still streaming. Without it the
-   * composer swaps to GO TO MY LIBRARY over the top of a reply still arriving,
-   * and takes the stop button away with it. `libraryReady` flips mid-turn for
-   * the same reason and is held back by the same guard, which is what keeps
-   * the button from landing before he has said where to find him.
+   * `!busy` matters. `finish_onboarding` runs mid-turn, so the flag flips
+   * while his goodbye is still streaming. Without it the composer swaps to
+   * GO TO MY LIBRARY over the top of a reply still arriving, and takes the
+   * stop button away with it.
    *
    * `said` and NOT `busy` decides the other branch, which is the opposite
    * mistake and worth naming. Pressing GET STARTED puts the store to work for
@@ -100,8 +87,8 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
    * button show its own spinner is the honest report: the press landed, and
    * nothing else has happened yet.
    */
-  const finished = onboarding === 'done' || libraryReady;
-  const phase: OnboardingPhase = finished && !busy && said ? 'done' : said ? 'talking' : 'start';
+  const phase: OnboardingPhase =
+    onboarding === 'done' && !busy && said ? 'done' : said ? 'talking' : 'start';
 
   /*
    * Keyed on primitives rather than rebuilt bare. A fresh indicator object per
@@ -160,7 +147,7 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
       className="flex-1 bg-background"
       behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}
     >
-      <View className="flex-1" style={COLUMN}>
+      <View className="flex-1" style={contentColumn}>
         {/* No back button and no settings cog. There is nowhere to go back to,
             and Settings is a screen about an app they have not been shown
             yet. */}

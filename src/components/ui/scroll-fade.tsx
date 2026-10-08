@@ -273,8 +273,12 @@ function Fade({
 /**
  * Gradients need a transparent stop of the *same* colour — `transparent` is
  * black at zero alpha on Android, which shows as a grey smear.
+ *
+ * Open Citadel: exported (upstream keeps it private) for `PlainRowFade` in
+ * `components/scroll-fades`, which draws this same gradient for a short shelf
+ * and must not grow a second copy of the rule.
  */
-function withAlpha(color: string, alpha: number): string {
+export function withAlpha(color: string, alpha: number): string {
   if (color.startsWith('#')) {
     const hex = color.slice(1);
     const full =

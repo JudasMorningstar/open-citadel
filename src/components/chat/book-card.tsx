@@ -1,15 +1,17 @@
-import { Image } from 'expo-image';
 import { eq } from 'drizzle-orm';
 import { BookOpen } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { CoverImage } from '@/components/cover-image';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { db } from '@/db/client';
 import { books, readingProgress } from '@/db/schema';
-import { asColor, COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
+import { asColor } from '@/utils/colors';
+
+const CARD_COVER = { width: 40, height: 60 } as const;
 
 interface BookCardProps {
   id: string;
@@ -83,11 +85,10 @@ export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCar
       {data.coverUrl ? (
         // Cards ride the chat transcript's recycled list, so the decoded image
         // is pinned to this book id across cell reuse.
-        <Image
+        <CoverImage
           source={{ uri: data.coverUrl }}
-          style={{ width: 40, height: 60 }}
+          style={CARD_COVER}
           contentFit="cover"
-          placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
           recyclingKey={id}
         />
       ) : (

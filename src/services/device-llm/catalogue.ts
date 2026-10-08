@@ -77,6 +77,12 @@ export type CatalogueModel = RegistryRef & {
    * who was who at 0.7.
    */
   temperature?: number;
+  /**
+   * True when the export hands back logits for every token it is fed, not
+   * only the last. Each call then costs memory by its length, so it is fed
+   * in small pieces. See `prefill.ts`.
+   */
+  logitsPerToken?: boolean;
   /** The brain the app points readers to first. */
   recommended?: boolean;
 };
@@ -93,6 +99,8 @@ export const DEVICE_CATALOGUE: readonly CatalogueModel[] = [
     reasoning: GEMMA_THOUGHT_MARKERS,
     // A shared, windowed cache: a reset leaves what was written past it.
     rewindableCache: false,
+    // Read from the program: logits of [1, tokens, 262144], twice over.
+    logitsPerToken: true,
     recommended: true,
   },
   // Temperatures, where set: Qwen 3's thinking mode (Qwen), SmolLM2's model

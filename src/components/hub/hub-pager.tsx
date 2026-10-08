@@ -1,13 +1,21 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
-import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view';
+import PagerView, {
+  type PageScrollStateChangedNativeEvent,
+  type PagerViewOnPageSelectedEvent,
+} from 'react-native-pager-view';
 
 import { LibraryPage } from '@/components/hub/library-page';
 import { SamwellPage } from '@/components/hub/samwell-page';
 import { TimelinePage } from '@/components/hub/timeline-page';
-import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
+import { useAfterIdle } from '@/navigation/use-after-idle';
 import { HUB, useHubStore, type HubPage } from '@/stores/hub';
+import { ThemeScope } from '@/components/theme-scope';
+import { hubPageOrder } from '@/utils/theme-order';
+
+/** The longest the neighbours wait for a Library that never reports (a failed load). */
+const NEIGHBOUR_CAP_MS = 2500;
 
 /**
  * The hub: Timeline, Library and Samwell as three pages of one screen.
@@ -46,11 +54,24 @@ export function HubPager() {
   // pager to the page it is already on, which would fight a live drag.
   const shown = React.useRef<HubPage>(HUB.library);
 
-  // Both neighbours mount with the pager — a page has to exist before it can
-  // be dragged into view, so lazily mounting them would mean swiping onto a
-  // blank one. Waiting a frame keeps them off the app's first paint, which is
-  // the part the user is actually waiting on at launch.
-  const painted = useAfterFirstPaint();
+  // Both neighbours are mounted before anyone can reach them: a page has to
+  // exist before it can be dragged into view. But not ahead of the Library.
+  // They used to mount two frames after the first paint, which is the moment
+  // the Library is reading its data and mounting its shelves, so the launch's
+  // first content queued behind two pages nobody was looking at (Samwell is
+  // the heaviest mount in the app). Now they wait for the Library to say it
+  // has filled and for the thread to go quiet after it. A press on the header
+  // or a drag that gets there first mounts them at once.
+  const filled = useHubStore((s) => s.libraryFilled);
+  const [dragged, setDragged] = React.useState(false);
+  const neighbours = useAfterIdle({
+    armed: filled,
+    capMs: NEIGHBOUR_CAP_MS,
+    now: dragged || requested !== HUB.library,
+  });
+  const onScrollState = React.useCallback((event: PageScrollStateChangedNativeEvent) => {
+    if (event.nativeEvent.pageScrollState === 'dragging') setDragged(true);
+  }, []);
 
   // A drag is direct manipulation and stays exactly as it is under Reduce
   // Motion — the page is following the finger, and there is nothing there the
@@ -88,18 +109,30 @@ export function HubPager() {
       style={{ flex: 1 }}
       initialPage={HUB.library}
       onPageSelected={onPageSelected}
+      onPageScrollStateChanged={onScrollState}
       // Keeps all three alive so a swipe back never re-mounts and re-reads the
       // page the user just left.
       offscreenPageLimit={2}
     >
       <View key="timeline" collapsable={false} style={{ flex: 1 }}>
-        {painted ? <TimelinePage /> : null}
+        {/* Each page is a theme scope: a new theme reaches the one in view
+            first and the others after it (`utils/theme-order`). The Library
+            scopes its own parts, so its sides can take their turns apart. */}
+        {neighbours ? (
+          <ThemeScope order={hubPageOrder(HUB.timeline, requested)}>
+            <TimelinePage />
+          </ThemeScope>
+        ) : null}
       </View>
       <View key="library" collapsable={false} style={{ flex: 1 }}>
-        <LibraryPage />
+        <LibraryPage themeOrder={hubPageOrder(HUB.library, requested)} />
       </View>
       <View key="samwell" collapsable={false} style={{ flex: 1 }}>
-        {painted ? <SamwellPage /> : null}
+        {neighbours ? (
+          <ThemeScope order={hubPageOrder(HUB.samwell, requested)}>
+            <SamwellPage />
+          </ThemeScope>
+        ) : null}
       </View>
     </PagerView>
   );

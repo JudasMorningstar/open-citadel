@@ -32,3 +32,22 @@
  * a provider's in-memory cache as retention, and neither do we.
  */
 export const PROVIDER_PREFERENCES = { zdr: true } as const;
+
+/**
+ * The onboarding prompt, marked for Anthropic's prompt cache.
+ *
+ * Anthropic caches only up to a breakpoint the request names; OpenAI caches
+ * a stable prefix on its own, which is why this was never needed while an
+ * OpenAI model ran onboarding. The script, the guide and the tool schemas
+ * are the same on every turn of it (the tools sit ahead of the system
+ * prompt in Anthropic's order, so the breakpoint covers them too), and
+ * reading them back from the cache costs a tenth of sending them again.
+ *
+ * Onboarding only. It is the house's bill, and a cache write costs a quarter
+ * more than plain input, which the reader-billed routes do not price in.
+ */
+export function cachedOnboardingPrompt(prompt: string, modelId: string) {
+  return modelId.startsWith('anthropic/')
+    ? { content: prompt, metadata: { cache_control: { type: 'ephemeral' as const } } }
+    : prompt;
+}

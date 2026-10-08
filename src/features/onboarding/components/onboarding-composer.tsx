@@ -78,6 +78,7 @@ export const OnboardingComposer = React.memo(function OnboardingComposer({
         <GoldButton
           label="GET STARTED"
           icon={ArrowRight}
+          size="compact"
           onPress={onStart}
           disabled={busy}
           loading={busy}
@@ -92,7 +93,7 @@ export const OnboardingComposer = React.memo(function OnboardingComposer({
         className="border-t border-border bg-background px-4 pt-4"
         style={{ paddingBottom }}
       >
-        <GoldButton label="GO TO MY LIBRARY" icon={LibraryBig} onPress={onFinish} />
+        <GoldButton label="GO TO MY LIBRARY" icon={LibraryBig} size="compact" onPress={onFinish} />
       </View>
     );
   }

@@ -1,10 +1,12 @@
 import React from 'react';
 import { View } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Portal } from '@/components/ui/portal';
 import { ToastItem } from '@/components/toast/toast-item';
 import type { ToastEntry, ToastOptions } from '@/components/toast/types';
+import { spreadOffsets } from '@/utils/toast-stack';
 
 type ToastContextValue = {
   showToast: (options: ToastOptions) => void;
@@ -50,6 +52,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   const [toasts, setToasts] = React.useState<ToastEntry[]>([]);
   const nextId = React.useRef(1);
+
+  // Each card's measured height, so the ones behind can peek out from under
+  // the front one whatever its height. See `stackOffset`.
+  const [heights, setHeights] = React.useState<Record<number, number>>({});
+  const handleHeight = React.useCallback((id: number, height: number) => {
+    setHeights((current) => (current[id] === height ? current : { ...current, [id]: height }));
+  }, []);
 
   /*
    * A keyed toast writes over the one already on screen under that key rather
@@ -100,7 +109,29 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const handleDismissed = React.useCallback((id: number) => {
     setToasts((current) => current.filter((t) => t.id !== id));
+    setHeights((current) => {
+      const { [id]: _gone, ...rest } = current;
+      return rest;
+    });
   }, []);
+
+  // Newest first, which is front first.
+  const frontFirst = toasts
+    .filter((t) => !t.exiting)
+    .map((t) => t.id)
+    .sort((a, b) => b - a);
+  const frontHeight = frontFirst.length > 0 ? (heights[frontFirst[0]] ?? 0) : 0;
+  const offsets = spreadOffsets(frontFirst, heights);
+
+  /*
+   * Spread into a column by a tap on the front toast, and stacked again by a
+   * tap on any of them. A pile of one has nothing to spread, so it closes by
+   * itself as the pile empties, and the next toasts arrive stacked.
+   */
+  const [spreadOpen, setSpreadOpen] = React.useState(false);
+  if (spreadOpen && frontFirst.length < 2) setSpreadOpen(false);
+  const toggleSpread = React.useCallback(() => setSpreadOpen((open) => !open), []);
+  const frontDrag = useSharedValue(0);
 
   const value = React.useMemo(() => ({ showToast: enqueue }), [enqueue]);
 
@@ -132,6 +163,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                    has left the stack, so the pile closes over it immediately
                    instead of holding a gap until React drops the row. */
                 index={toasts.filter((t) => !t.exiting && t.id > toast.id).length}
+                frontHeight={frontHeight}
+                onHeight={handleHeight}
+                stackSize={frontFirst.length}
+                spread={spreadOpen}
+                spreadOffset={offsets[toast.id] ?? 0}
+                onToggleSpread={toggleSpread}
+                frontDrag={frontDrag}
                 onDismissStart={handleDismissStart}
                 onDismissed={handleDismissed}
               />

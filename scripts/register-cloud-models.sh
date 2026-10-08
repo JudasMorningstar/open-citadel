@@ -33,14 +33,27 @@ set -euo pipefail
 #
 #    ADMIN_API_KEY='...' ./scripts/register-cloud-models.sh
 #
+# Read from the terminal itself, a line at a time, until one has something in
+# it. A value copied out of a dashboard often starts with a newline; a single
+# `read` took that as the whole answer, the script exited, and the rest of the
+# paste landed in the shell, which ran the key as a command and put it in the
+# history. Whitespace and bracketed-paste markers are stripped for the same
+# reason.
 if [ -z "${ADMIN_API_KEY:-}" ]; then
   printf 'ADMIN_API_KEY (from the Coolify app env, input hidden): ' >&2
-  read -rs ADMIN_API_KEY
+  while IFS= read -rs line </dev/tty; do
+    line="${line//$'\e[200~'/}"
+    line="${line//$'\e[201~'/}"
+    line="${line//[[:space:]]/}"
+    if [ -n "$line" ]; then ADMIN_API_KEY="$line"; break; fi
+  done
+  unset line
   echo >&2
 fi
 [ -n "${ADMIN_API_KEY:-}" ] || { echo "No admin key given, nothing to do." >&2; exit 1; }
 
-SAMWELL_CLOUD_URL="${SAMWELL_CLOUD_URL:-https://open-citadel-api.thamsanqa.africa}"
+# The official API, the same host the app and SAMWELL_API_RESOURCE use.
+SAMWELL_CLOUD_URL="${SAMWELL_CLOUD_URL:-https://api.open-citadel.online}"
 BASE="${SAMWELL_CLOUD_URL%/}"
 
 register() { # <model-id> <min-plan>
@@ -65,27 +78,31 @@ retire() { # <model-id>
 
 echo "Maester"
 register 'z-ai/glm-5.3-flash'              maester
-register 'openai/gpt-5.6-luna'             maester
-register 'deepseek/deepseek-v4-flash-0731' maester
+register 'openai/gpt-6-luna-pro'           maester
+register 'anthropic/claude-haiku-5.5'      maester
 
 echo "Grand Maester"
-register 'anthropic/claude-sonnet-5'       grand_maester
-register 'openai/gpt-5.6-terra'            grand_maester
+register 'anthropic/claude-sonnet-5.5'     grand_maester
+register 'openai/gpt-6.1-sol'              grand_maester
 register 'deepseek/deepseek-v4-pro-0813'   grand_maester
 
 echo "Archmaester"
-register 'anthropic/claude-opus-5'         archmaester
-register 'openai/gpt-5.6-sol'              archmaester
+register 'anthropic/claude-opus-5.5'       archmaester
+register 'x-ai/grok-4.7'                   archmaester
 register 'moonshotai/kimi-k3'              archmaester
 
 # Rows carried over from before plans existed that are NOT in the nine above.
 # Left alone they sit at the migration default - the dearest tier - so an
 # Archmaester would quietly still be offered them. Retired instead.
 #
-# `openai/gpt-5.6-luna` is deliberately NOT here: it is ONBOARDING_MODEL_ID,
+# `openai/gpt-6-luna-pro` must never be retired: it is ONBOARDING_MODEL_ID,
 # and an onboarding turn billed to the reader looks the model up in the whole
 # catalogue, where a missing row answers 503 rather than falling back. It is
 # in the Maester tier above.
+#
+# `openai/gpt-5.6-luna` held that slot, and the onboarding one, before it.
+# Point ONBOARDING_MODEL_ID at the new model before running this, or paid
+# onboarding turns 503 until you do.
 #
 # Safe to run: `deleteCloudModel` promotes a new default if it removes the
 # current one, and a reader holding a retired id is healed on their next
@@ -93,6 +110,20 @@ register 'moonshotai/kimi-k3'              archmaester
 echo "Retiring models from before plans"
 retire 'anthropic/claude-sonnet-4.5'
 retire 'google/gemini-2.5-flash'
+retire 'openai/gpt-5.6-luna'
+# Replaced by their newer versions in the same tier, 2026-09-29.
+retire 'anthropic/claude-sonnet-5'
+retire 'anthropic/claude-opus-5'
+retire 'openai/gpt-5.6-sol'
+# GPT-6 Sol took Grand Maester's OpenAI slot; Terra has no GPT-6 successor.
+retire 'openai/gpt-5.6-terra'
+# GPT-6.1 Sol replaced it, 2026-09-29: same price, cheaper cached input.
+retire 'openai/gpt-6-sol'
+# DeepSeek V4.1 Flash replaced V4 Flash in Maester, 2026-09-29.
+retire 'deepseek/deepseek-v4-flash-0731'
+# Claude Haiku 5.5 replaced V4.1 Flash in Maester, 2026-10-07: a third of the
+# price, and it reads images.
+retire 'deepseek/deepseek-v4.1-flash'
 
 echo
 echo "Catalogue now:"

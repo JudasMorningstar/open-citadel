@@ -281,7 +281,7 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'remove_from_currently_reading',
       description:
-        "Remove one or more books from Currently Reading, clearing status back to unstarted (not queued, not finished). Use when the user opened a book by mistake or wants to stop reading it without marking it queued or finished. Requires user approval.",
+        "Remove one or more books from Continue Reading (the shelf once called Currently Reading), clearing status back to unstarted (not queued, not finished). Use when the user opened a book by mistake or wants to stop reading it without marking it queued or finished. Requires user approval.",
       parameters: {
         type: 'object',
         properties: {
@@ -692,6 +692,10 @@ export const TOOL_STATUS: Record<string, string> = {
   set_up_library: 'Setting up your library…',
   find_free_books: 'Looking through Project Gutenberg…',
   download_free_books: 'Downloading your books…',
+  find_podcasts: 'Looking for podcasts…',
+  follow_podcasts: 'Following those shows…',
+  list_blogs: 'Looking through the blogs…',
+  follow_blogs: 'Following those blogs…',
   finish_onboarding: 'Wrapping up…',
 };
 
@@ -1617,6 +1621,7 @@ async function suggestNextBook(runtime: ToolRuntime): Promise<BookCandidate[]> {
     })
     .from(books)
     .leftJoin(readingProgress, eq(readingProgress.bookId, books.id))
+    .where(eq(books.kind, 'book'))
     .orderBy(desc(books.addedAt))
     .limit(SEARCH_LIMITS[runtime].library)
     .all();
@@ -1842,7 +1847,7 @@ function resolveBookByTitle(title: string | undefined, ctx: ToolCallContext): Bo
   const rows = db
     .select()
     .from(books)
-    .where(or(...words.map((w) => like(books.title, `%${w}%`))))
+    .where(and(eq(books.kind, 'book'), or(...words.map((w) => like(books.title, `%${w}%`)))))
     .all();
 
   if (rows.length === 0) return { ok: false, error: 'book_not_found' };
@@ -1915,7 +1920,7 @@ function resolveBooksByTitles(
  * `useBooksStore.getState().updateBookStatus`, which is also where the queue
  * ordering gets stamped, so the UI and chat can never disagree about it.
  * `requireStatus`, when given, guards against acting on the wrong shelf (e.g.
- * calling remove_from_queue on a book that's actually Currently Reading). */
+ * calling remove_from_queue on a book that's actually in Continue Reading). */
 async function setBookStatusBatch(
   bookTitles: string[] | undefined,
   newStatus: 'reading' | 'queued' | 'archived' | null,

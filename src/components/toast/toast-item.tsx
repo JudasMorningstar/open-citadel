@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -8,19 +8,17 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 // The real export, not a hand-rolled `runOnJS` wrapper: a plain JS helper is a
 // Remote Function to the UI runtime, so calling one from a gesture callback
 // throws "Tried to synchronously call a Remote Function".
 import { scheduleOnRN } from 'react-native-worklets';
-import { CircleCheck, X } from '@/components/icons';
-import { useCSSVariable } from 'uniwind';
 
 import { Card } from '@/components/ui/card';
-import { Spinner } from '@/components/ui/spinner';
+import { ToastRow } from '@/components/toast/toast-row';
 import type { ToastEntry } from '@/components/toast/types';
-import { fontFamily } from '@/constants/theme';
-import { asColor } from '@/utils/colors';
+import { useToastStack } from '@/components/toast/use-toast-stack';
 
 /** How far above its resting place a toast starts. */
 const ENTER_OFFSET = 200;
@@ -34,12 +32,6 @@ const SWIPE_EXIT_RISE = 80;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 const DISMISS_DISTANCE = 56;
 const DISMISS_VELOCITY = 800;
-/** How much of each toast behind the front one shows past its bottom edge. */
-const STACK_PEEK = 14;
-const STACK_SCALE_STEP = 0.05;
-const MAX_VISIBLE = 3;
-/** The action icon's box, which the pending spinner takes over. */
-const ACTION_BOX = { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' } as const;
 
 /**
  * Resistance in the direction that does NOT dismiss.
@@ -57,6 +49,19 @@ type ToastItemProps = {
   toast: ToastEntry;
   /** 0 is the front toast. Counted by the provider, not an array position. */
   index: number;
+  /** The front toast's height. Every card behind it peeks out from under ITS bottom. */
+  frontHeight: number;
+  /** Reports this toast's height, so the provider can hand the front one's around. */
+  onHeight: (id: number, height: number) => void;
+  /** How many toasts are live. A pile of one has nothing to spread. */
+  stackSize: number;
+  /** The pile is spread into a column, every toast readable and in reach. */
+  spread: boolean;
+  /** This toast's top in that column. */
+  spreadOffset: number;
+  onToggleSpread: () => void;
+  /** Shared by the pile: how far the front toast is being dragged. */
+  frontDrag: SharedValue<number>;
   onDismissStart: (id: number) => void;
   onDismissed: (id: number) => void;
 };
@@ -72,21 +77,38 @@ type ToastItemProps = {
  * peeks downward, dragging UP dismisses and dragging down resists, and the exit
  * rises. Every threshold and duration is unchanged.
  */
-export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastItemProps) {
+export function ToastItem({
+  toast,
+  index,
+  frontHeight,
+  onHeight,
+  stackSize,
+  spread,
+  spreadOffset,
+  onToggleSpread,
+  frontDrag,
+  onDismissStart,
+  onDismissed,
+}: ToastItemProps) {
   const reduced = useReducedMotion();
-  const [foreground, mutedForeground, success] = useCSSVariable([
-    '--color-foreground',
-    '--color-muted-foreground',
-    '--color-success-foreground',
-  ]);
 
   const progress = useSharedValue(0);
   const opacity = useSharedValue(0);
   const dragY = useSharedValue(0);
-  const stackY = useSharedValue(index * STACK_PEEK);
-  const stackScale = useSharedValue(1 - index * STACK_SCALE_STEP);
 
   const exiting = React.useRef(false);
+  const stack = useToastStack({
+    id: toast.id,
+    index,
+    frontHeight,
+    spread,
+    spreadOffset,
+    reduced,
+    exiting,
+    opacity,
+    frontDrag,
+    onHeight,
+  });
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   // `dismiss` needs the LIVE depth to decide whether to drop as it leaves, and
   // it cannot take `index` as a dependency without rebuilding the timer chain
@@ -113,6 +135,8 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
       if (exiting.current) return;
       exiting.current = true;
       clearTimer();
+      // The card behind stops showing through once this one is on its way.
+      if (indexRef.current === 0) frontDrag.set(withTiming(0, { duration: EXIT_MS }));
       // Announced at the START of the exit, so the toasts behind it begin
       // closing the gap while this one is still fading rather than after.
       onDismissStart(toast.id);
@@ -134,27 +158,22 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
         dragY.set(withTiming(-EXIT_RISE, { duration: EXIT_MS, easing: EASE_OUT }));
       }
     },
-    [clearTimer, dragY, finishDismiss, onDismissStart, opacity, reduced, toast.id],
+    [clearTimer, dragY, finishDismiss, frontDrag, onDismissStart, opacity, reduced, toast.id],
   );
 
   // A busy toast waits for its work, however long that takes.
-  const persistent = toast.persistent === true || toast.busy === true;
+  const persistent = toast.persistent === true || toast.busy === true || toast.accessory != null;
 
   const restartTimer = React.useCallback(() => {
     if (exiting.current) return;
     clearTimer();
     // A toast that asked a question waits for the answer. Everything else
     // still leaves on its own.
-    if (persistent) return;
+    // Nor does anything while the pile is spread; see below.
+    if (persistent || spread) return;
     timer.current = setTimeout(() => dismiss('timeout'), AUTO_DISMISS_MS);
-  }, [clearTimer, dismiss, persistent]);
+  }, [clearTimer, dismiss, persistent, spread]);
 
-  // A busy toast's spinner stands in for every control: there is nothing to
-  // press while the work it reports runs.
-  const hasAction = !toast.busy && toast.actionIcon != null && toast.actionLabel != null;
-  const showPendingAction = hasAction && toast.actionPending === true;
-  const showAction = hasAction && !toast.actionPending;
-  const showClose = !toast.busy && (!hasAction || persistent);
 
   const commitSwipeDismiss = React.useCallback(() => dismiss('swipe'), [dismiss]);
 
@@ -186,17 +205,20 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     restartTimer();
   }, [toast.revision, restartTimer]);
 
+  /*
+   * Spread, nothing leaves on its own: the reader opened the pile to read it,
+   * and a card sliding out of the column under their eye is the column
+   * rearranging itself while they look. Collapsing starts the clocks again.
+   */
+  const firstSpread = React.useRef(spread);
   React.useEffect(() => {
-    if (exiting.current) return;
-    const y = index * STACK_PEEK;
-    const scale = 1 - index * STACK_SCALE_STEP;
-    stackY.set(reduced ? y : withSpring(y));
-    stackScale.set(reduced ? scale : withSpring(scale));
-    // Deeper than the visible pile: fade out rather than draw a fourth card
-    // nobody can read anyway.
-    if (index >= MAX_VISIBLE) opacity.set(withTiming(0, { duration: FADE_IN_MS }));
-  }, [index, opacity, reduced, stackScale, stackY]);
+    if (spread === firstSpread.current) return;
+    firstSpread.current = spread;
+    if (spread) clearTimer();
+    else restartTimer();
+  }, [spread, clearTimer, restartTimer]);
 
+  const front = index === 0 && !spread;
   /* eslint-disable react-hooks/refs -- `clearTimer` and `restartTimer` touch
      the timer ref, and the rule sees them being handed to the gesture during
      render. They are only ever CALLED from a gesture event, never from the
@@ -204,9 +226,10 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
      be a ref: it is cleared and restarted several times per gesture and none
      of that should draw a frame. */
   const pan = Gesture.Pan()
-    // Only the front one is draggable. The pile behind it is a hint about how
-    // many are queued, not a set of separate controls.
-    .enabled(index === 0)
+    // Collapsed, only the front one is draggable: the pile behind it is a hint
+    // about how many there are, not a set of separate controls. Spread, each
+    // is its own card and each can be swiped away.
+    .enabled(index === 0 || spread)
     .onBegin(() => {
       scheduleOnRN(clearTimer);
     })
@@ -214,12 +237,14 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
       // Up is the way out, so up tracks the finger exactly. Down is going
       // nowhere, so it resists.
       dragY.set(e.translationY <= 0 ? e.translationY : rubberBand(e.translationY));
+      if (front) frontDrag.set(dragY.get());
     })
     .onEnd((e) => {
       if (e.translationY < -DISMISS_DISTANCE || e.velocityY < -DISMISS_VELOCITY) {
         scheduleOnRN(commitSwipeDismiss);
       } else {
         dragY.set(withSpring(0));
+        if (front) frontDrag.set(withSpring(0));
         scheduleOnRN(restartTimer);
       }
     })
@@ -235,85 +260,47 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     return {
       opacity: opacity.get(),
       transform: [
-        { translateY: -(1 - p) * ENTER_OFFSET + stackY.get() + dragY.get() },
-        { scale: (HIDDEN_SCALE + (1 - HIDDEN_SCALE) * p) * stackScale.get() },
+        { translateY: -(1 - p) * ENTER_OFFSET + stack.stackY.get() + dragY.get() },
+        { scale: (HIDDEN_SCALE + (1 - HIDDEN_SCALE) * p) * stack.stackScale.get() },
       ],
     };
   });
 
-  const ActionIcon = toast.actionIcon;
+  // A tap on any card spreads the pile, and a tap on any card stacks it
+  // again. The card's own controls are pressables inside this one, so they
+  // keep their presses.
+  const canSpread = stackSize > 1;
+  // A collapsed card behind shows only its edge, and its controls are hidden
+  // with its words: a tap on that edge must not reach a stop nobody can see.
+  const controlsLive = index === 0 || spread;
+  const spreadHint = canSpread ? (spread ? 'Stacks the notifications again' : 'Shows every notification') : undefined;
+  const handleAction = () => {
+    toast.onActionPress?.();
+    // Slow work started by the action needs the toast it is reported in to
+    // survive the press.
+    if (!toast.keepOpenOnAction) dismiss('close');
+  };
+  const handleClose = () => {
+    toast.onDismissPress?.();
+    dismiss('close');
+  };
 
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
         style={[{ position: 'absolute', left: 16, right: 16, zIndex: 100 - index }, animatedStyle]}
+        onLayout={stack.onLayout}
         accessibilityRole="alert"
         accessibilityLiveRegion="polite"
       >
-        <Card>
-          <Card.Content className="flex-row items-center gap-3 p-3">
-            {toast.tone === 'success' && (
-              <CircleCheck size={18} color={asColor(success)} strokeWidth={2} />
-            )}
-            <Text
-              numberOfLines={2}
-              className="flex-1"
-              style={{ fontFamily: fontFamily.sans, fontSize: 14, color: asColor(foreground) }}
-            >
-              {toast.message}
-            </Text>
-            {/* The action replaces the close rather than joining it: two icons
-                on one line is the busy, uneven row this layout exists to
-                avoid, and a swipe or the timer still dismisses either way. */}
-            {toast.busy && (
-              <View style={ACTION_BOX}>
-                <Spinner size="sm" label={toast.message} />
-              </View>
-            )}
-            {showPendingAction && (
-              // Same footprint as the icon, so the row does not shift when the
-              // press turns into work.
-              <View style={ACTION_BOX}>
-                <Spinner size="sm" label={toast.actionLabel} />
-              </View>
-            )}
-            {ActionIcon && showAction && (
-              <Pressable
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={toast.actionLabel}
-                onPress={() => {
-                  toast.onActionPress?.();
-                  // Slow work started by the action needs the toast it is
-                  // reported in to survive the press.
-                  if (!toast.keepOpenOnAction) dismiss('close');
-                }}
-              >
-                <ActionIcon size={18} color={asColor(foreground)} />
-              </Pressable>
-            )}
-            {/* The close normally steps aside for an action, because a swipe
-                and the timer both still dismiss. A persistent toast has
-                neither, so declining needs its own control. */}
-            {showClose && (
-              <Pressable
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={toast.dismissLabel ?? 'Dismiss'}
-                onPress={() => {
-                  toast.onDismissPress?.();
-                  dismiss('close');
-                }}
-              >
-                <X size={18} color={asColor(mutedForeground)} />
-              </Pressable>
-            )}
-          </Card.Content>
-        </Card>
+        <Pressable disabled={!canSpread} onPress={onToggleSpread} accessibilityHint={spreadHint}>
+          <Card>
+            <Animated.View style={stack.contentStyle} pointerEvents={controlsLive ? 'auto' : 'none'}>
+              <ToastRow toast={toast} persistent={persistent} onAction={handleAction} onClose={handleClose} />
+            </Animated.View>
+          </Card>
+        </Pressable>
       </Animated.View>
     </GestureDetector>
   );
 }
-
-/** The pile's own footprint, so the host can reserve room for it. */
-export const TOAST_STACK_PEEK = STACK_PEEK;

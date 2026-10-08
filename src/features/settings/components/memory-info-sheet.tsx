@@ -1,7 +1,8 @@
-import { MemoryStick } from "@/components/icons";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { ActionButton } from "@/components/action-button";
+import { MemoryStick, RotateCcw } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { Sheet } from "@/components/ui/sheet";
 import { asColor } from "@/utils/colors";
@@ -15,23 +16,39 @@ type MemoryEstimate = {
 
 const TIGHT = "#f97316";
 
-/** What "TIGHT"/"TOO LARGE" actually means, with the numbers behind it. */
+/**
+ * What "TIGHT"/"TOO LARGE" actually means, with the numbers behind it. A brain
+ * the phone has already closed the app over says that instead, since it is
+ * what happened rather than an estimate, and offers the way to try it again.
+ */
 export function MemoryInfoSheet({
   visible,
   onClose,
   status,
   estimate,
+  closedMessage,
+  onTryAgain,
 }: {
   visible: boolean;
   onClose: () => void;
   status: string;
   estimate: MemoryEstimate | null;
+  /** What happened, when the phone has ended the app over this brain. */
+  closedMessage?: string | null;
+  onTryAgain?: () => void;
 }) {
-  const [mutedForeground, destructive] = useCSSVariable([
+  const [mutedForeground, destructive, primary] = useCSSVariable([
     "--color-muted-foreground",
     "--color-destructive",
+    "--color-primary",
   ]);
-  const wontFit = status === "wontRun";
+  const wontFit = status === "wontRun" || !!closedMessage;
+  const heading = closedMessage ? "Closed by your phone" : wontFit ? "Too Large" : "Memory Tight";
+  const body =
+    closedMessage ??
+    (wontFit
+      ? "This brain needs more RAM than your device has. Loading it will likely crash the app. Try a smaller or more quantized brain."
+      : "This brain may run slowly or fail to wake up. Free up RAM by closing other apps, or try a smaller brain.");
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -41,14 +58,10 @@ export function MemoryInfoSheet({
             size={18}
             color={wontFit ? asColor(destructive) : TIGHT}
           />
-          <ThemedText type="headlineSm">
-            {wontFit ? "Too Large" : "Memory Tight"}
-          </ThemedText>
+          <ThemedText type="headlineSm">{heading}</ThemedText>
         </View>
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {wontFit
-            ? "This brain needs more RAM than your device has. Loading it will likely crash the app. Try a smaller or more quantized brain."
-            : "This brain may run slowly or fail to wake up. Free up RAM by closing other apps, or try a smaller brain."}
+          {body}
         </ThemedText>
         {estimate && (
           <View className="gap-1">
@@ -70,6 +83,20 @@ export function MemoryInfoSheet({
                 Device RAM: {estimate.totalGb.toFixed(1)} GB
               </ThemedText>
             )}
+          </View>
+        )}
+        {closedMessage && onTryAgain && (
+          <View className="gap-2">
+            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+              Closing other apps first gives him more room.
+            </ThemedText>
+            <ActionButton
+              className="self-start"
+              icon={RotateCcw}
+              label="TRY AGAIN"
+              tint={asColor(primary)}
+              onPress={onTryAgain}
+            />
           </View>
         )}
       </View>

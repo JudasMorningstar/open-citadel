@@ -7,8 +7,18 @@ import { TurnStatus } from '@/features/chat/components/turn-status';
 import type { TurnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { OnboardingApprovalCard } from '@/features/onboarding/components/onboarding-approval-card';
+import { useScrollToEndOn } from '@/features/onboarding/hooks/use-scroll-to-end-on';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import type { ChatMessage } from '@/services/chat-sessions';
+
+/**
+ * Brings each new turn into view: a message, or the start of a reply. The
+ * approval card does the same for a question. See `useScrollToEndOn`.
+ */
+function FollowNewTurns({ turnKey }: { turnKey: string | null }) {
+  useScrollToEndOn(turnKey);
+  return null;
+}
 
 /**
  * The onboarding conversation on screen.
@@ -61,12 +71,15 @@ export function OnboardingTranscript({
    * token, and an unmemoized filter would hand the list a new array each time.
    */
   const turns = React.useMemo(() => messages.filter(isVisibleChatMessage), [messages]);
+  const lastId = turns.at(-1)?.id ?? null;
+  const replying = streamingReply.length > 0;
+  const turnKey = lastId || replying ? `${lastId}:${replying}` : null;
 
   return (
     <MessageScroller key={sessionId ?? 'onboarding'} autoScroll className="flex-1">
       {/* `start` only: unlike the hub's transcripts nothing floats over this
           one, so the bottom is an edge content stops at rather than passes
-          behind. Same call `app/chat/[id]` makes for the same reason. */}
+          behind. */}
       <TranscriptFade edges="start">
         <MessageScroller.Viewport>
           <MessageScroller.Content style={transcriptContent}>
@@ -86,7 +99,9 @@ export function OnboardingTranscript({
             ))}
 
             {streamingReply.length > 0 && (
-              <ChatBubble role="assistant" content={streamingReply} streaming />
+              // Each part of his reply is its own bubble, and each fades up as
+              // it starts rather than appearing whole-sized from nowhere.
+              <ChatBubble role="assistant" content={streamingReply} streaming animateEntry />
             )}
 
             <TurnStatus indicator={indicator} />
@@ -100,6 +115,7 @@ export function OnboardingTranscript({
         </MessageScroller.Viewport>
       </TranscriptFade>
       <MessageScroller.Button />
+      <FollowNewTurns turnKey={turnKey} />
     </MessageScroller>
   );
 }

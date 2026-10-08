@@ -3,11 +3,8 @@ import type { StreamChunk } from '@tanstack/ai/client';
 import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
-  downloadFreeBooksTool,
+  ONBOARDING_FEEDS_PROP,
   explainAppTool,
-  findFreeBooksTool,
-  finishOnboardingTool,
-  setUpLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -58,12 +55,10 @@ import {
   type ToolCallContext,
 } from '@/services/chat-tools';
 import { cloudHeaders } from '@/services/cloud-identity';
-import {
-  runDownloadFreeBooks,
-  runFindFreeBooks,
-  runFinishOnboarding,
-  runSetUpLibrary,
-} from '@/services/onboarding-tools';
+import { createSmoothReveal } from '@/services/smooth-reveal';
+import { createReplySequence, replySegments } from '@/services/reply-sequence';
+import { createStreamTiming } from '@/services/stream-timing';
+import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -250,6 +245,15 @@ export interface CloudChatTurnOptions {
    * something it had already been told.
    */
   onCredits?: (available: number) => void;
+  /** Onboarding only: a tool really changed their library. See `onboardingActionNote`. */
+  onOnboardingAction?: (note: string) => void;
+  /**
+   * A finished stretch of his reply, to keep as its own message. Given, each
+   * stretch between two tool calls is a message of its own and the turn
+   * returns only the last; without it the turn is one growing bubble. See
+   * `createReplySequence`.
+   */
+  onReplyPart?: (text: string) => void;
   /**
    * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
    * returns whatever text had streamed so far and no error is raised.
@@ -459,40 +463,11 @@ function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
   if (COMPASS_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your confirmation…';
-  // Both of these touch the reader's own files, and one of them deletes. The
-  // row says so rather than saying "working", because the thing being waited
-  // on is a person deciding whether to let it happen.
+  // Each of these changes what is on the reader's device, and one of them
+  // deletes. The row says so rather than saying "working", because the thing
+  // being waited on is a person deciding whether to let it happen.
   if (ONBOARDING_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your go-ahead…';
   return toolStatus(toolName);
-}
-
-/**
- * Onboarding's tools: the library, the free books, and the way out.
- *
- * Nothing from the reading or Compass catalogues, and that is structural
- * rather than a matter of taste. This is the only conversation where the model
- * has never met the person and cannot be steered by anything it knows about
- * them, so the smaller the surface the fewer ways the first two minutes go
- * somewhere strange.
- *
- * No `ToolCallContext` either, because none of these touch a chat session or
- * a book. They touch the file system.
- */
-function createOnboardingClientTools(onFinished: () => void) {
-  return clientTools(
-    setUpLibraryTool.client(async () => runSetUpLibrary()),
-    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
-    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
-    finishOnboardingTool.client(async () => {
-      const result = await runFinishOnboarding();
-      // The turn is over the moment this returns. See `finished` in
-      // `sendCloudChatTurn` for why that has to be enforced here rather than
-      // asked for in the prompt.
-      onFinished();
-      return result;
-    }),
-    explainAppTool.client(async () => runExplainApp()),
-  );
 }
 
 /**
@@ -814,6 +789,8 @@ export async function sendCloudChatTurn({
   onThinkingDone,
   onToolStatus,
   onCredits,
+  onOnboardingAction,
+  onReplyPart,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
   /*
@@ -875,6 +852,7 @@ export async function sendCloudChatTurn({
    */
   let saidSoFar = '';
   let saidWhenToolCalled = '';
+  const streamTiming = createStreamTiming();
   /*
    * `finish_onboarding` has run, so there is nothing left for this turn to do.
    *
@@ -891,8 +869,30 @@ export async function sendCloudChatTurn({
    * house a turn each time. The tool that ends the conversation ends the turn.
    */
   let finished = false;
-  const endConversation = () => {
+  // His last message, carried in the `finish_onboarding` call itself.
+  let farewell = '';
+  let signalFinished = () => {};
+  const finishedSignal = new Promise<void>((resolve) => {
+    signalFinished = resolve;
+  });
+  const endConversation = (goodbye: string) => {
     finished = true;
+    farewell = goodbye.trim();
+    signalFinished();
+  };
+  /*
+   * A guard on the call that brought `finish_onboarding` in.
+   *
+   * That tool never completes (see `createOnboardingClientTools`), and the
+   * client waits on any tool still running when a request ends. Today none
+   * is: the server sends a client tool after the run finishes, so the request
+   * is over before the tool starts. Were that order to change, `sendMessage`
+   * or the go-ahead's continuation would wait forever and onboarding would be
+   * stuck, so both are let go of the moment he finishes.
+   */
+  const untilFinished = <T,>(work: Promise<T>) => {
+    work.catch(() => {});
+    return Promise.race([work, finishedSignal]);
   };
   const endToolPhase = () => {
     if (!inToolPhase) return;
@@ -913,7 +913,7 @@ export async function sendCloudChatTurn({
      */
     if (hasUnresolvedToolCalls(client.getMessages())) return;
     inToolPhase = false;
-    onToolStatus(null, null);
+    showToolStatus(null, null);
   };
 
   await preflightCloudServer(baseUrl);
@@ -939,7 +939,32 @@ export async function sendCloudChatTurn({
   let lastProgressAt = Date.now();
 
   const flushThinking = createThrottle(onThinkingContent, 120);
-  const flushStreaming = createThrottle(onStreamingContent, 50);
+  // Paced rather than throttled: a reply released whole is revealed a word
+  // at a time. See `createSmoothReveal`.
+  const reveal = createSmoothReveal(onStreamingContent);
+  // And one thing at a time behind it. See `createReplySequence`.
+  const sequence = createReplySequence({ reveal, onPart: onReplyPart });
+  const replyParts = (messages: UIMessage[]) =>
+    onReplyPart ? replySegments(messages) : [assistantTextSinceUser(messages)];
+  /*
+   * A tool's status waits for the words before it to finish arriving, so the
+   * row (and a card under it) never appears beside a line still being
+   * revealed. Clearing it does not wait: new words mean the tool is done.
+   * The latest status wins, so a clear is never overtaken by an older one.
+   */
+  let wantedStatus: [string | null, string | null] = [null, null];
+  let turnOver = false;
+  let statusQueued = false;
+  const showToolStatus = (status: string | null, name: string | null) => {
+    wantedStatus = [status, name];
+    if (status === null) onToolStatus(null, null);
+    if (status === null || statusQueued) return;
+    statusQueued = true;
+    sequence.then(() => {
+      statusQueued = false;
+      if (!turnOver) onToolStatus(...wantedStatus);
+    });
+  };
 
   // Resolved once, here, rather than passed in: who the turn belongs to is
   // not the caller's business, and a fresh `ChatClient` is built per turn, so
@@ -954,8 +979,8 @@ export async function sendCloudChatTurn({
     connection: xhrHttpStream(endpointFor(mode, baseUrl, metered), {
       headers,
     }),
-    forwardedProps:
-      mode === 'onboarding' && !metered
+    forwardedProps: {
+      ...(mode === 'onboarding' && !metered
         ? // The free route reads none of these. The model is the server's
           // choice because the house is paying for it, and there is no
           // thinking budget to honour because nobody has been shown the
@@ -967,10 +992,19 @@ export async function sendCloudChatTurn({
             // One word. The server maps it to a reasoning effort and a coupled
             // reply budget, so a deep think cannot starve the answer.
             thinkingBudget: cloudThinkingBudget,
-          },
+          }),
+      // This build can follow podcasts and blogs, so the server offers them.
+      // On both onboarding routes; see `ONBOARDING_FEEDS_PROP`.
+      ...(mode === 'onboarding' ? { [ONBOARDING_FEEDS_PROP]: true } : {}),
+    },
     tools:
       mode === 'onboarding'
-        ? createOnboardingClientTools(endConversation)
+        ? createOnboardingClientTools({
+            onFinished: endConversation,
+            messages: (): UIMessage[] => client.getMessages(),
+            // In order with what he said, not ahead of the line before it.
+            onAction: (note) => sequence.then(() => onOnboardingAction?.(note)),
+          })
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
@@ -996,7 +1030,10 @@ export async function sendCloudChatTurn({
         }
       }
 
+      if (__DEV__ && chunk.type === 'TEXT_MESSAGE_CONTENT') streamTiming.mark();
+
       if (chunk.type === 'RUN_FINISHED') {
+        if (__DEV__) streamTiming.report();
         finishReason = (chunk as { finishReason?: string | null }).finishReason ?? null;
         // A finish that is not itself another tool call means the model has
         // stopped talking for this turn — release the held tool row even if
@@ -1018,21 +1055,17 @@ export async function sendCloudChatTurn({
       const toolName = readToolName(chunk);
       if (toolName) {
         // Ordered ahead of the status: a trace update still in flight must
-        // not land after it and leave the row describing the wrong phase. Any
-        // half-written narration from before the call is dropped here (the
-        // stores blank the bubble on a non-null tool status), so a trailing
-        // throttled write must not resurrect it.
+        // not land after it and leave the row describing the wrong phase.
         flushThinking.flush();
-        flushStreaming.cancel();
         inToolPhase = true;
         lastToolName = toolName;
         saidWhenToolCalled = saidSoFar;
-        onToolStatus(statusForTool(toolName), toolName);
+        showToolStatus(statusForTool(toolName), toolName);
       }
       // The tool has returned but the model has not resumed — hold the row on
       // it through the continuation request rather than blanking it.
       if (chunk.type === 'TOOL_CALL_RESULT' && inToolPhase) {
-        onToolStatus('Working through that…', lastToolName);
+        showToolStatus('Working through that…', lastToolName);
       }
 
       if (chunk.type === 'CUSTOM' && chunk.name === 'samwell-credits') {
@@ -1052,7 +1085,7 @@ export async function sendCloudChatTurn({
         endToolPhase();
       }
       flushThinking.flush();
-      flushStreaming(text);
+      sequence.update(replyParts(messages));
     },
   });
 
@@ -1077,6 +1110,7 @@ export async function sendCloudChatTurn({
      * is what happens to the tool call either way.
      */
     useApprovalStore.getState().clearSession(sessionId);
+    reveal.cancel();
     try {
       client.stop();
     } catch {
@@ -1091,13 +1125,15 @@ export async function sendCloudChatTurn({
   try {
     console.log(`[Samwell Cloud] Sending ${mode} request to ${endpointFor(mode, baseUrl, metered)}`);
     try {
-      await client.sendMessage(content);
+      await untilFinished(client.sendMessage(content));
     } catch (err) {
       // A turn the reader called off rejects here through the aborted request;
       // that is the outcome they asked for, not a failure to report.
       if (aborted) {
         reportThinkingDone();
-        return assistantTextSinceUser(client.getMessages()).trim();
+        sequence.update(replyParts(client.getMessages()));
+        await sequence.idle();
+        return sequence.current().trim();
       }
       console.error('[Samwell Cloud] sendMessage failed:', err, (err as { cause?: unknown })?.cause);
       const detail = err instanceof Error ? err.message : String(err);
@@ -1121,7 +1157,9 @@ export async function sendCloudChatTurn({
          * He has said goodbye and closed the conversation. Whatever he said
          * before that call is the whole of it; anything after would be a
          * second goodbye, which is exactly what this is here to prevent.
+         * A card still up is answered no, as stop does.
          */
+        useApprovalStore.getState().clearSession(sessionId);
         try {
           client.stop();
         } catch {
@@ -1150,10 +1188,16 @@ export async function sendCloudChatTurn({
       while (approvals.length > 0) {
         const approval = approvals.shift();
         if (!approval) continue;
+        // Asked once what he said before it has finished arriving.
+        await sequence.idle();
+        // Stop may have landed while the words were arriving; its clear ran
+        // before this card existed, so nothing would ever answer it.
+        if (aborted) break;
         const approved = await useApprovalStore
           .getState()
           .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
-        await client.addToolApprovalResponse({ id: approval.id, approved });
+        await untilFinished(client.addToolApprovalResponse({ id: approval.id, approved }));
+        if (finished) break;
         /*
          * They have answered, so stop saying they have not.
          *
@@ -1164,7 +1208,7 @@ export async function sendCloudChatTurn({
          * found: the longest stretch in onboarding, and it was labelled as
          * though it were still waiting on the reader.
          */
-        if (approved) onToolStatus(toolStatus(approval.toolName), approval.toolName);
+        if (approved) showToolStatus(toolStatus(approval.toolName), approval.toolName);
         lastProgressAt = Date.now();
       }
 
@@ -1181,8 +1225,11 @@ export async function sendCloudChatTurn({
         if (text) {
           reportThinkingDone();
           flushThinking.flush();
-          flushStreaming.flush();
-          return text;
+          // Committed only once it has all been shown, so the hand-over from
+          // the streaming bubble does not jump.
+          sequence.update(replyParts(client.getMessages()));
+          await sequence.idle();
+          return sequence.current().trim();
         }
       }
 
@@ -1194,7 +1241,14 @@ export async function sendCloudChatTurn({
     // the reader where they were, free to send again or stop it themselves —
     // a canned "he got stuck" bubble dropped into the transcript reads worse
     // than the quiet, and it is the reader's call, not the app's.
-    const partial = assistantTextSinceUser(client.getMessages()).trim();
+    // The goodbye, when he ended onboarding, is the last of what he said.
+    // The goodbye arrives in a tool call rather than as text, so it is
+    // revealed here like any other reply, after the rest.
+    const said = replyParts(client.getMessages());
+    sequence.update(farewell ? [...said, farewell] : said);
+    // Paced like any reply, and quick once stopped: stop cancels the reveal.
+    await sequence.idle();
+    const partial = sequence.current().trim();
     if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
@@ -1202,9 +1256,14 @@ export async function sendCloudChatTurn({
     }
     return partial;
   } finally {
+    turnOver = true;
     signal?.removeEventListener('abort', onAbort);
     flushThinking.cancel();
-    flushStreaming.cancel();
+    reveal.cancel();
+    // What he finished saying is kept, and before the caller hears how the
+    // turn ended: a part must not land under an error set a moment earlier.
+    // Unpaced now the reveal is cancelled, so this is a few microtasks.
+    await sequence.idle();
     client.dispose();
   }
 }

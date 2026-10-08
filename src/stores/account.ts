@@ -10,6 +10,7 @@ import {
     type AccountProfile,
 } from '@/services/account';
 import { deleteCloudAccount } from '@/services/account-delete';
+import { prefetchPlanOffer } from '@/query-manager/billing';
 import { configurePurchases, forget, identify } from '@/services/purchases';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
@@ -146,6 +147,9 @@ export const useAccountStore = create<AccountState>((set) => ({
      * on before the alias catches up. See `services/purchases`.
      */
     configurePurchases(profile?.sub ?? null);
+    // The plan carousel's loader, started the moment it can be: prices and
+    // counts are cached before anybody opens the cloud panel.
+    prefetchPlanOffer();
     if (profile) bindPurchases(profile.sub);
   },
 

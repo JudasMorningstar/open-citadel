@@ -1,6 +1,32 @@
+const fs = require("fs");
+const path = require("path");
+
 const appJson = require("./app.json");
 
 const baseConfig = appJson.expo;
+
+/**
+ * What changed, for the update dialog: the short lines in release-notes.json.
+ *
+ * They ride in `extra`, which an over-the-air update carries in its own
+ * manifest, so the app can read a new update's notes before it restarts into
+ * it. Read with `fs`, not `require`: the fingerprint hashes every module this
+ * file loads, and notes that moved the runtime version would cut an update
+ * off from the very builds it is for. `extra` itself is left out of the
+ * fingerprint in fingerprint.config.js for the same reason.
+ */
+function readReleaseNotes() {
+  try {
+    // Beside app.json, found without `__dirname` (this file is linted as app
+    // code, which has none).
+    const root = path.dirname(require.resolve("./app.json"));
+    const file = path.join(root, "release-notes.json");
+    const { notes } = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(notes) ? notes : [];
+  } catch {
+    return [];
+  }
+}
 
 function getVariantConfig() {
   switch (process.env.APP_VARIANT) {
@@ -71,6 +97,7 @@ module.exports = () => {
       revenueCatIosKey,
       revenueCatAndroidKey,
       revenueCatTestKey,
+      releaseNotes: readReleaseNotes(),
     },
     ios: {
       ...baseConfig.ios,

@@ -1,32 +1,25 @@
 import TrackPlayer from "@rntp/player";
 
+import { ensureAudioPlayer, registerAudioBackgroundHandler } from "@/services/audio-session";
+import { releasePlayerForSpeech } from "@/services/podcasts/player";
+
+const TTS_MEDIA_ID = "tts-session";
+
 let isSetup = false;
-let backgroundHandlerRegistered = false;
 
 /**
  * Register the Android background event handler.
- * Required by RNTP but we don't need to handle any events. This API is
- * Android-only — on iOS it warns and is a no-op (iOS uses addEventListener,
- * and background audio is already enabled via UIBackgroundModes: ["audio"]).
- *
- * Guarded: under Fast Refresh (and any re-evaluation of the root module that
- * calls this) a second `registerBackgroundEventHandler` for the same
- * `TrackPlayerServiceBridge` key spams a warning and re-binds the native
- * headless task. Register exactly once per JS runtime.
+ * Read-aloud needs no events of its own; the shared handler is registered so
+ * the native headless task exists (see `services/audio-session`). Android-only
+ * and idempotent there.
  */
 export function registerTTSBackgroundHandler(): void {
-  if (process.env.EXPO_OS !== "android") return;
-  if (backgroundHandlerRegistered) return;
-  try {
-    TrackPlayer.registerBackgroundEventHandler(() => async () => {});
-    backgroundHandlerRegistered = true;
-  } catch {
-    // Native module may fail to load on some devices — TTS notification is non-critical.
-  }
+  registerAudioBackgroundHandler(async () => {});
 }
 
 /**
- * Initialize the RNTP player once at app startup.
+ * Initialize the shared player at app startup, so the lock-screen card is
+ * ready the first time read-aloud starts.
  * No capabilities — the notification is a passive "now playing" indicator
  * with no interactive controls.
  *
@@ -37,22 +30,7 @@ export function registerTTSBackgroundHandler(): void {
 export function setupTTSMediaSession(): void {
   if (process.env.EXPO_OS !== "android") return;
   if (isSetup) return;
-
-  try {
-    TrackPlayer.setupPlayer({
-      contentType: "speech",
-      audioMixing: "mix",
-    });
-
-    TrackPlayer.setCommands({
-      capabilities: [],
-    });
-
-    isSetup = true;
-  } catch {
-    // Player may already be initialized (e.g. hot reload)
-    isSetup = true;
-  }
+  isSetup = ensureAudioPlayer();
 }
 
 /**
@@ -66,8 +44,12 @@ export function startMediaSession(
   coverUri: string | null,
 ): void {
   if (process.env.EXPO_OS !== "android") return;
+  // Read-aloud takes the player over for its lock-screen card, so a podcast
+  // that was playing saves its place and steps aside first.
+  releasePlayerForSpeech();
+  TrackPlayer.setCommands({ capabilities: [] });
   TrackPlayer.setMediaItem({
-    mediaId: "tts-session",
+    mediaId: TTS_MEDIA_ID,
     url: "",
     title,
     artist,
@@ -77,9 +59,15 @@ export function startMediaSession(
 
 /**
  * Stop the media session and clear the notification.
+ *
+ * Only when the card on the player is still read-aloud's own. The reader calls
+ * this on every stop it hears about, including ones for a read-aloud that never
+ * started, and the player is shared: clearing it unconditionally would cut off
+ * a podcast playing in the background.
  */
 export function stopMediaSession(): void {
   if (process.env.EXPO_OS !== "android") return;
   if (!isSetup) return;
+  if (TrackPlayer.getActiveMediaItem()?.mediaId !== TTS_MEDIA_ID) return;
   TrackPlayer.clear();
 }

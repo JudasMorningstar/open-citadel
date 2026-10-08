@@ -106,7 +106,8 @@
         }
       ],
       "expo-sharing",
-      "./plugins/withBackgroundAudio"
+      "./plugins/withBackgroundAudio",
+      "./plugins/withNotificationIcon"
     ],
     "experiments": {
       "typedRoutes": true,

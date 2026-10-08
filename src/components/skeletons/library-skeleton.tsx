@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 
+import { HeroCardSkeleton } from '@/components/skeletons/hero-card-skeleton';
 import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
 
 /** One shelf: its heading and VIEW ALL, then a row of covers running off the
@@ -13,18 +14,8 @@ function Shelf({ tall }: { tall?: boolean }) {
         <SkeletonBar className="h-7 w-20" />
       </View>
       {tall ? (
-        // Currently Reading is one wide card rather than a row of covers.
-        <View className="mx-6 gap-3 border border-border bg-card p-4">
-          <View className="flex-row gap-4">
-            <SkeletonBar className="h-32 w-24" />
-            <View className="flex-1 gap-2 pt-1">
-              <SkeletonBar className="h-6 w-full" />
-              <SkeletonBar className="h-6 w-2/3" />
-              <SkeletonBar className="h-4 w-1/2" />
-              <SkeletonBar className="mt-2 h-1.5 w-full" />
-            </View>
-          </View>
-        </View>
+        // Continue Reading is one wide card rather than a row of covers.
+        <HeroCardSkeleton mediaAspect={2 / 3} />
       ) : (
         <View className="flex-row gap-4 pl-6">
           {[0, 1, 2].map((i) => (
@@ -52,7 +43,7 @@ function Shelf({ tall }: { tall?: boolean }) {
  * one that did not, and it is the first screen anyone sees.
  *
  * Three shelves, because that is what the Library opens with: the wide
- * Currently Reading card, then two rows of covers. The heights are the real
+ * Continue Reading card, then two rows of covers. The heights are the real
  * ones so the content does not shift underneath when the swap happens.
  */
 export function LibrarySkeleton() {
