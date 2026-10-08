@@ -61,7 +61,7 @@ export function NewCollectionPrompt({
           onSubmitEditing={handleCreate}
         />
         <View className="gap-3">
-          <GoldButton label="CREATE" onPress={handleCreate} disabled={!canCreate} />
+          <GoldButton label="CREATE" size="compact" onPress={handleCreate} disabled={!canCreate} />
           <Touchable onPress={handleClose} className="items-center py-3">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>
           </Touchable>

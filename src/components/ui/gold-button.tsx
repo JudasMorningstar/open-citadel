@@ -28,11 +28,13 @@ type GoldButtonProps = {
   /**
    * How much of a commitment the press is.
    *
-   * `full` is the 56pt bar this started as, and it is right where the button
-   * IS the screen's purpose: ADD BOOKS, SAVE, pick a library folder. It got
-   * used for a dialog's dismiss as well, and at that size a button whose whole
-   * job is "yes, I have read this" shouted louder than the thing it was
-   * dismissing.
+   * `compact` is the default, and the size of every gold button in the app.
+   *
+   * `full` is the 56pt bar this started as. Nothing uses it any more: the
+   * owner found it out of place everywhere it stood (2026-10-08), including
+   * the update dialog, the plan cards and the import flow, where it had been
+   * kept the longest. It stays as an option only so a reason to use it has
+   * to be written down at the call site.
    *
    * `compact` is the size every other button in the app is — the same 40pt box
    * as FINISH GOAL and MAKE THIS THE MAIN GOAL — for an acknowledgement, or
@@ -78,7 +80,7 @@ export function GoldButton({
   accessibilityLabel,
   onPress,
   icon: Icon,
-  size = "full",
+  size = "compact",
   disabled = false,
   loading = false,
   busy = false,

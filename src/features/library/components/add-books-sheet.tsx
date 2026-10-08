@@ -71,7 +71,7 @@ export function AddBooksSheet({ visible, allBooks, existingBookIds, onConfirm, o
           />
         </PageFade>
         <View className="px-6 pt-4">
-          <GoldButton label={confirmLabel} onPress={confirm} />
+          <GoldButton label={confirmLabel} size="compact" onPress={confirm} />
           <Touchable onPress={onClose} className="items-center py-3">
             <ThemedText type="labelSm" color={muted}>
               CANCEL

@@ -20,7 +20,7 @@ export function ExploreFooter({ onImport }: { onImport: () => void }) {
         Paste its feed address or a link to it into the search above. Coming from
         AntennaPod? Bring your whole library across, with everything you have listened to.
       </ThemedText>
-      <ActionButton icon={Import} label="IMPORT FROM ANTENNAPOD" onPress={onImport} tint={tokens['--color-primary']} centered className="h-12" />
+      <ActionButton icon={Import} label="IMPORT FROM ANTENNAPOD" onPress={onImport} tint={tokens['--color-primary']} centered className="h-10" />
     </View>
   );
 }

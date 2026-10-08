@@ -2,10 +2,10 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { ActionButton } from '@/components/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { GoldButton } from '@/components/ui/gold-button';
-import { Touchable } from '@/components/ui/touchable';
 import { asColor } from '@/utils/colors';
 
 type DraftCardShellProps = {
@@ -55,18 +55,19 @@ export function DraftCardShell({
           {label}
         </ThemedText>
         <View className="gap-3">{children}</View>
+        {/* Two answers of equal standing, so they are the same 40pt box and
+            the fill alone marks the one that accepts. The 56pt bar is for a
+            button that is its screen's whole purpose, and in a card among
+            messages it out-shouted the proposal it sat under. */}
         <View className="mt-1 gap-2">
-          <GoldButton label={approveLabel} onPress={disabled ? undefined : onApprove} />
-          <Touchable
-            className="items-center border border-border py-3"
+          <GoldButton label={approveLabel} size="compact" onPress={disabled ? undefined : onApprove} />
+          <ActionButton
+            label="WORK ON IT MORE"
             onPress={disabled ? undefined : onRefine}
-            accessibilityRole="button"
-            accessibilityLabel="Work on it more"
-          >
-            <ThemedText type="labelMd" color={asColor(mutedForeground)}>
-              WORK ON IT MORE
-            </ThemedText>
-          </Touchable>
+            tint={asColor(mutedForeground)}
+            centered
+            className="h-10"
+          />
         </View>
       </Card.Content>
     </Card>

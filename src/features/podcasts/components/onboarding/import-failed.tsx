@@ -25,7 +25,7 @@ export function ImportFailed({ message, bottomPadding, onRetry, onCancel }: Impo
   const footer = (
     <>
       <GoldButton label="CHOOSE ANOTHER FILE" icon={Import} onPress={onRetry} />
-      <ActionButton label="NOT NOW" onPress={onCancel} centered className="h-12" />
+      <ActionButton label="NOT NOW" onPress={onCancel} centered className="h-10" />
     </>
   );
 

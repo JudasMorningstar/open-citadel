@@ -131,7 +131,8 @@ export function EpisodeHero({
           </ThemedText>
         </View>
       ) : null}
-      <GoldButton label={playText} onPress={onPlay} />
+      {/* Compact, as FOLLOW and DOWNLOAD are on the pages beside this one. */}
+      <GoldButton label={playText} size="compact" onPress={onPlay} />
       <View className="flex-row gap-2">
         {tiles.map((tile) => (
           <EpisodeActionTile key={tile.key} tile={tile} gold={tokens['--color-primary']} ink={tokens['--color-foreground']} />

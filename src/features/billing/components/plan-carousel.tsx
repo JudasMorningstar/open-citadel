@@ -318,7 +318,7 @@ export function PlanCarousel({
             label={actionVerb}
             icon={PLAN_ICON[activePlan.id]}
             accessibilityLabel={`${actionVerb} ${activePlan.label}`}
-            size="full"
+            size="compact"
             loading={busy === activePlan.id}
             disabled={nothingToBuy || busy !== null}
             onPress={() => choose(activePlan.id)}

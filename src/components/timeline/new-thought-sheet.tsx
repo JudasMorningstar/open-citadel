@@ -374,6 +374,7 @@ export function NewThoughtSheet({
         <View className="gap-3">
           <GoldButton
             label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
+            size="compact"
             onPress={handleSave}
             disabled={!canSave}
           />

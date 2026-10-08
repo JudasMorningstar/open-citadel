@@ -88,7 +88,7 @@ export function EditTitleSheet({
           onSubmitEditing={handleSave}
         />
         <View className="gap-3">
-          <GoldButton label="SAVE" onPress={handleSave} disabled={!canSave} />
+          <GoldButton label="SAVE" size="compact" onPress={handleSave} disabled={!canSave} />
           <Touchable onPress={handleClose} className="items-center py-3">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               CANCEL

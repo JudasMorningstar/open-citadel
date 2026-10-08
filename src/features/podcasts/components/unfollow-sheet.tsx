@@ -33,13 +33,13 @@ export function UnfollowSheet({ visible, title, onClose, onConfirm }: UnfollowSh
           time you spent listening stays in your history.
         </ThemedText>
         <View className="flex-row gap-3">
-          <ActionButton label="KEEP FOLLOWING" onPress={onClose} centered className="h-12 flex-1" />
+          <ActionButton label="KEEP FOLLOWING" onPress={onClose} centered className="h-10 flex-1" />
           <ActionButton
             label="UNFOLLOW"
             onPress={onConfirm}
             tint={destructive}
             centered
-            className="h-12 flex-1"
+            className="h-10 flex-1"
           />
         </View>
       </View>

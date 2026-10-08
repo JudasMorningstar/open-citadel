@@ -194,7 +194,7 @@ export function SubscriptionManagementSheet({
         <GoldButton
           label={view === "upgrade" ? "UPGRADE PLAN" : "DOWNGRADE PLAN"}
           accessibilityLabel={`${view === "upgrade" ? "Upgrade to" : "Downgrade to"} ${selectedPlan.label}`}
-          size="full"
+          size="compact"
           loading={purchasing}
           disabled={!selectedPackage || busy !== null}
           onPress={() => void chooseSelectedPlan()}

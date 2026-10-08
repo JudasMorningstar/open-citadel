@@ -72,7 +72,7 @@ export function AddBlogSheet({ visible, address, fieldKey, finding, error, onCha
               This phone fetches the blog straight from its site. Nothing goes through us.
             </ThemedText>
           </View>
-          <GoldButton label="FOLLOW" icon={Rss} onPress={onSubmit} loading={finding} disabled={empty} />
+          <GoldButton label="FOLLOW" icon={Rss} size="compact" onPress={onSubmit} loading={finding} disabled={empty} />
         </View>
       </View>
     </Sheet>
