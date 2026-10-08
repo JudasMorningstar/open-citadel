@@ -1,7 +1,6 @@
 import { useIsFocused } from "expo-router/react-navigation";
 import React from "react";
 import { View } from "react-native";
-import type { PurchasesPackage } from "react-native-purchases";
 import { useCSSVariable } from "uniwind";
 
 import { ActionButton } from "@/components/action-button";
@@ -25,20 +24,14 @@ import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
-import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
-import { usePlanOffer } from "@/features/billing/hooks/use-plan-offer";
+import { usePlanSale } from "@/features/billing/hooks/use-plan-sale";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
-import {
-    CREDIT_PLANS,
-    PLANS,
-    planRank,
-    type PlanId,
-} from "samwell-shared";
+import { CREDIT_PLANS, PLANS, planRank } from "samwell-shared";
 
 /**
  * The cloud engine's panel.
@@ -80,8 +73,6 @@ export function CloudPanel({
   const loading = useSubscriptionStore((s) => s.loading);
   const error = useSubscriptionStore((s) => s.error);
   const refresh = useSubscriptionStore((s) => s.refresh);
-  const buy = useSubscriptionStore((s) => s.purchase);
-  const restore = useSubscriptionStore((s) => s.restore);
   const manage = useSubscriptionStore((s) => s.manage);
   // Counted by the server, not here. Three per tier is true today and stops
   // being true the first time `/admin/models` adds one.
@@ -98,10 +89,15 @@ export function CloudPanel({
   const hasIdentity = identity.kind === "account" || identity.kind === "guest";
   /*
    * What is on sale and what each plan holds, from TanStack Query and
-   * usually already cached: see `usePlanOffer`. Not before the identity has
+   * usually already cached: see `usePlanOffer`, inside `usePlanSale`, which
+   * also holds the purchase, the restore and the checkout. Not before the identity has
    * settled, because the account store is what configures the purchases SDK.
    */
-  const offer = usePlanOffer(identity.kind !== "unknown");
+  const sale = usePlanSale({
+    enabled: identity.kind !== "unknown",
+    onActivated: onAccessActivated,
+  });
+  const { offer, onChoose, onRestore } = sale;
   useBillingLifecycle(focused ? identity.id : null);
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
@@ -134,57 +130,6 @@ export function CloudPanel({
   }, [hasIdentity, onScreen, refresh]);
   const { packages } = offer;
 
-  /**
-   * Report what the store did, and nothing else. Closing the management sheet
-   * is the sheet's own call: it is the thing that knows a change is in
-   * flight, and hiding it from out here mid-purchase left it on screen and
-   * unable to answer anything.
-   */
-  const onChoose = React.useCallback(
-    async (plan: PlanId, packageToBuy: PurchasesPackage) => {
-      const outcome = await buy(packageToBuy, plan);
-      if (outcome) {
-        showToast({
-          message:
-            outcome === "scheduled"
-              ? `${CREDIT_PLANS[plan].label} will begin at your next renewal.`
-              : outcome === "pending"
-                ? "Payment went through. Your plan will appear shortly."
-                : `${CREDIT_PLANS[plan].label} is yours.`,
-          tone: "success",
-          key: "billing",
-        });
-        if (outcome === "active") onAccessActivated?.();
-        return outcome;
-      }
-
-      const purchaseError = useSubscriptionStore.getState().error;
-      if (purchaseError) {
-        showToast({ message: purchaseError, key: "billing" });
-      }
-      return false;
-    },
-    [buy, onAccessActivated],
-  );
-
-  const onRestore = React.useCallback(async () => {
-    const restored = await restore();
-    if (restored) {
-      showToast({
-        message: "Subscription restored.",
-        tone: "success",
-        key: "billing",
-      });
-      onAccessActivated?.();
-      return;
-    }
-
-    const restoreError = useSubscriptionStore.getState().error;
-    if (restoreError) {
-      showToast({ message: restoreError, key: "billing" });
-    }
-  }, [onAccessActivated, restore]);
-
   const onManage = React.useCallback(async () => {
     const result = await manage();
     if (result === "test-store") {
@@ -201,23 +146,6 @@ export function CloudPanel({
     }
   }, [manage]);
 
-  /*
-   * Everything that sells or recovers a plan goes through here rather than
-   * straight to the store, because the carousel above now draws for somebody
-   * who has no account yet. Signed in it is a passthrough.
-   */
-  const checkout = usePlanCheckout({
-    buy: onChoose,
-    restore: onRestore,
-    onAlreadyActive: onAccessActivated,
-  });
-  const { start } = checkout;
-  const startPurchase = React.useCallback(
-    (plan: PlanId, packageToBuy: PurchasesPackage) =>
-      start({ kind: "buy", plan, packageToBuy }),
-    [start],
-  );
-  const startRestore = React.useCallback(() => start({ kind: "restore" }), [start]);
   /**
    * A purchase is under way.
    *
@@ -226,7 +154,7 @@ export function CloudPanel({
    * panel would swap to the subscribed card with the store's own sheet still
    * open over it, then swap back if they changed their mind.
    */
-  const checkingOut = checkout.preparing !== null;
+  const checkingOut = sale.checkingOut;
 
   // This build cannot reach him, and no amount of signing in changes that.
   if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
@@ -314,13 +242,13 @@ export function CloudPanel({
           packages={packages}
           catalogue={offer.catalogue}
           modelCounts={offer.modelCounts}
-          busy={checkout.preparing ?? busy}
+          busy={sale.picker.busy}
           ready={offer.ready}
           prebuilt
           failed={offer.failed}
           onRetry={offer.retry}
-          onChoose={startPurchase}
-          onRestore={startRestore}
+          onChoose={sale.picker.onChoose}
+          onRestore={sale.picker.onRestore}
           surface="background"
           bleed={layout.gutter}
         />
@@ -412,13 +340,13 @@ export function CloudPanel({
              asks the server before it opens the store sheet, and without this
              the button went quiet for that round trip and invited a second
              tap. */
-          busy={checkout.preparing ?? busy}
+          busy={sale.picker.busy}
           ready={offer.ready}
           prebuilt
           failed={offer.failed}
           onRetry={offer.retry}
-          onChoose={startPurchase}
-          onRestore={startRestore}
+          onChoose={sale.picker.onChoose}
+          onRestore={sale.picker.onRestore}
           surface="background"
           bleed={layout.gutter}
         />

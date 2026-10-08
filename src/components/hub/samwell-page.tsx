@@ -41,6 +41,8 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { contentColumn, spacing } from "@/constants/theme";
+import { PlansSheetHost, type PlansSheetHandle } from "@/features/billing/components/plans-sheet";
+import { CAN_SELL_PLANS } from "@/features/billing/utils/can-sell";
 import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-sheet";
 import { useArticleCover } from "@/features/blogs/hooks/use-article-cover";
 import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
@@ -64,6 +66,7 @@ import { useCompassConversation } from "@/features/compass/hooks/use-compass-con
 import { useGoalEnding } from "@/features/compass/hooks/use-goal-ending";
 import { useAfterFirstPaint } from "@/navigation/use-after-first-paint";
 import { isVisibleChatMessage } from "@/services/chat-transcript";
+import { useSettingsStore } from "@/stores/settings";
 import { useAllBooks, useBooksStore } from "@/stores/books";
 import { useChatStore, type ChatSession } from "@/stores/chat";
 import { useCompassPastGoals, useCompassStore } from "@/stores/compass";
@@ -105,14 +108,27 @@ export function SamwellPage() {
     () => router.push({ pathname: "/settings", params: { pane: "samwell" } }),
     [router],
   );
-  const openCloudPlans = React.useCallback(
-    () =>
-      router.push({
-        pathname: "/settings",
-        params: { pane: "samwell", panel: "cloud" },
-      }),
-    [router],
-  );
+  /**
+   * The plans, sold here. A missing plan used to send the reader to Settings
+   * and trust them to come back; now the sheet rises over the wall, takes the
+   * payment, and the wall is gone when it closes. A build that cannot sell
+   * anything still goes to Settings, which says why.
+   */
+  const plans = React.useRef<PlansSheetHandle>(null);
+  const openCloudPlans = React.useCallback(() => {
+    if (CAN_SELL_PLANS) {
+      plans.current?.open();
+      return;
+    }
+    router.push({
+      pathname: "/settings",
+      params: { pane: "samwell", panel: "cloud" },
+    });
+  }, [router]);
+  /** A plan bought from the wall is a plan to use: Samwell moves to the cloud. */
+  const startInCloud = React.useCallback(() => {
+    void useSettingsStore.getState().setSamwellMode("cloud");
+  }, []);
   /**
    * Settings, opened onto the account rather than the engine.
    *
@@ -986,6 +1002,11 @@ export function SamwellPage() {
             onRetryTakeaway={(goalId) => void retryTakeaway(goalId)}
           />
 
+          <PlansSheetHost
+            ref={plans}
+            line="Monthly Neurons for Samwell's cloud brains."
+            onActivated={startInCloud}
+          />
           <AboutCompassSheet
             visible={showAboutCompass}
             onClose={() => setShowAboutCompass(false)}
