@@ -89,7 +89,6 @@ export function SubscriptionManagementSheet({
   modelCounts,
   testStore,
   busy,
-  loading,
   onClose,
   onChoose,
   onRestore,
@@ -105,7 +104,6 @@ export function SubscriptionManagementSheet({
   modelCounts: Record<PlanId, number>;
   testStore: boolean;
   busy: SubscriptionBusy;
-  loading: boolean;
   onClose: () => void;
   onChoose: (
     plan: PlanId,
@@ -196,7 +194,7 @@ export function SubscriptionManagementSheet({
         <GoldButton
           label={view === "upgrade" ? "UPGRADE PLAN" : "DOWNGRADE PLAN"}
           accessibilityLabel={`${view === "upgrade" ? "Upgrade to" : "Downgrade to"} ${selectedPlan.label}`}
-          size="full"
+          size="compact"
           loading={purchasing}
           disabled={!selectedPackage || busy !== null}
           onPress={() => void chooseSelectedPlan()}
@@ -327,7 +325,6 @@ export function SubscriptionManagementSheet({
             catalogue={catalogue}
             modelCounts={modelCounts}
             busy={busy}
-            loading={loading}
             onSelectionChange={setSelectedPlanId}
             onChoose={onChoose}
           />

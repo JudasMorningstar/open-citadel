@@ -82,11 +82,23 @@ function findChapterFile(zip: JSZip, locatorHref: string, basePath: string): JSZ
   return null;
 }
 
-async function loadChapterText(filePath: string, locator: Locator): Promise<string> {
-  // expo-file-system paths may have file:// prefix — strip it for readAsStringAsync
-  const fsPath = filePath.startsWith('file://') ? filePath.slice(7) : filePath;
+/**
+ * A book file's bytes, as base64.
+ *
+ * The URI goes to the reader as stored. It used to have `file://` stripped
+ * first, and Android's reader takes a path with no scheme for the name of a
+ * bundled resource, so every book kept in the app's own folder (blog posts,
+ * free books, imports on iOS) failed to read: chats about them were grounded
+ * in nothing, and Samwell asked for the text he should already have had.
+ * A bare path, if one is ever stored, is given the scheme instead.
+ */
+function readBookFile(filePath: string): Promise<string> {
+  const uri = filePath.startsWith('/') ? `file://${filePath}` : filePath;
+  return readAsStringAsync(uri, { encoding: 'base64' });
+}
 
-  const b64 = await readAsStringAsync(fsPath, { encoding: 'base64' });
+async function loadChapterText(filePath: string, locator: Locator): Promise<string> {
+  const b64 = await readBookFile(filePath);
 
   const zip = await JSZip.loadAsync(b64, { base64: true });
   const opfPath = await findOpfPath(zip);
@@ -181,8 +193,7 @@ export async function extractReadSections(
   locator: Locator | null,
   maxChars = 200_000,
 ): Promise<ReadSection[]> {
-  const fsPath = filePath.startsWith('file://') ? filePath.slice(7) : filePath;
-  const b64 = await readAsStringAsync(fsPath, { encoding: 'base64' });
+  const b64 = await readBookFile(filePath);
   const zip = await JSZip.loadAsync(b64, { base64: true });
 
   const opfPath = await findOpfPath(zip);

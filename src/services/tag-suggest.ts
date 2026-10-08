@@ -9,15 +9,15 @@ import {
 import { db } from '@/db/client';
 import { goals } from '@/db/schema';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
-import * as Inference from '@/services/inference';
+import { isEngineLoaded } from '@/services/device-llm/engine';
+import { oneShot, oneShotBudgetChars } from '@/services/device-llm/one-shot';
 import { useSettingsStore } from '@/stores/settings';
 import { splitThinking } from '@/utils/think-stream';
 
 /**
  * AI tag suggestions for a saved passage. Works on both Samwell paths: cloud
  * calls the metered /tags/suggest endpoint; offline runs a one-shot prompt on
- * the loaded local model, bracketed by resetConversation() so it cannot bleed
- * into chat state (sessions re-prime their context on open anyway).
+ * the loaded local model, in a conversation of its own.
  */
 
 export type SuggestTagsInput = {
@@ -96,27 +96,24 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
     return tags;
   }
 
-  if (!Inference.isModelLoaded()) {
+  if (!isEngineLoaded()) {
     throw new Error('Load a local model in Settings, or switch to Grand Maester Samwell, to suggest tags.');
   }
 
-  Inference.resetConversation();
-  try {
-    let latest = '';
-    await Inference.chat(
-      `${SUGGEST_TAGS_PROMPT}\n\n${JSON.stringify(payload)}\n\n${SUGGEST_TAGS_LOCAL_FORMAT}`,
-      (data) => {
-        latest = data.content;
-      },
-    );
-    // Reasoning arrives inline on this path too, and a `<think>` block parses
-    // into a list of nonsense tags rather than failing loudly.
-    const tags = normalizeTags(splitThinking(latest).visible);
-    if (tags.length === 0) {
-      throw new Error("Couldn't suggest tags for this passage.");
-    }
-    return tags;
-  } finally {
-    Inference.resetConversation();
+  const instructions = `${SUGGEST_TAGS_PROMPT}\n\n${SUGGEST_TAGS_LOCAL_FORMAT}`;
+  // The surrounding text is the first thing to go when the device's window is
+  // small: the passage itself is what is being tagged.
+  const whole = JSON.stringify(payload);
+  const message =
+    instructions.length + whole.length > oneShotBudgetChars()
+      ? JSON.stringify({ ...payload, surrounding: undefined })
+      : whole;
+
+  // Reasoning arrives inline on this path too, and a `<think>` block parses
+  // into a list of nonsense tags rather than failing loudly.
+  const tags = normalizeTags(splitThinking(await oneShot({ instructions, input: message })).visible);
+  if (tags.length === 0) {
+    throw new Error("Couldn't suggest tags for this passage.");
   }
+  return tags;
 }

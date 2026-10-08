@@ -1,46 +1,32 @@
-import type { TextStyle } from 'react-native';
-import { View } from 'react-native';
-import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
-import { Search, Trash2 } from '@/components/icons';
 import { PageFade } from '@/components/scroll-fades';
 import { ModelListSkeleton } from '@/components/skeletons/model-list-skeleton';
-import { ThemedText } from '@/components/themed-text';
-import { Sheet } from '@/components/ui/sheet';
-import { Swipe } from '@/components/ui/swipe';
-import { Touchable } from '@/components/ui/touchable';
+import { Sheet, useSheetSettled } from '@/components/ui/sheet';
+import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { ModelPickerHeader } from '@/features/settings/components/model-picker-header';
+import { ModelRow } from '@/features/settings/components/model-row';
+import { useStagedCount } from '@/hooks/use-staged-count';
 import type { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import type { LocalModel } from '@/stores/model';
 import { asColor } from '@/utils/colors';
-import { formatBytes } from '@/utils/format';
 
 type SheetState = ReturnType<typeof useModelSheet>;
 
-const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
+const FILL: { flex: 1 } = { flex: 1 };
+/** The rows a sheet this tall shows before it is scrolled. */
+const FIRST_ROWS = 9;
+/** How many more are drawn each time the thread is idle. */
+const ROW_STEP = 6;
 
 /**
- * The rows below a removed brain move up into its place rather than jumping.
- * Built once at module scope: a builder made in render is rebuilt every render.
- * On-screen movement, so ease-in-out, and under 300ms.
+ * Every brain Samwell offers that this phone could run.
+ *
+ * The sheet is fixed height and the list scrolls inside it, the way the chat
+ * history does: fifteen brains are taller than the screen, and a sheet sized
+ * to its content capped its own height but not the list's, which then ran off
+ * the bottom and would not scroll. The title stays put above the list.
  */
-const ROW_CLOSE = LinearTransition.duration(220).easing(Easing.bezier(0.77, 0, 0.175, 1));
-
-/** The one brain the app vouches for, marked so the reader can find it again. */
-const RECOMMENDED_MODEL_ID = 'gemma-4-e2b-it';
-
-function modelDetail(model: LocalModel): string {
-  return [
-    formatBytes(model.sizeBytes),
-    model.isDownloaded ? 'Downloaded' : null,
-    model.id === RECOMMENDED_MODEL_ID ? 'Recommended' : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-/** The brains already on this phone, with a way into the catalogue. */
 export function ModelListPhase({
   sheet,
   mutedForeground,
@@ -50,65 +36,87 @@ export function ModelListPhase({
   sheet: SheetState;
   mutedForeground?: string;
   primary?: string;
-  /** A full swipe or the tile deletes at once: the swipe's reach point is the confirmation. */
+  /** A full swipe or the tile deletes the download at once: the swipe's reach point is the confirmation. */
   onDelete: (id: string) => void;
 }) {
-  const foreground = useCSSVariable('--color-foreground');
-
-  /*
-   * The title rides inside the scroll content, the way `cloud-model-sheet` does
-   * it: this sheet measures its content to set its height, and a header beside
-   * the scroll region would sit outside that measurement. For the same reason
-   * there is no `Sheet.Deferred` here; its placeholder would set the height and
-   * the real list would then jump it.
-   */
   return (
+    <>
+      <ModelPickerHeader title="Choose Brain" />
+      {/* The rows rise with the sheet: they are plain rows but for the
+          downloads (see `ModelRow`), and a first screenful of those costs
+          less than the placeholder that used to stand in for them. The
+          skeleton is for the one real wait, a list not yet read from disk. */}
+      {sheet.modelsHydrated ? (
+        // `flex-1` on the group: the list inside has nothing to grow into
+        // under an auto-height parent.
+        <Swipe.Group className="flex-1">
+          <ModelList
+            models={sheet.models}
+            activeModelId={sheet.activeModelId}
+            onChoose={sheet.chooseModel}
+            onDelete={onDelete}
+            mutedForeground={mutedForeground}
+            primary={primary}
+          />
+        </Swipe.Group>
+      ) : (
+        <ModelListSkeleton count={6} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The list itself, below `Swipe.Group` so it can close rows as a scroll starts.
+ *
+ * A plain scroll view, not `Sheet.FlatList`: that list settles on its rows
+ * over several passes of measuring and drawing again, eight of them here, and
+ * the sheet waited through every one before it moved (1.4s on a Galaxy A33).
+ * Fifteen rows need no recycling. The first screenful is drawn with the sheet
+ * and the rest once it has landed (`useStagedCount`).
+ */
+function ModelList({
+  models,
+  activeModelId,
+  onChoose,
+  onDelete,
+  mutedForeground,
+  primary,
+}: {
+  models: LocalModel[];
+  activeModelId: string | null;
+  onChoose: (id: string) => void;
+  onDelete: (id: string) => void;
+  mutedForeground?: string;
+  primary?: string;
+}) {
+  const { closeAll } = useSwipeGroup();
+  const foreground = asColor(useCSSVariable('--color-foreground'));
+  const settled = useSheetSettled();
+  const count = useStagedCount(models.length, FIRST_ROWS, ROW_STEP, !settled);
+  const drawn = count < models.length ? models.slice(0, count) : models;
+
+  return (
+    // `popover`, so the fade resolves to the sheet's own ground.
     <PageFade edges="both" surface="popover">
-      <Sheet.ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <ModelPickerHeader title="Choose Brain" primary={primary} />
-        {sheet.modelsHydrated ? (
-          <Swipe.Group>
-            {sheet.models.map((model) => (
-              <Animated.View key={model.id} layout={ROW_CLOSE}>
-              <Swipe haptics removeOnCommit>
-                <Swipe.End>
-                  <Swipe.Action
-                    icon={<Trash2 color={asColor(foreground)} />}
-                    label="Delete"
-                    color="destructive"
-                    labelClassName="text-foreground"
-                    onPress={() => onDelete(model.id)}
-                  />
-                </Swipe.End>
-                <Touchable
-                  className="flex-row items-center gap-3 border-b border-border bg-popover px-6 py-3"
-                  onPress={() => sheet.chooseModel(model.id)}
-                >
-                  <View className="flex-1 gap-1">
-                    <ThemedText type="bodyMd">{model.name}</ThemedText>
-                    <ThemedText type="labelSm" color={mutedForeground} style={TABULAR}>
-                      {modelDetail(model)}
-                    </ThemedText>
-                  </View>
-                  {model.id === sheet.activeModelId && (
-                    <ThemedText type="bodyMd" color={primary}>
-                      ✓
-                    </ThemedText>
-                  )}
-                </Touchable>
-              </Swipe>
-              </Animated.View>
-            ))}
-          </Swipe.Group>
-        ) : (
-          <ModelListSkeleton count={3} />
-        )}
-        <Touchable className="flex-row items-center gap-2 px-6 py-4" onPress={sheet.browse}>
-          <Search size={14} color={primary} />
-          <ThemedText type="labelSm" color={primary}>
-            BROWSE BRAINS
-          </ThemedText>
-        </Touchable>
+      <Sheet.ScrollView
+        style={FILL}
+        // A row dragged open is put back the moment a scroll begins.
+        onScrollBeginDrag={closeAll}
+      >
+        {drawn.map((model) => (
+          <ModelRow
+            key={model.id}
+            model={model}
+            active={model.id === activeModelId}
+            onChoose={onChoose}
+            onDelete={onDelete}
+            mutedForeground={mutedForeground}
+            primary={primary}
+            foreground={foreground}
+            swipes={settled}
+          />
+        ))}
       </Sheet.ScrollView>
     </PageFade>
   );

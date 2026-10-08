@@ -1,24 +1,19 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import type { PurchasesPackage } from "react-native-purchases";
-import { useAnimatedReaction, useSharedValue } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
-import {
-    ROW_FADE,
-    useFadeColor,
-    type FadeSurface,
-} from "@/components/scroll-fades";
+import { Handover } from "@/components/navigation/handover";
 import { ThemedText } from "@/components/themed-text";
-import { Carousel, useCarouselState } from "@/components/ui/carousel";
 import { GoldButton } from "@/components/ui/gold-button";
-import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
-import { PlanCard } from "@/features/billing/components/plan-card";
+import { PlanCarouselSkeleton } from "@/features/billing/components/plan-carousel-skeleton";
+import { PlanOfferFailed } from "@/features/billing/components/plan-offer-failed";
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
-import { PlanSlide } from "@/features/billing/components/plan-slide";
+import { PlanRun } from "@/features/billing/components/plan-run";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
+import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -81,7 +76,23 @@ export type PlanCarouselProps = {
   /** How many models each plan opens up. */
   modelCounts: Record<PlanId, number>;
   busy: PlanId | "restore" | "manage" | null;
-  loading: boolean;
+  /**
+   * Everything the cards say is in hand. Until then the run is its skeleton,
+   * so the cards arrive whole rather than filling in piece by piece. See
+   * `usePlanOffer`. The skeleton is also what is drawn first when this is
+   * true from the start: see the note on `PlanCarousel`.
+   */
+  ready?: boolean;
+  /**
+   * The caller builds this ahead of the press that shows it (the cloud panel,
+   * kept hidden until chosen), so with the prices in hand the run needs no
+   * placeholder. Without it the run mounts behind its skeleton for a few
+   * frames, so that its mount does not hold up the press that asked for it.
+   */
+  prebuilt?: boolean;
+  /** The prices could not be had. The run gives way to a way to ask again. */
+  failed?: boolean;
+  onRetry?: () => void;
   onChoose: (plan: PlanId, packageToBuy: PurchasesPackage) => void;
   onSelectionChange?: (plan: PlanId) => void;
   onRestore?: () => void;
@@ -93,9 +104,10 @@ export type PlanCarouselProps = {
   showRestore?: boolean;
   /** Plan-change sheets pin their action outside the scrolling region. */
   showAction?: boolean;
-  actionVerb?: "CHOOSE" | "UPGRADE TO" | "DOWNGRADE TO";
+  /** The verb alone: the plan is named by its mark beside it. */
+  actionVerb?: "CHOOSE" | "UPGRADE" | "DOWNGRADE";
   /** The ground the edge fades blend into. Sheets are `popover`. */
-  surface?: FadeSurface;
+  surface?: "background" | "popover";
   /**
    * The gutter of the page the run sits in. The track reaches past it to the
    * screen edge, so the fade starts at the edge rather than a gutter inside
@@ -105,74 +117,57 @@ export type PlanCarouselProps = {
 };
 
 /**
- * The scroll fades, driven by the run itself.
+ * The plans on sale: the run of cards, the one commit under it, and the way
+ * to restore.
  *
- * The carousel is not a ScrollView, so `ScrollFade`'s own scroll handler has
- * nothing to listen to; the `distance` path hands over the two edge
- * distances as shared values instead, derived from the same `progress` the
- * slides are animated from - one value, one truth, UI thread end to end.
- * Rubber-banding past either end drives `progress` out of range, which
- * clamps to no fade at that edge: there is genuinely nothing behind it.
+ * The run itself is `PlanRun`, the one expensive thing here: a gesture, a
+ * track, three animated slides and their edge fades.
  *
- * Depth is `ROW_FADE`, the shelf depth, because the ask here is consistency
- * with every other edge in the app - the cards are wider than book covers,
- * but a second depth number would be a second decision.
+ * Mounted in the same pass as a press, it holds up the frame that answers
+ * the press, so by default it sits behind its skeleton for a few frames and
+ * dissolves in over it, its edges where the skeleton's are.
+ *
+ * `prebuilt` drops that when the prices are already in hand, which is the
+ * usual case (they are asked for ahead: see `usePlanOffer`). In Settings the
+ * placeholder was seen as the plans loading again on every visit when nothing
+ * was being loaded; the cloud panel is built ahead of the press and kept
+ * instead (`KeptAlive`), so there the run is simply drawn. A real wait, the
+ * store not having answered yet, still draws the skeleton.
+ *
+ * The edge fades blend into `surface` and start at the screen edge only when
+ * `bleed` cancels the page gutter.
  */
-function CarouselEdgeFade({
-  children,
-  initialIndex,
+/** The run, behind its placeholder only when it had to wait for the store. */
+function PlanRunSlot({
+  waited,
+  ready,
   surface,
+  skeleton,
+  children,
 }: {
+  waited: boolean;
+  ready: boolean;
+  surface: "background" | "popover";
+  skeleton: React.ReactNode;
   children: React.ReactNode;
-  initialIndex: number;
-  surface: FadeSurface;
 }) {
-  const { progress, count } = useCarouselState();
-  const color = useFadeColor(surface);
-  // Seeded for the run's resting index, so the first frame is already
-  // correct and the reaction only ever maintains it.
-  const start = useSharedValue(initialIndex * CARD_WIDTH);
-  const end = useSharedValue((count - 1 - initialIndex) * CARD_WIDTH);
-
-  useAnimatedReaction(
-    () => progress.get(),
-    (p) => {
-      start.set(p * CARD_WIDTH);
-      end.set(Math.max(0, count - 1 - p) * CARD_WIDTH);
-    },
-  );
-
+  if (!waited) return <>{children}</>;
   return (
-    <ScrollFade
-      orientation="horizontal"
-      edges="both"
-      size={ROW_FADE}
-      color={color}
-      distance={{ start, end }}
-    >
+    <Handover fill={false} ready={ready} surface={surface} skeleton={skeleton}>
       {children}
-    </ScrollFade>
+    </Handover>
   );
 }
 
-/**
- * The three plans, as a run of cards.
- *
- * `variant="default"` on purpose: it is the plain track, and the docs call it
- * the honest choice for content that is read rather than admired. Three
- * prices are read. `interactive` and `coverflow` rotate their slides, which
- * tilts a price and a button off-axis - a purchase decision is not a shelf of
- * album art.
- *
- * The edge fades are `CarouselEdgeFade` above. They blend into `surface`
- * and start at the screen edge only when `bleed` cancels the page gutter.
- */
 export function PlanCarousel({
   packages,
   catalogue,
   modelCounts,
   busy,
-  loading,
+  ready = true,
+  prebuilt = false,
+  failed = false,
+  onRetry,
   onChoose,
   onSelectionChange,
   onRestore,
@@ -229,32 +224,42 @@ export function PlanCarousel({
     [packages, onChoose],
   );
 
-  const priceFor = React.useCallback(
-    (plan: CreditPlan): string | null => {
-      /*
-       * The store's own localised string, or nothing at all.
-       *
-       * It used to fall back to the plan's own `priceUsd` while the offering
-       * loaded, which drew a real-looking price that nobody was being
-       * charged: wrong currency outside the US, and wrong everywhere the
-       * moment a store price changes, since that constant is only what the
-       * product was set up as. The card shows a waiting shimmer instead, and
-       * the CHOOSE button is already disabled until the packages arrive, so
-       * no purchase can start from a price that was never quoted.
-       *
-       * The string loses its country qualifier and its exactly-zero cents:
-       * "$20", not "US$20.00" - see `formatStorePrice`.
-       */
+  /*
+   * The store's own localised string for each plan, or nothing at all.
+   *
+   * It used to fall back to the plan's own `priceUsd` while the offering
+   * loaded, which drew a real-looking price that nobody was being charged:
+   * wrong currency outside the US, and wrong everywhere the moment a store
+   * price changes, since that constant is only what the product was set up
+   * as. A card with no price shows a waiting shimmer instead, and the CHOOSE
+   * button is already disabled until the packages arrive, so no purchase can
+   * start from a price that was never quoted.
+   *
+   * The string loses its country qualifier and its exactly-zero cents: "$20",
+   * not "US$20.00" - see `formatStorePrice`.
+   */
+  const prices = React.useMemo(() => {
+    const out: Partial<Record<PlanId, string>> = {};
+    for (const plan of plans) {
       const priceString = packages[plan.id]?.product.priceString;
-      return priceString ? formatStorePrice(priceString) : null;
-    },
-    [packages],
-  );
+      if (priceString) out[plan.id] = formatStorePrice(priceString);
+    }
+    return out;
+  }, [packages, plans]);
 
   const bleedStyle = React.useMemo(
     () => ({ marginHorizontal: -bleed }),
     [bleed],
   );
+  const columnStyle = React.useMemo(
+    () => ({ marginHorizontal: bleed }),
+    [bleed],
+  );
+  // The prices could not be had and are not being asked for again.
+  const offerFailed = failed && !ready;
+  // Latched at mount: a run that had to wait keeps its placeholder through
+  // the dissolve, and one that never waited never has one.
+  const [waited] = React.useState(!ready || !prebuilt);
 
   const nothingToBuy = Object.keys(packages).length === 0;
   // The run is bounded to three, but an index arriving from a gesture is not
@@ -265,41 +270,55 @@ export function PlanCarousel({
   return (
     <View className="gap-4">
       <View style={bleedStyle}>
-        <Carousel
-          variant="default"
-          align="center"
-          itemSize={CARD_WIDTH}
-          defaultIndex={initialIndex}
-          onIndexChange={handleIndexChange}
-        >
-          <CarouselEdgeFade initialIndex={initialIndex} surface={surface}>
-            <Carousel.Content style={contentStyle}>
-              {plans.map((plan, index) => (
-                <PlanSlide key={plan.id} index={index}>
-                  <PlanCard
-                    plan={plan}
-                    modelCount={modelCounts[plan.id] ?? 0}
-                    priceLabel={priceFor(plan)}
-                    selected={index === active}
-                    onInfo={() => setInfoPlanId(plan.id)}
-                  />
-                </PlanSlide>
-              ))}
-            </Carousel.Content>
-          </CarouselEdgeFade>
-          <Carousel.Dots className="mt-4 self-center" />
-        </Carousel>
+        {offerFailed ? (
+          // In the column rather than bled to the screen edges.
+          <View style={columnStyle}>
+            <PlanOfferFailed onRetry={onRetry} />
+          </View>
+        ) : (
+          <PlanRunSlot
+            waited={waited}
+            ready={ready}
+            surface={surface}
+            skeleton={
+              <PlanCarouselSkeleton
+                cardWidth={CARD_WIDTH}
+                height={contentStyle.height}
+                count={plans.length}
+                resting={initialIndex}
+              />
+            }
+          >
+            <PlanRun
+              plans={plans}
+              initialIndex={initialIndex}
+              active={active}
+              cardWidth={CARD_WIDTH}
+              contentStyle={contentStyle}
+              prices={prices}
+              modelCounts={modelCounts}
+              surface={surface}
+              onIndexChange={handleIndexChange}
+              onInfo={setInfoPlanId}
+            />
+          </PlanRunSlot>
+        )}
       </View>
 
-      {/* One commit, in a fixed place, naming what it will buy. Gold appears
-          once per screen and never moves; the run is what selects. A label
-          that says which plan is also the difference between a button a
-          screen reader can announce and three that all say "choose". */}
+      {/* One commit, in a fixed place. Gold appears once per screen and never
+          moves; the run is what selects. The button carries the resting
+          card's own mark and the verb, not the plan's name a second time:
+          the name is on the card straight above it, and the mark changing
+          with the run is what ties the two together. Leading, since a
+          trailing mark on a button reads as "this goes somewhere". A screen
+          reader still hears which plan, so the three never all say "choose". */}
       {showAction ? (
         <View>
           <GoldButton
-            label={`${actionVerb} ${activePlan.label.toUpperCase()}`}
-            size="full"
+            label={actionVerb}
+            icon={PLAN_ICON[activePlan.id]}
+            accessibilityLabel={`${actionVerb} ${activePlan.label}`}
+            size="compact"
             loading={busy === activePlan.id}
             disabled={nothingToBuy || busy !== null}
             onPress={() => choose(activePlan.id)}
@@ -336,18 +355,12 @@ export function PlanCarousel({
           </Touchable>
         </View>
       ) : null}
-      {showRestore &&
-      onRestore &&
-      (busy === "restore" || (loading && busy === null)) ? (
+      {/* Only the restore's own wait. A background balance check used to
+          show a spinner here too, coming and going under the run on every
+          visit; the skeleton above is the one loading state now. */}
+      {showRestore && onRestore && busy === "restore" ? (
         <View className="items-center">
-          <Spinner
-            size="sm"
-            label={
-              busy === "restore"
-                ? "Looking for your subscription"
-                : "Checking your plan"
-            }
-          />
+          <Spinner size="sm" label="Looking for your subscription" />
         </View>
       ) : null}
 

@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
-import { MaxContentWidth } from '@/constants/theme';
+import { contentColumn } from '@/constants/theme';
 
 import { ThemedText } from '@/components/themed-text';
 
@@ -40,14 +40,21 @@ export function SectionHeader({
     // centres the header over the capped content on wide screens.
     <View
       className="gap-2 px-6"
-      style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+      style={contentColumn}
     >
       {label && (
         <ThemedText type="labelSm" color={primaryColor}>
           {label}
         </ThemedText>
       )}
-      <View className="flex-row items-baseline gap-3">
+      {/* LOCAL EDIT (Open Citadel): `items-center`, not `items-baseline`.
+          Android only knows a text's baseline once it has been laid out, so a
+          header laid out fresh came out about 4dp taller than the same header
+          laid out again, and everything below it moved whenever anything near
+          it re-laid out: the Continue card jumping a second after the Library
+          drew, Explore's shelves moving as their list took over. Centred, the
+          row is the same height on every pass. Re-apply after an update. */}
+      <View className="flex-row items-center gap-3">
         <ThemedText type="headlineSm" className="flex-1">
           {title}
         </ThemedText>

@@ -1,4 +1,11 @@
-import { Easing, ReduceMotion, withDelay, withTiming } from 'react-native-reanimated';
+import {
+  Easing,
+  ReduceMotion,
+  withDelay,
+  withTiming,
+  type EntryAnimationsValues,
+  type ExitAnimationsValues,
+} from 'react-native-reanimated';
 
 /*
  * The JS colour palette that used to live here was retired in the PanelUI
@@ -19,6 +26,7 @@ export const fontFamily = {
   sansMedium: 'Manrope_500Medium',
   sansSemiBold: 'Manrope_600SemiBold',
   sansBold: 'Manrope_700Bold',
+  mono: 'JetBrainsMono_400Regular',
 } as const;
 
 // ── Typography: Type scale ───────────────────────────────────────────
@@ -83,6 +91,11 @@ export const typography = {
     lineHeight: 16,
     letterSpacing: 1.1,
     textTransform: 'uppercase' as const,
+  },
+  mono: {
+    fontFamily: fontFamily.mono,
+    fontSize: 11,
+    lineHeight: 15,
   },
 } as const;
 
@@ -248,15 +261,18 @@ export function popIn(duration: number = motion.fast) {
  * ```tsx
  * <Animated.View entering={revealIn(0)}>…</Animated.View>
  * ```
+ *
+ * `duration` is for the rare arrival that should be felt settling rather
+ * than just appear, like a question landing in a conversation.
  */
 const REVEAL_RISE = 10;
 const REVEAL_MAX_STEPS = 6;
 
-export function revealIn(index: number = 0) {
+export function revealIn(index: number = 0, duration: number = motion.base) {
   return () => {
     'worklet';
     const delay = Math.min(index, REVEAL_MAX_STEPS) * motion.stagger;
-    const config = { duration: motion.base, easing, reduceMotion: ReduceMotion.System };
+    const config = { duration, easing, reduceMotion: ReduceMotion.System };
     return {
       initialValues: { opacity: 0, transform: [{ translateY: REVEAL_RISE }] },
       animations: {
@@ -281,8 +297,77 @@ export function popOut(duration: number = motion.fast) {
   };
 }
 
+/**
+ * The app's arrival from the bottom edge, for controls that float at the foot
+ * of a screen and come and go with something the listener switched on: the
+ * mini player when an episode starts, read-aloud's controls in the reader.
+ * Up from off screen, back down past the edge on the same path, with no fade:
+ * a solid object coming in from outside the frame, not one materialising in
+ * place. The durations are the full player's own open and close.
+ *
+ * Each travels exactly as far as it takes to clear the edge from where it
+ * sits (plus room for its shadow), so it comes from and goes to the same
+ * place however high it is placed. Anything that has to move with one of
+ * them (the floating buttons riding over the mini player) uses `edgeSlide`
+ * for the same timing.
+ *
+ * ```tsx
+ * <Animated.View entering={slideUpFromEdge} exiting={slideDownPastEdge} />
+ * ```
+ */
+export const edgeSlide = {
+  in: { duration: 280, easing, reduceMotion: ReduceMotion.System },
+  out: { duration: 240, easing, reduceMotion: ReduceMotion.System },
+} as const;
+
+/** Past the edge by a little more than the element, so its shadow goes too. */
+export const EDGE_SHADOW_ROOM = 12;
+
+export function slideUpFromEdge(values: EntryAnimationsValues) {
+  'worklet';
+  const from = values.windowHeight - values.targetGlobalOriginY + EDGE_SHADOW_ROOM;
+  return {
+    initialValues: { transform: [{ translateY: from }] },
+    animations: { transform: [{ translateY: withTiming(0, edgeSlide.in) }] },
+  };
+}
+
+export function slideDownPastEdge(values: ExitAnimationsValues) {
+  'worklet';
+  const to = values.windowHeight - values.currentGlobalOriginY + EDGE_SHADOW_ROOM;
+  return {
+    initialValues: { transform: [{ translateY: 0 }] },
+    animations: { transform: [{ translateY: withTiming(to, edgeSlide.out) }] },
+  };
+}
+
 // ── Layout ───────────────────────────────────────────────────────────
 export const MaxContentWidth = 800;
+
+/**
+ * The content column: centred and capped on wide screens, pixel-identical on
+ * phones (the cap never bites below 800). A horizontal margin goes on a view
+ * INSIDE it, never on the same view: a width and a margin on one element
+ * overflow the cap. Nine screens used to spell this out for themselves.
+ */
+/**
+ * How far past the viewport a FlashList draws, in points: about a screen.
+ * The default (250) left the edge of a fast scroll blank for a moment, with
+ * rows drawing in front of the reader.
+ */
+export const LIST_DRAW_DISTANCE = 800;
+
+/**
+ * A tile's width on every horizontal shelf, books, shows and episodes alike,
+ * so the two libraries' shelves line up.
+ */
+export const SHELF_TILE_WIDTH = 170;
+
+export const contentColumn = {
+  maxWidth: MaxContentWidth,
+  width: '100%',
+  alignSelf: 'center',
+} as const;
 
 /**
  * The spacing system. `spacing` above is the *scale* (which numbers exist);

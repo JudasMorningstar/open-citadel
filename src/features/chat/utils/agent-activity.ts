@@ -74,12 +74,17 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   // Reading the app's own guide back is still reading something back.
   explain_app: 'searching',
 
-  // The first run. `set_up_library` and `download_free_books` both wait on an
-  // approval and then on a system picker, so they get the same `listening`
-  // the destructive calls do: what is in flight is a person deciding.
+  // The first run. Everything that writes waits on an approval first (and the
+  // two book tools on a system picker after it), so they get the same
+  // `listening` the destructive calls do: what is in flight is a person
+  // deciding.
   set_up_library: 'listening',
   download_free_books: 'listening',
+  follow_podcasts: 'listening',
+  follow_blogs: 'listening',
   find_free_books: 'searching',
+  find_podcasts: 'searching',
+  list_blogs: 'searching',
   finish_onboarding: 'working',
 };
 
@@ -96,6 +101,11 @@ export interface AgentActivityInput {
   isThinking: boolean;
   /** Whether the first token has landed — once it has, the bubble speaks. */
   isStreaming: boolean;
+  /**
+   * The message is sent but waits for the model to finish naming the last
+   * chat. A toast says so; an orb as well would say two things at once.
+   */
+  isQueued?: boolean;
 }
 
 /**
@@ -127,8 +137,9 @@ export function agentActivity({
   toolCallStatus,
   isThinking,
   isStreaming,
+  isQueued,
 }: AgentActivityInput): AgentActivity | null {
-  if (!isGenerating) return null;
+  if (!isGenerating || isQueued) return null;
 
   if (isTitling) {
     return { orb: 'shaping', label: 'Naming this chat…' };

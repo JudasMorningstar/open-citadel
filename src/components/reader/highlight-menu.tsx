@@ -513,8 +513,11 @@ export function HighlightMenu({
           {/* Commit group — the button and the row of entry actions are
               related controls, so 12px inside the 24px block rhythm. */}
           <View className="gap-3">
+            {/* Compact: the note is one of several things this sheet does,
+                and the 56pt bar is for a button that is its screen's purpose. */}
             <GoldButton
                 label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
+                size="compact"
                 onPress={handleSave}
                 disabled={!canSaveNote}
               />

@@ -29,10 +29,12 @@
  * as an edge treatment and starts dimming content the reader is trying to
  * read.
  */
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
+import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { ScrollFade } from '@/components/ui/scroll-fade';
+import { ScrollFade, withAlpha } from '@/components/ui/scroll-fade';
 import { useMessageScrollerEdgeDistance } from '@/components/ui/message-scroller';
 import { asColor } from '@/utils/colors';
 
@@ -88,6 +90,63 @@ export function RowFade({
     <ScrollFade size={ROW_FADE} color={color}>
       {children}
     </ScrollFade>
+  );
+}
+
+const EDGE = { position: 'absolute', top: 0, bottom: 0, width: ROW_FADE } as const;
+const AT_START = [EDGE, { left: 0 }];
+const AT_END = [EDGE, { right: 0 }];
+const ACROSS = { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } } as const;
+
+/**
+ * `RowFade` for a short shelf, drawn with plain views.
+ *
+ * `RowFade` is a scroller made animated, a scroll handler on the UI thread
+ * and two animated layers, per shelf. A page of shelves builds a dozen of
+ * those, the first three before its drawer can start to rise. This is two
+ * gradients that are there or not: the row says which edges have something
+ * past them (`start`, `end`), which changes twice in a scroll.
+ *
+ * So it does not ease in over the first few points of a scroll as `RowFade`
+ * does. On a shelf, where the fade is a few points wide and the tile under it
+ * is moving, the difference does not read.
+ */
+export function PlainRowFade({
+  surface = 'background',
+  start,
+  end,
+  children,
+}: {
+  surface?: FadeSurface;
+  /** There is something scrolled off the leading edge. */
+  start: boolean;
+  /** There is something past the trailing edge. */
+  end: boolean;
+  children: React.ReactNode;
+}) {
+  const color = useFadeColor(surface);
+  return (
+    <View>
+      {children}
+      {color && start ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha(color, 1), withAlpha(color, 0)]}
+          start={ACROSS.start}
+          end={ACROSS.end}
+          style={AT_START}
+        />
+      ) : null}
+      {color && end ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha(color, 0), withAlpha(color, 1)]}
+          start={ACROSS.start}
+          end={ACROSS.end}
+          style={AT_END}
+        />
+      ) : null}
+    </View>
   );
 }
 

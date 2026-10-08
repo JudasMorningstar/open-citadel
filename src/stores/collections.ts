@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { bookCollections, books, collections } from '@/db/schema';
+import { keepUnchanged } from '@/utils/keep-unchanged';
 
 type Collection = typeof collections.$inferSelect;
 type Book = typeof books.$inferSelect;
@@ -40,7 +41,7 @@ export const useCollectionsStore = create<CollectionsState>((set, get) => ({
       })
     );
 
-    set({ collections: withCounts, isLoading: false });
+    set({ collections: keepUnchanged(get().collections, withCounts), isLoading: false });
   },
 
   createCollection: async (name: string) => {

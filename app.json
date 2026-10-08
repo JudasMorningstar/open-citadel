@@ -2,7 +2,7 @@
   "expo": {
     "name": "Open Citadel",
     "slug": "open-citadel",
-    "version": "1.2.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icons/ios-dark.png",
     "scheme": "opencitadel",
@@ -76,12 +76,20 @@
       "expo-sqlite",
       "expo-document-picker",
       "expo-file-system",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       "./plugins/withCoreDesugaring",
       "./plugins/withCleartextTraffic",
       ["./plugins/withGradleVersion", "8.13"],
       "./plugins/withAbiFilters",
+      "./plugins/withExecuTorchPackaging",
       "./plugins/withReadiumPodfile",
-      "@dr33m/react-native-litert-lm",
       [
         "expo-build-properties",
         {
@@ -93,12 +101,13 @@
             "usesCleartextTraffic": true
           },
           "ios": {
-            "deploymentTarget": "16.4"
+            "deploymentTarget": "17.0"
           }
         }
       ],
       "expo-sharing",
-      "./plugins/withBackgroundAudio"
+      "./plugins/withBackgroundAudio",
+      "./plugins/withNotificationIcon"
     ],
     "experiments": {
       "typedRoutes": true,

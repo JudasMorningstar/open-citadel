@@ -6,6 +6,7 @@ import { easing, motion } from '@/constants/theme';
 import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
 
 const FILL: { flex: 1 } = { flex: 1 };
+const CLIP: { overflow: 'hidden' } = { overflow: 'hidden' };
 
 /**
  * Holds an expensive region behind a placeholder, then dissolves the
@@ -42,11 +43,19 @@ const FILL: { flex: 1 } = { flex: 1 };
  * pop in miniature. `surface` picks which ground it paints, because a sheet
  * sits on `popover` and a screen on `background`, and an overlay that guesses
  * wrong announces itself as a rectangle.
+ *
+ * `fill={false}` is for a region inside a page rather than the whole of one:
+ * the part below a hero that is drawn at once (an episode's notes under its
+ * artwork and buttons). Until the body mounts, the placeholder sits in the
+ * page's flow and holds the region's height; once it has, the placeholder
+ * covers the body as above, clipped to the body's size so a placeholder
+ * taller than the content never hangs over whatever follows.
  */
 export function Handover({
   skeleton,
   surface = 'background',
   ready = true,
+  fill = true,
   children,
 }: {
   skeleton: React.ReactNode;
@@ -54,11 +63,22 @@ export function Handover({
   surface?: 'background' | 'popover';
   /** Hold the body back until this is true — see the note above. */
   ready?: boolean;
+  /** Fill the space it is given (a screen's body), or take the body's own height (a region of a page). */
+  fill?: boolean;
   children: React.ReactNode;
 }) {
   const painted = useAfterFirstPaint();
   const mounted = painted && ready;
   const [covered, setCovered] = React.useState(true);
+  // In a page's flow the placeholder is clipped to the body until it has
+  // faded, so the clip outlasts `covered` by the length of the fade.
+  const [clipped, setClipped] = React.useState(!fill);
+
+  React.useEffect(() => {
+    if (covered || !clipped) return undefined;
+    const timer = setTimeout(() => setClipped(false), motion.base);
+    return () => clearTimeout(timer);
+  }, [covered, clipped]);
 
   React.useEffect(() => {
     if (!mounted) return undefined;
@@ -75,16 +95,26 @@ export function Handover({
     };
   }, [mounted]);
 
+  // In flow, the placeholder is laid out as the region until the body is there
+  // to take its place.
+  const coverStyle = fill || mounted ? StyleSheet.absoluteFill : undefined;
+  const regionStyle = fill ? FILL : clipped && mounted ? CLIP : undefined;
+
   return (
-    <View style={FILL}>
+    <View style={regionStyle}>
       {mounted ? children : null}
       {covered ? (
         <Animated.View
           // Never in the way of a tap: by the time this is fading, the content
           // beneath it is real and pressable.
           pointerEvents="none"
+          // Faded as one picture. Android otherwise applies the opacity to
+          // each child in turn, so mid-fade the cover's own ground is laid
+          // half over the content and its tiles half over that: a cover
+          // identical to the content beneath still washed it out and back.
+          needsOffscreenAlphaCompositing
           className={surface === 'popover' ? 'bg-popover' : 'bg-background'}
-          style={StyleSheet.absoluteFill}
+          style={coverStyle}
           exiting={FadeOut.duration(motion.base).easing(easing)}
         >
           {skeleton}

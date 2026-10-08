@@ -28,13 +28,12 @@ import {
     StorageAccessFramework,
     copyAsync,
     deleteAsync,
-    downloadAsync,
     getInfoAsync,
     readAsStringAsync,
     writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
-import { OWNED_DIR, ensureOwnedDir, pickAndImportEpubsWithResult } from '@/services/book-import';
+import { pickAndImportEpubsWithResult } from '@/services/book-import';
 import { useBooksStore } from '@/stores/books';
 
 /** What the folder is called, and what Samwell calls it when he speaks of it. */
@@ -143,7 +142,7 @@ async function sweepForEpubs(
  * means the process dies in the middle of moving somebody's books. Refusing is
  * a book reported as skipped and left exactly where it was.
  */
-const MAX_BASE64_BYTES = 48 * 1024 * 1024;
+export const MAX_BASE64_BYTES = 48 * 1024 * 1024;
 
 /** A copy that is actually present and not empty. */
 async function copyLanded(destUri: string): Promise<boolean> {
@@ -301,117 +300,6 @@ async function setUpIosLibrary(): Promise<LibrarySetupResult> {
 
 export async function setUpLibrary(): Promise<LibrarySetupResult> {
   return isAndroid() ? setUpAndroidLibrary() : setUpIosLibrary();
-}
-
-/**
- * The library folder, made if it is not there yet.
- *
- * Downloading free books has to work for somebody who said they had no books
- * and therefore never ran `setUpLibrary`. On iOS that is just the owned
- * folder. On Android it means asking for a folder after all, which is why the
- * download tool needs approval too: it can open a system picker.
- */
-async function ensureLibraryFolder(): Promise<string | null> {
-  const store = useBooksStore.getState();
-
-  if (!isAndroid()) {
-    await ensureOwnedDir();
-    await store.initLibrary();
-    return OWNED_DIR;
-  }
-
-  const existing = store.booksDirectoryUri;
-  if (existing) return existing;
-
-  const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
-  if (!permission.granted) return null;
-
-  const folderUri = await StorageAccessFramework.makeDirectoryAsync(
-    permission.directoryUri,
-    LIBRARY_FOLDER_NAME,
-  );
-  await store.setDirectoryUri(folderUri, { scan: false });
-  return folderUri;
-}
-
-export type DownloadedBook = { title: string };
-export type DownloadFailure = { id: number; error: string };
-
-/**
- * Put a downloaded EPUB into the library folder.
- *
- * Two paths because the destination is two different kinds of thing. A
- * `file://` folder takes the download directly. A SAF folder cannot be a
- * download target at all, so the file lands in the cache first and is written
- * across as base64 — which is why the cache copy is cleaned up afterwards
- * rather than left to the OS.
- */
-async function saveEpubTo(
-  folderUri: string,
-  fileName: string,
-  sourceUrl: string,
-): Promise<void> {
-  if (!folderUri.startsWith('content://')) {
-    const result = await downloadAsync(sourceUrl, `${folderUri}${fileName}`);
-    if (result.status !== 200) {
-      throw new Error(`Project Gutenberg answered ${result.status}.`);
-    }
-    return;
-  }
-
-  const staging = `${OWNED_DIR}${fileName}`;
-  await ensureOwnedDir();
-  const result = await downloadAsync(sourceUrl, staging);
-  try {
-    if (result.status !== 200) {
-      throw new Error(`Project Gutenberg answered ${result.status}.`);
-    }
-    const destUri = await StorageAccessFramework.createFileAsync(
-      folderUri,
-      fileName.replace(/\.epub$/i, ''),
-      'application/epub+zip',
-    );
-    const contents = await readAsStringAsync(staging, { encoding: EncodingType.Base64 });
-    await writeAsStringAsync(destUri, contents, { encoding: EncodingType.Base64 });
-  } finally {
-    await deleteAsync(staging, { idempotent: true }).catch(() => {});
-  }
-}
-
-/** A filename that survives being a URL. See `safeFileName` in book-import. */
-function safeName(title: string): string {
-  const cleaned =
-    title
-      .normalize('NFKD')
-      .replace(/[^A-Za-z0-9-_]+/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '')
-      .slice(0, 60) || 'book';
-  return `${cleaned}.epub`;
-}
-
-export async function downloadBooksIntoLibrary(
-  books: { id: number; title: string; epubUrl: string }[],
-): Promise<{ downloaded: string[]; failed: DownloadFailure[]; cancelled: boolean }> {
-  const folderUri = await ensureLibraryFolder();
-  if (!folderUri) return { downloaded: [], failed: [], cancelled: true };
-
-  const downloaded: string[] = [];
-  const failed: DownloadFailure[] = [];
-
-  for (const book of books) {
-    try {
-      await saveEpubTo(folderUri, safeName(book.title), book.epubUrl);
-      downloaded.push(book.title);
-    } catch (error) {
-      failed.push({
-        id: book.id,
-        error: error instanceof Error ? error.message : 'The download failed.',
-      });
-    }
-  }
-
-  return { downloaded, failed, cancelled: false };
 }
 
 /**

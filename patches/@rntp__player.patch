@@ -1,0 +1,361 @@
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
+index 7da495f568b686444e13e4a3857911e5641ff7d0..c82e3a6e8920353b75055e185aaebdf2fe0ed033 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
+@@ -58,7 +58,20 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+ 
+   @ReactMethod
+   override fun setupPlayer(map: ReadableMap) {
+-    val config = PlayerConfig.fromReadableMap(map)
++    // PATCHED (Open Citadel): what the lock screen may do is `setCommands`'s to
++    // say, not this call's, which knows nothing of it and was putting it back
++    // to play/pause with 15 second skips. A second setup in a process whose
++    // service is still playing (the app reopened after its task was swiped
++    // away) then left the service with those until the next `setCommands`.
++    // Upstream keeps them from 5.11.
++    val stored = PlayerConfig().load(context)
++    val config = PlayerConfig.fromReadableMap(map).copy(
++      availableCommands = stored.availableCommands,
++      remoteControlHandling = stored.remoteControlHandling,
++      perCommandHandling = stored.perCommandHandling,
++      forwardInterval = stored.forwardInterval,
++      backwardInterval = stored.backwardInterval,
++    )
+     config.store(context)
+     controller.run {
+       val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
+@@ -204,8 +217,16 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   @ReactMethod
+   override fun setMediaItems(data: ReadableArray, startIndex: Double) {
+     val mediaItems = readableArrayToMediaItems(data)
++    // PATCHED (Open Citadel): the start item's `startPosition`, so the queue
++    // loads where it should begin. A separate seekTo is a custom command that
++    // can reach the session before this load does, and the load resets to 0.
++    val startMap = data.getMap(startIndex.toInt())
++    val startPositionMs =
++      if (startMap != null && startMap.hasKey("startPosition") && !startMap.isNull("startPosition"))
++        (startMap.getDouble("startPosition") * 1000).toLong().coerceAtLeast(0)
++      else 0L
+     controller.run { mc ->
+-      mc?.setMediaItems(mediaItems, startIndex.toInt(), 0)
++      mc?.setMediaItems(mediaItems, startIndex.toInt(), startPositionMs)
+       mc?.prepare()
+     }
+     context.emitEvent(QueueChangedEvent())
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
+index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c41621e71bbe0 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
+@@ -36,6 +36,9 @@ import androidx.media3.exoplayer.hls.offline.HlsDownloader
+ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+ import androidx.media3.exoplayer.source.MediaSource
+ import java.io.File
++import androidx.media3.extractor.DefaultExtractorsFactory
++import androidx.media3.session.CommandButton
++import androidx.media3.session.R as Media3R
+ import androidx.media3.session.DefaultMediaNotificationProvider
+ import androidx.media3.session.LibraryResult
+ import androidx.media3.session.MediaLibraryService
+@@ -126,7 +129,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         cachedFactory = DefaultMediaSourceFactory(cacheDataSourceFactory),
+         uncachedFactory = DefaultMediaSourceFactory(upstreamFactory)
+       )
+-    } ?: DefaultMediaSourceFactory(upstreamFactory)
++    } ?: DefaultMediaSourceFactory(
++      upstreamFactory,
++      // PATCHED (Open Citadel): an MP3 or AAC stream with no seek table of its
++      // own (no Xing/VBRI frame, or one without a table of contents) is
++      // otherwise not seekable at all. Media3 then withholds the seek command
++      // for that item, so the lock screen has no scrubber for it and a seek
++      // made in the app restarts it. Seeking by bitrate is what podcast
++      // players do for these.
++      DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
++    )
+ 
+     val built = ExoPlayer.Builder(this)
+       .setMediaSourceFactory(mediaSourceFactory)
+@@ -195,6 +207,13 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         if (isPlaying) startProgressSyncTimer() else stopProgressSyncTimer(fireFinalTick = true)
+       }
+ 
++      // PATCHED (Open Citadel): the item's own commands changed (it has become
++      // seekable, or is not), which is what the scrubber goes by.
++      override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
++        val session = mediaSession ?: return
++        logRemoteCommands("player", playerConfig ?: config, session)
++      }
++
+       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+         val currentIndex = activePlayer?.currentMediaItemIndex ?: 0
+         sleepTimerController?.handleItemTransition(currentIndex)
+@@ -222,6 +241,14 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+ 
+     val sessionActivityIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+       flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
++      // PATCHED (Open Citadel): a tap on the notification says where it came
++      // from. A bare launch intent only brings the app forward, on whatever
++      // screen it was left on, and the app cannot tell that tap from its icon
++      // being pressed. React Native hands an intent's data to `Linking` when
++      // its action is VIEW; the activity is still named explicitly, so no
++      // intent filter is needed for this address.
++      action = Intent.ACTION_VIEW
++      data = android.net.Uri.parse("trackplayer://notification.click")
+     }
+     val sessionActivity = sessionActivityIntent?.let {
+       PendingIntent.getActivity(
+@@ -232,6 +259,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+ 
+     mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, player, this)
+       .apply { sessionActivity?.let { setSessionActivity(it) } }
++      // PATCHED (Open Citadel): see `mediaButtonPreferencesFor`.
++      .setMediaButtonPreferences(mediaButtonPreferencesFor(config))
+       .build()
+ 
+     setupNotificationProvider(config)
+@@ -282,28 +311,161 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         emitRemoteEventIfNeeded(RemotePreviousEvent(), PlayerCommand.PREVIOUS)
+       }
+ 
++      // PATCHED (Open Citadel): the skip lengths in force now. ExoPlayer's own
++      // are fixed when the player is built, from a config that `setupPlayer`
++      // writes before `setCommands` has said what they are, so a skip from
++      // the lock screen or a headset was always 15 seconds whatever the
++      // listener had chosen.
++      override fun getSeekForwardIncrement(): Long = (playerConfig ?: config).forwardInterval * 1000
++
++      override fun getSeekBackIncrement(): Long = (playerConfig ?: config).backwardInterval * 1000
++
+       override fun seekForward() {
++        val incrementMs = seekForwardIncrement
+         if (shouldHandleNatively(PlayerCommand.SKIP_FORWARD)) {
+-          super.seekForward()
++          seekByOffset(wrappedPlayer, incrementMs)
+         }
+         emitRemoteEventIfNeeded(
+-          RemoteSkipForwardEvent(config.forwardInterval.toDouble()),
++          RemoteSkipForwardEvent(incrementMs / 1000.0),
+           PlayerCommand.SKIP_FORWARD
+         )
+       }
+ 
+       override fun seekBack() {
++        val incrementMs = seekBackIncrement
+         if (shouldHandleNatively(PlayerCommand.SKIP_BACKWARD)) {
+-          super.seekBack()
++          seekByOffset(wrappedPlayer, -incrementMs)
+         }
+         emitRemoteEventIfNeeded(
+-          RemoteSkipBackwardEvent(config.backwardInterval.toDouble()),
++          RemoteSkipBackwardEvent(incrementMs / 1000.0),
+           PlayerCommand.SKIP_BACKWARD
+         )
+       }
+     }
+   }
+ 
++  /** PATCHED (Open Citadel): a skip by `offsetMs`, kept inside the item, as ExoPlayer's own is. */
++  private fun seekByOffset(player: Player, offsetMs: Long) {
++    var positionMs = player.currentPosition + offsetMs
++    val durationMs = player.duration
++    if (durationMs != C.TIME_UNSET) positionMs = minOf(positionMs, durationMs)
++    player.seekTo(maxOf(positionMs, 0L))
++  }
++
++  // region Media Button Preferences (PATCHED, Open Citadel)
++
++  /**
++   * The skip buttons for the notification and the lock screen. Without media
++   * button preferences Media3 only ever offers previous, play and next there,
++   * so `SkipBackward` and `SkipForward` were capabilities with no button. As
++   * upstream does from 5.11: a skip takes its side's slot, and next or
++   * previous move to the overflow rather than being lost.
++   */
++  @OptIn(UnstableApi::class)
++  private fun mediaButtonPreferencesFor(config: PlayerConfig): List<CommandButton> {
++    val commands = config.availableCommands
++    val skipBack = PlayerCommand.SKIP_BACKWARD in commands
++    val skipForward = PlayerCommand.SKIP_FORWARD in commands
++    if (!skipBack && !skipForward) return emptyList()
++    val buttons = mutableListOf<CommandButton>()
++    if (skipBack) {
++      buttons.add(
++        commandButton(
++          skipBackIcon(config.backwardInterval),
++          Player.COMMAND_SEEK_BACK,
++          getString(Media3R.string.media3_controls_seek_back_description),
++          CommandButton.SLOT_BACK
++        )
++      )
++    }
++    if (skipForward) {
++      buttons.add(
++        commandButton(
++          skipForwardIcon(config.forwardInterval),
++          Player.COMMAND_SEEK_FORWARD,
++          getString(Media3R.string.media3_controls_seek_forward_description),
++          CommandButton.SLOT_FORWARD
++        )
++      )
++    }
++    if (skipBack && PlayerCommand.PREVIOUS in commands) {
++      buttons.add(
++        commandButton(
++          CommandButton.ICON_PREVIOUS,
++          Player.COMMAND_SEEK_TO_PREVIOUS,
++          getString(Media3R.string.media3_controls_seek_to_previous_description),
++          CommandButton.SLOT_BACK,
++          CommandButton.SLOT_OVERFLOW
++        )
++      )
++    }
++    if (skipForward && PlayerCommand.NEXT in commands) {
++      buttons.add(
++        commandButton(
++          CommandButton.ICON_NEXT,
++          Player.COMMAND_SEEK_TO_NEXT,
++          getString(Media3R.string.media3_controls_seek_to_next_description),
++          CommandButton.SLOT_FORWARD,
++          CommandButton.SLOT_OVERFLOW
++        )
++      )
++    }
++    return buttons
++  }
++
++  @OptIn(UnstableApi::class)
++  private fun commandButton(icon: Int, playerCommand: Int, displayName: String, vararg slots: Int): CommandButton =
++    CommandButton.Builder(icon)
++      .setPlayerCommand(playerCommand)
++      .setSlots(*slots)
++      .setDisplayName(displayName)
++      .build()
++
++  private fun skipBackIcon(seconds: Long): Int = when (seconds) {
++    5L -> CommandButton.ICON_SKIP_BACK_5
++    10L -> CommandButton.ICON_SKIP_BACK_10
++    15L -> CommandButton.ICON_SKIP_BACK_15
++    30L -> CommandButton.ICON_SKIP_BACK_30
++    else -> CommandButton.ICON_SKIP_BACK
++  }
++
++  private fun skipForwardIcon(seconds: Long): Int = when (seconds) {
++    5L -> CommandButton.ICON_SKIP_FORWARD_5
++    10L -> CommandButton.ICON_SKIP_FORWARD_10
++    15L -> CommandButton.ICON_SKIP_FORWARD_15
++    30L -> CommandButton.ICON_SKIP_FORWARD_30
++    else -> CommandButton.ICON_SKIP_FORWARD
++  }
++
++  @OptIn(UnstableApi::class)
++  private fun syncMediaButtonPreferences(session: MediaSession, config: PlayerConfig) {
++    val preferences = mediaButtonPreferencesFor(config)
++    if (preferences != session.mediaButtonPreferences) {
++      session.setMediaButtonPreferences(preferences)
++    }
++  }
++
++  /**
++   * One line per change of what the lock screen may do, for `adb logcat -s
++   * TrackPlayer`: the capabilities asked for, the buttons offered, and whether
++   * the item playing can be seeked in at all (no scrubber is drawn if not).
++   */
++  @OptIn(UnstableApi::class)
++  private fun logRemoteCommands(source: String, config: PlayerConfig, session: MediaSession) {
++    val player = activePlayer
++    android.util.Log.d(
++      "TrackPlayer",
++      "[RNTP-COMMANDS] source=$source " +
++        "capabilities=${config.availableCommands.joinToString(",") { it.value }} " +
++        "buttons=${session.mediaButtonPreferences.size} " +
++        "controllers=${session.connectedControllers.size} " +
++        "seekBackMs=${config.backwardInterval * 1000} seekForwardMs=${config.forwardInterval * 1000} " +
++        "seekable=${player?.isCurrentMediaItemSeekable} durationMs=${player?.duration}"
++    )
++  }
++
++  // endregion
++
+   @OptIn(UnstableApi::class)
+   private fun setupNotificationProvider(config: PlayerConfig) {
+     val channelId = config.notificationChannelId ?: return
+@@ -388,11 +550,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+     session: MediaSession,
+     controller: MediaSession.ControllerInfo
+   ): MediaSession.ConnectionResult {
+-    playerConfig = PlayerConfig().load(this)
++    val config = PlayerConfig().load(this)
++    playerConfig = config
++
++    // PATCHED (Open Citadel): the notification's controller is the one whose
++    // buttons and commands the lock screen shows.
++    if (session.isMediaNotificationController(controller)) {
++      syncMediaButtonPreferences(session, config)
++      logRemoteCommands("notification-connect", config, session)
++    }
+ 
+     return AcceptedResultBuilder(session)
+       .setAvailableSessionCommands(buildSessionCommands())
+-      .setAvailablePlayerCommands(buildPlayerCommands(playerConfig ?: PlayerConfig()))
++      .setAvailablePlayerCommands(buildPlayerCommands(config))
+       .build()
+   }
+ 
+@@ -404,12 +574,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+   ): ListenableFuture<SessionResult> {
+     when (customCommand.customAction) {
+       COMMAND_UPDATE_COMMANDS -> {
+-        playerConfig = PlayerConfig().load(this)
+-        val playerCommands = buildPlayerCommands(playerConfig ?: PlayerConfig())
++        val config = PlayerConfig().load(this)
++        playerConfig = config
++        val playerCommands = buildPlayerCommands(config)
+         val sessionCommands = buildSessionCommands()
++        // PATCHED (Open Citadel): the skip buttons follow the capabilities.
++        syncMediaButtonPreferences(session, config)
+         for (connectedController in session.connectedControllers) {
+           session.setAvailableCommands(connectedController, sessionCommands, playerCommands)
+         }
++        logRemoteCommands("update", config, session)
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
+       COMMAND_UPDATE_BROWSE_TREE -> {
+diff --git a/lib/typescript/src/interfaces/MediaItem.d.ts b/lib/typescript/src/interfaces/MediaItem.d.ts
+index 3689842ac4d0b39eaf347e4bace291d33f049379..cf089c2121835d7f5892951e8aaa14a6c7132597 100644
+--- a/lib/typescript/src/interfaces/MediaItem.d.ts
++++ b/lib/typescript/src/interfaces/MediaItem.d.ts
+@@ -45,6 +45,15 @@ export interface MediaItem {
+      * Duration in seconds (optional hint for UI).
+      */
+     duration?: number;
++    /**
++     * PATCHED (Open Citadel): where to start this item, in seconds, when it is
++     * the start item of `setMediaItems`. Android only. A `seekTo` sent right
++     * after `setMediaItems` travels as a custom session command, which is not
++     * ordered with the queue change, and was being applied before it: the load
++     * then reset the position to 0 and a resumed episode started over. Passing
++     * the position with the load is media3's own way to start part-way.
++     */
++    startPosition?: number;
+     /**
+      * Whether this is a live stream.
+      *
+diff --git a/src/interfaces/MediaItem.ts b/src/interfaces/MediaItem.ts
+index 8d912aea555d5b15e864c5b76b245cc2e42083d4..1ab5a94957c234d9fb61cab783f23e5806d8de22 100644
+--- a/src/interfaces/MediaItem.ts
++++ b/src/interfaces/MediaItem.ts
+@@ -50,6 +50,15 @@ export interface MediaItem {
+    * Duration in seconds (optional hint for UI).
+    */
+   duration?: number;
++  /**
++   * PATCHED (Open Citadel): where to start this item, in seconds, when it is
++   * the start item of `setMediaItems`. Android only. A `seekTo` sent right
++   * after `setMediaItems` travels as a custom session command, which is not
++   * ordered with the queue change, and was being applied before it: the load
++   * then reset the position to 0 and a resumed episode started over. Passing
++   * the position with the load is media3's own way to start part-way.
++   */
++  startPosition?: number;
+   /**
+    * Whether this is a live stream.
+    *

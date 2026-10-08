@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { MaxContentWidth, fontFamily } from '@/constants/theme';
+import { contentColumn, fontFamily } from '@/constants/theme';
 import { IconButton, IconButtonSpacer } from '@/components/icon-button';
 
 type ScreenHeaderProps = {
@@ -41,6 +41,12 @@ type ScreenHeaderProps = {
    * book a chat is grounded in, for instance).
    */
   children?: React.ReactNode;
+  /**
+   * Something drawn in the title's place, in `center` mode: a control that IS
+   * the title, like the Library's switch between books and podcasts. The
+   * 40dp boxes either side stay, so the bar keeps its shape.
+   */
+  center?: React.ReactNode;
 };
 
 /**
@@ -79,6 +85,7 @@ export function ScreenHeader({
   titleItalic = false,
   align = 'center',
   children,
+  center,
 }: ScreenHeaderProps) {
   // ThemedText's `color` prop takes a literal, never a className — resolved
   // here from the same token the container's `border-border` reads.
@@ -92,7 +99,7 @@ export function ScreenHeader({
       // content below it instead of stretching edge-to-edge.
       <View
         className="flex-row items-center justify-between px-6 py-4"
-        style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+        style={contentColumn}
       >
         <View>
           <ThemedText
@@ -125,7 +132,7 @@ export function ScreenHeader({
       // shape of the header.
       <View
         className="flex-row items-center gap-3 px-6 py-4"
-        style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+        style={contentColumn}
       >
         {leftIcon != null ? (
           <HeaderButton icon={leftIcon} onPress={onLeftPress} label={leftLabel} />
@@ -157,7 +164,7 @@ export function ScreenHeader({
     // Same content-column cap as the `left` variant above.
     <View
       className="flex-row items-center gap-3 px-6 py-4"
-      style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+      style={contentColumn}
     >
       {/* An empty side still holds its 40dp, so the title is centred on the
           header rather than on whatever is left over — a title that shifts
@@ -169,14 +176,16 @@ export function ScreenHeader({
       )}
 
       <View className="flex-1 items-center gap-[2px]">
-        <ThemedText
-          type="headlineSm"
-          numberOfLines={1}
-          className="text-center"
-          style={titleItalic ? { fontFamily: fontFamily.serifItalic } : undefined}
-        >
-          {title}
-        </ThemedText>
+        {center ?? (
+          <ThemedText
+            type="headlineSm"
+            numberOfLines={1}
+            className="text-center"
+            style={titleItalic ? { fontFamily: fontFamily.serifItalic } : undefined}
+          >
+            {title}
+          </ThemedText>
+        )}
         {children}
       </View>
 

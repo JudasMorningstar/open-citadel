@@ -31,7 +31,7 @@
     },
     "src/components/ui/icons.tsx": {
       "item": "icons",
-      "digest": "sha256:44f6428950652d9d81ac325fc64d1cb8884074b5a9dbb9095e1e1a483f43ea10"
+      "digest": "sha256:40304ab28217324e0f5261b7008d59f09dacec988e8b1a08479c1f23ed448f0b"
     },
     "src/hooks/use-direction.ts": {
       "item": "use-direction",
@@ -39,7 +39,7 @@
     },
     "src/lib/native.ts": {
       "item": "native",
-      "digest": "sha256:4100721470e08265f0013499cc4b2c16cf5e4aa6b2e0113cd030de7a37e83d44"
+      "digest": "sha256:44407dea4ffaececbb542fb459022cd6abccf222c671246f98c70b0ad91d6e2e"
     },
     "src/components/ui/spinner.tsx": {
       "item": "spinner",
@@ -55,7 +55,7 @@
     },
     "src/components/ui/scrim.tsx": {
       "item": "scrim",
-      "digest": "sha256:76e113e0f699505d878ec6ac1c2384ca6dfaea2f0235f9050b52cce045c4fad6"
+      "digest": "sha256:b8a5f68918ced359b54fa8897f752c6f18ad6a9f2e8e445c572d19f518986fb2"
     },
     "src/hooks/use-back-handler.ts": {
       "item": "use-back-handler",
@@ -131,7 +131,7 @@
     },
     "src/components/ui/glass.tsx": {
       "item": "glass",
-      "digest": "sha256:103d8e3fa272237dd484aa323767c7f421491b922a869c6de409f19d380ef4c7"
+      "digest": "sha256:e58481382de7885fd09d853b5850ac3e88feb283a548ae31a6ab016b92410c2a"
     },
     "src/components/ui/soundwave.tsx": {
       "item": "soundwave",
@@ -221,10 +221,6 @@
       "item": "animated-pressable",
       "digest": "sha256:1b36a4a54b2b7e58ebb087370f867b8f8641d7e620045d97e931abad6356d150"
     },
-    "components/ui/icons.tsx": {
-      "item": "icons",
-      "digest": "sha256:e383acec2fe3d33f10e22ab04ac6519615652c68ee157050c1f4dc1a8209331f"
-    },
     "hooks/use-direction.ts": {
       "item": "use-direction",
       "digest": "sha256:9202d8550abaed8720af42d0320acf51e227fbf23f649b5636fd26475b849867"
@@ -281,10 +277,6 @@
       "item": "haptics",
       "digest": "sha256:aad3c62bb6b9039ef5db86da4f161e415f3f459e25b192a192ae325997733e41"
     },
-    "lib/native.ts": {
-      "item": "native",
-      "digest": "sha256:8597ae8286dcb79976782c4e93c2f2591def77deb174fb84d43aa44187171193"
-    },
     "components/ui/portal.tsx": {
       "item": "portal",
       "digest": "sha256:3f77c536fdc107ee1e2993f849b53440b051170378c9467d73b41f9ff6ec1614"
@@ -296,10 +288,6 @@
     "components/ui/modal-isolation-store.ts": {
       "item": "modal-isolation-store",
       "digest": "sha256:346301f0da15175f23a8918834d0c6e9bbdb096e3c130fa92bc9640dc3500c70"
-    },
-    "components/ui/scrim.tsx": {
-      "item": "scrim",
-      "digest": "sha256:76e113e0f699505d878ec6ac1c2384ca6dfaea2f0235f9050b52cce045c4fad6"
     },
     "hooks/use-back-handler.ts": {
       "item": "use-back-handler",
@@ -368,6 +356,14 @@
     "src/components/ui/message-scroller-math.ts": {
       "item": "message-scroller",
       "digest": "sha256:d45cafb28969bb6288dfb6ffd2e4470d282723cdfd548379ad285184c2cb40cf"
+    },
+    "src/components/ui/fab.tsx": {
+      "item": "fab",
+      "digest": "sha256:e7eead53bd8d460989ef39c36a123901a422da8d0a23120269f0e4fe2c63c3e6"
+    },
+    "src/lib/native-host.tsx": {
+      "item": "native",
+      "digest": "sha256:c03292c099c4cf992798e6cde2b0628731f8e6f30f88a992b8f2b3c8e47a210e"
     }
   },
   "roots": {
@@ -692,6 +688,20 @@
       "icons",
       "use-direction",
       "text"
+    ],
+    "fab": [
+      "fab",
+      "animated-pressable",
+      "cn",
+      "glass",
+      "scrim",
+      "use-theme",
+      "haptics",
+      "icons",
+      "use-direction",
+      "native",
+      "text",
+      "use-back-handler"
     ]
   },
   "legacyFiles": [],

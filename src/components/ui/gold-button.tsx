@@ -28,11 +28,13 @@ type GoldButtonProps = {
   /**
    * How much of a commitment the press is.
    *
-   * `full` is the 56pt bar this started as, and it is right where the button
-   * IS the screen's purpose: ADD BOOKS, SAVE, pick a library folder. It got
-   * used for a dialog's dismiss as well, and at that size a button whose whole
-   * job is "yes, I have read this" shouted louder than the thing it was
-   * dismissing.
+   * `compact` is the default, and the size of every gold button in the app.
+   *
+   * `full` is the 56pt bar this started as. Nothing uses it any more: the
+   * owner found it out of place everywhere it stood (2026-10-08), including
+   * the update dialog, the plan cards and the import flow, where it had been
+   * kept the longest. It stays as an option only so a reason to use it has
+   * to be written down at the call site.
    *
    * `compact` is the size every other button in the app is — the same 40pt box
    * as FINISH GOAL and MAKE THIS THE MAIN GOAL — for an acknowledgement, or
@@ -62,6 +64,15 @@ type GoldButtonProps = {
    * exactly the moment a second tap is worst.
    */
   loading?: boolean;
+  /**
+   * Working on the press, with its own mark of progress drawn elsewhere (the
+   * free book page's outline running round the button).
+   *
+   * Keeps the label, since the label is what says what is happening, and
+   * stops the press. Dimmed less than `disabled`, so the label still reads,
+   * but not lit, so the button does not look as if it takes a second press.
+   */
+  busy?: boolean;
 };
 
 export function GoldButton({
@@ -69,9 +80,10 @@ export function GoldButton({
   accessibilityLabel,
   onPress,
   icon: Icon,
-  size = "full",
+  size = "compact",
   disabled = false,
   loading = false,
+  busy = false,
 }: GoldButtonProps) {
   const [primary, primaryDeep, primaryForeground] = useCSSVariable([
     "--color-primary",
@@ -122,6 +134,7 @@ export function GoldButton({
         },
         lit: { opacity: 1 },
         dimmed: { opacity: 0.35 },
+        working: { opacity: 0.6 },
       }),
     [],
   );
@@ -129,14 +142,14 @@ export function GoldButton({
   return (
     <Touchable
       onPress={onPress}
-      disabled={disabled || loading}
+      disabled={disabled || loading || busy}
       haptic="commit"
       accessibilityRole="button"
-      accessibilityState={{ disabled: disabled || loading, busy: loading }}
+      accessibilityState={{ disabled: disabled || loading || busy, busy: loading || busy }}
       accessibilityLabel={accessibilityLabel ?? label}
     >
       <Animated.View
-        style={[styles.dim, disabled ? styles.dimmed : styles.lit]}
+        style={[styles.dim, disabled ? styles.dimmed : busy ? styles.working : styles.lit]}
       >
         <LinearGradient
           colors={[asColor(primary)!, asColor(primaryDeep)!]}

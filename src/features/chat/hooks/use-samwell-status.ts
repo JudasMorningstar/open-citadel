@@ -36,6 +36,7 @@ import {
 } from '@/components/icons';
 import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useChatStore } from '@/stores/chat';
+import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
@@ -118,6 +119,13 @@ export function useSamwellStatus({
   // Asking the server again. The action, not the status: nothing here draws
   // from the plan itself.
   const retryCloud = useSubscriptionStore((s) => s.refresh);
+  // The phone has ended the app over the chosen brain (`memory-verdict.ts`).
+  const closedByPhone = useModelStore((s) => (s.activeModelId ? s.activeModelId in s.memoryVerdicts : false));
+  const tryAnyway = React.useCallback(() => {
+    const { activeModelId, liftMemoryVerdict, initContext: wake } = useModelStore.getState();
+    if (activeModelId) liftMemoryVerdict(activeModelId);
+    void wake();
+  }, []);
 
   const switchToCloud = React.useCallback(async () => {
     await setSamwellMode('cloud');
@@ -194,21 +202,6 @@ export function useSamwellStatus({
           onPress: onNewChat,
         },
       ],
-      isLoading: cloudEscape === null,
-    };
-  }
-
-  if (mode === 'offline' && deviceLimit === 'memory') {
-    const message = [
-      'Your device is low on memory, so Samwell had to stop here.',
-      cloudRequirement,
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-    return {
-      message,
-      actions: cloudEscape ? [cloudEscape] : undefined,
       isLoading: cloudEscape === null,
     };
   }
@@ -295,6 +288,23 @@ export function useSamwellStatus({
       title: 'Samwell needs a brain to run.',
       message: 'Tap button below to set up Samwell.',
       actions: [{ label: 'SET UP SAMWELL', icon: Settings, onPress: onOpenSettings }],
+    };
+  }
+
+  /*
+   * Waking was refused because the phone closed the app over this brain. A
+   * plain RETRY would be refused again, so the way through is a smaller
+   * brain, and the reader may still overrule the verdict: what a phone can
+   * spare changes with what else is open.
+   */
+  if (loadError && closedByPhone) {
+    return {
+      message: loadError,
+      actions: [
+        { label: 'CHOOSE A BRAIN', icon: Settings, onPress: onOpenSettings },
+        { label: 'TRY ANYWAY', icon: RefreshCw, onPress: tryAnyway },
+      ],
+      isError: true,
     };
   }
 

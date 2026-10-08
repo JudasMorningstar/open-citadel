@@ -2,19 +2,17 @@
  * Starting, switching and sending — the three things that touch the engine.
  *
  * All three are guarded by one `switching` flag, and that guard is the reason
- * this is a hook rather than three handlers on a screen. Changing session does
- * slow engine work: priming the incoming conversation with its book context
- * and history. On a slow device that is a
- * real wait, and nothing stopped a second tap — another row, "New chat", the
- * book picker — from firing an overlapping call into the engine mid-switch,
- * which is the concurrent-access crash class this app has hit before.
+ * this is a hook rather than three handlers on a screen. Changing session
+ * stops the reply in flight and loads a transcript, and nothing stopped a
+ * second tap — another row, "New chat", the book picker — from firing an
+ * overlapping switch into the one still running.
  *
  * `switching` doubles as what the history sheet shows a spinner against, so
  * the wait reads as something happening rather than as a stuck sheet.
  */
 import React from 'react';
 
-import * as Inference from '@/services/inference';
+import { leaveForNewChat } from '@/services/samwell-handoff';
 import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
@@ -65,43 +63,22 @@ export function useChatSessions() {
     if (switching) return;
     setSwitching('new');
     try {
-      if (isGenerating) stopGeneration();
-      // A rename started from the history sheet may still be generating on
-      // the engine this is about to reset.
-      await useChatStore.getState().waitForRetitle();
-      // A new chat is also a new native conversation. Clear every turn-local
-      // field now so a stopped generation cannot leave the page locked while
-      // its native promise unwinds.
-      Inference.resetConversation();
-      useChatStore.setState({
-        activeSession: null,
-        messages: [],
-        isGenerating: false,
-        isThinking: false,
-        isToolCalling: false,
-        toolCallStatus: null,
-        toolCallName: null,
-        streamingContent: '',
-        thinkingContent: '',
-        thinkingSeconds: null,
-        lastStreamedMessageId: null,
-        primedGeneration: null,
-        deviceLimit: null,
-      });
+      // A new chat makes its own conversation on its first turn.
+      await leaveForNewChat();
       setSession({ pendingBook: null, mode: 'chat' });
     } finally {
       setSwitching(null);
     }
-  }, [switching, isGenerating, stopGeneration, setSession]);
+  }, [switching, setSession]);
 
   const send = React.useCallback(
     async (text: string) => {
       /*
        * Minted here, spent below.
        *
-       * `openSession` primes the engine (`Inference.resetConversation`), which
-       * offline is a real wait with the reader's own words not yet anywhere —
-       * which is why this optimistic message exists at all. Giving it the id
+       * The first on-device turn of a session rebuilds its history into the
+       * model, which is a real wait with the reader's own words not yet
+       * anywhere — which is why this optimistic message exists at all. Giving it the id
        * `sendMessage` will commit it under means the transcript can draw one
        * element the whole way through rather than swapping one for another
        * when the store catches up.

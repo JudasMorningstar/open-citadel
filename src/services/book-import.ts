@@ -22,6 +22,8 @@ import {
     readDirectoryAsync,
 } from "expo-file-system/legacy";
 
+import { safeFileStem } from "@/utils/file-names";
+
 /**
  * App-owned library folder for iOS. Deliberately space-free so
  * `OWNED_DIR + fileName` is always a valid, unencoded file:// URL that Readium
@@ -46,14 +48,7 @@ export async function ensureOwnedDir(): Promise<void> {
  * cleaning here is harmless to the user-visible title.
  */
 function safeFileName(original: string): string {
-  const withoutExt = original.replace(/\.epub$/i, "");
-  const cleaned =
-    withoutExt
-      .normalize("NFKD")
-      .replace(/[^A-Za-z0-9-_]+/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_|_$/g, "") || "book";
-  return `${cleaned}.epub`;
+  return `${safeFileStem(original.replace(/\.epub$/i, ""))}.epub`;
 }
 
 /**

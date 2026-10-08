@@ -740,12 +740,20 @@ export const Loader = memo(function Loader({
             color={ink}
             delay={(i * 100) / rate}
             duration={500 / rate}
-            from={g.min * scale}
-            to={g.max * scale}
+            // LOCAL EDIT (Open Citadel): upstream animates `height` here. A
+            // height is a layout prop, so every frame of every bar was a Yoga
+            // pass and a commit of the whole tree on the UI thread: measured on
+            // an A33, five bars held the main thread at ~72% of a core. The
+            // bars sit centred in a fixed box, so scaling a full-height bar
+            // about its middle draws the same cascade for a transform.
+            // Re-apply after any `panelui-cli update loader`.
+            from={g.min / g.max}
+            to={1}
+            barHeight={g.max * scale}
             // A still frame that shows the cascade's shape rather than a row
             // of equal bars, which would say nothing about what it does.
-            still={(g.min + (g.max - g.min) * Math.abs(Math.sin(i * 0.9))) * scale}
-            mode="height"
+            still={(g.min + (g.max - g.min) * Math.abs(Math.sin(i * 0.9))) / g.max}
+            mode="scale"
             animate={animate}
           />
         ))}

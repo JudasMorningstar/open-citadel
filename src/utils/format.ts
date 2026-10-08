@@ -23,14 +23,20 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${Math.round(bytes)} B`;
 }
 
-/** Compact count: `1.4M` / `38k` / `96`. */
-export function formatCount(n: number): string {
-  if (!Number.isFinite(n)) return String(n);
-  if (n >= 1_000_000) {
-    const m = Math.round((n / 1_000_000) * 10) / 10;
-    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
-  }
-  const k = Math.round(n / 1_000);
-  if (n >= 1_000) return k >= 1000 ? '1M' : `${k}k`;
-  return String(n);
+/**
+ * `1 BOOK`, `12 EPISODES`: a count and its noun, the way a list's subtitle
+ * reads. The plural is the singular plus S unless it is given.
+ */
+export function countLabel(count: number, singular: string, plural = `${singular}S`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * Whether any of `fields` contains `query`, ignoring case and the spaces
+ * around it. An empty query matches everything, so a cleared search field
+ * shows the whole list.
+ */
+export function matchesQuery(query: string, ...fields: (string | null | undefined)[]): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || fields.some((field) => field?.toLowerCase().includes(q));
 }

@@ -17,6 +17,12 @@ interface TouchableProps extends Omit<AnimatedPressableProps, 'style' | 'pressSc
    * confirmation that the hold registered — the same thing iOS does for a
    * native context menu. Pass `false` to opt a specific one out. */
   longPressHaptic?: keyof typeof haptics | false;
+  /**
+   * For a surface that floats over other content (the mini player): the
+   * press scales it but never dims it, since a dimmed floating card turns
+   * see-through and shows what is underneath.
+   */
+  solid?: boolean;
 }
 
 /**
@@ -33,6 +39,7 @@ function TouchableBase({
   children,
   haptic = false,
   longPressHaptic = 'commit',
+  solid = false,
   onPress,
   onLongPress,
   ...props
@@ -46,7 +53,7 @@ function TouchableBase({
   return (
     <AnimatedPressable
       {...props}
-      pressOpacity={0.6}
+      pressOpacity={solid ? 1 : 0.6}
       style={style}
       onPress={(event) => {
         if (longPressFired.current) {

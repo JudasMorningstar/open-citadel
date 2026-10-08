@@ -46,6 +46,19 @@ export type ToastOptions = {
    */
   keepOpenOnAction?: boolean;
   /**
+   * Something is under way that the reader is waiting on, and the toast says
+   * so with a spinner in place of its controls. It stays until the caller
+   * closes it with `dismissToast(key)`, so it needs a `key`.
+   */
+  busy?: boolean;
+  /**
+   * A live control drawn in place of the action and the close, for a toast
+   * that reports work the reader can watch and stop from where it is (a
+   * download's progress, with its stop in the middle). Implies `persistent`:
+   * the work ends the toast, by writing over it or closing it by `key`.
+   */
+  accessory?: React.ReactNode;
+  /**
    * Names a recurring notice, so a fresh one REPLACES the copy still on screen
    * rather than stacking a second behind it.
    *
@@ -71,4 +84,6 @@ export type ToastEntry = ToastOptions & {
   /** Set the moment the exit starts. It leaves the stack maths immediately,
    *  so the toasts behind it close the gap while this one is still fading. */
   exiting?: boolean;
+  /** Set by `dismissToast`: the item plays its exit, as a close would. */
+  closing?: boolean;
 };

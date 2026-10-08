@@ -3,6 +3,8 @@ import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { IconSwitch, type IconSwitchItem } from '@/components/icon-switch';
+import { NewChatButton } from '@/components/samwell/new-chat-button';
 import { SamwellPlaceholder } from '@/components/samwell-placeholder';
 import { ToggleButton } from '@/components/ui/toggle-button';
 import { Spinner } from '@/components/ui/spinner';
@@ -10,6 +12,11 @@ import { Touchable } from '@/components/ui/touchable';
 import { elevation, fontFamily, iconSize, stackedShadow } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
+
+const MODES: readonly IconSwitchItem<'chat' | 'compass'>[] = [
+  { key: 'chat', label: 'Chat', icon: MessageSquare },
+  { key: 'compass', label: 'Compass', icon: Compass },
+];
 
 type SamwellControlCenterProps = {
   mode: 'chat' | 'compass';
@@ -55,6 +62,10 @@ type SamwellControlCenterProps = {
    * and the cursor lands here, instead of the card being dismissed.
    */
   inputRef?: React.RefObject<TextInput | null>;
+  /** What the new-conversation button says it does: "New chat", or "New conversation" in Compass. */
+  newChatLabel: string;
+  /** Starts a fresh conversation in this mode. Absent while that would cut a turn off. */
+  onNewChat?: () => void;
 };
 
 /**
@@ -88,6 +99,8 @@ export function SamwellControlCenter({
   showStop = false,
   onStop,
   inputRef,
+  newChatLabel,
+  onNewChat,
 }: SamwellControlCenterProps) {
   // Literal colours for consumers a className can't reach: lucide icon props
   // and TextInput's placeholderTextColor.
@@ -173,49 +186,21 @@ export function SamwellControlCenter({
       </View>
 
       <View className="flex-row items-center gap-2">
-        {/* Segmented chat/compass switch — same idea as an OS light/dark
-            toggle, icon-only and built from Citadel Frame parts: a bordered
-            track, sharp corners throughout, the active cell lifted with a
-            contrasting fill instead of a sliding rounded pill.
+        {/* The chat/compass switch: the app's one mode switch, the same as
+            the Library header's, its lifted card sliding to the mode chosen.
 
             It stays on the card rather than moving into the drawer. Which
             mode you are in is the one thing that changes what everything else
             on this screen means, including what is in the drawer, so it is
             not something to go looking for. */}
-        <View className="flex-row border border-border bg-muted">
-          <Touchable
-            className={cn(
-              'h-10 w-10 items-center justify-center',
-              mode === 'chat' && 'bg-card',
-              lockMode && mode !== 'chat' && 'opacity-35',
-            )}
-            style={mode === 'chat' ? elevation.soft : undefined}
-            onPress={lockMode ? undefined : () => onSelectMode('chat')}
-            haptic="select"
-          >
-            <MessageSquare
-              size={iconSize.default}
-              color={asColor(mode === 'chat' ? primary : mutedForeground)}
-              strokeWidth={2}
-            />
-          </Touchable>
-          <Touchable
-            className={cn(
-              'h-10 w-10 items-center justify-center',
-              mode === 'compass' && 'bg-card',
-              lockMode && mode !== 'compass' && 'opacity-35',
-            )}
-            style={mode === 'compass' ? elevation.soft : undefined}
-            onPress={lockMode ? undefined : () => onSelectMode('compass')}
-            haptic="select"
-          >
-            <Compass
-              size={iconSize.default}
-              color={asColor(mode === 'compass' ? primary : mutedForeground)}
-              strokeWidth={2}
-            />
-          </Touchable>
-        </View>
+        <IconSwitch items={MODES} value={mode} onChange={onSelectMode} locked={lockMode} />
+
+        {/* A fresh conversation, between the mode it would be in and that
+            mode's tools. Gone with the mode's other controls when the mode
+            has nothing to talk to. */}
+        {!unavailable && (
+          <NewChatButton label={newChatLabel} color={asColor(mutedForeground)} onPress={onNewChat} />
+        )}
 
         {/* The drawer handle, next to the switch: the mode, then the mode's
             own tools. The arrow points the way the surfaces move — up to pull
