@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { DeviceVoiceRows } from '@/features/tts/components/device-voice-rows';
+import { DeviceVoiceRows, type DeviceVoiceRowsProps } from '@/features/tts/components/device-voice-rows';
 import { PageFade } from '@/components/scroll-fades';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -79,20 +79,34 @@ export function DeviceVoiceSheet({
       {loading ? (
         <VoiceListSkeleton />
       ) : (
-        <PageFade edges="both" surface="popover">
-          <Sheet.ScrollView>
-            <DeviceVoiceRows
-              rows={rows}
-              selected={selected}
-              previewing={previewing}
-              preparing={preparing}
-              onSelect={onSelect}
-              onPreview={onPreview}
-              onToggleLanguage={onToggleLanguage}
-            />
-          </Sheet.ScrollView>
-        </PageFade>
+        <VoiceList
+          rows={rows}
+          selected={selected}
+          previewing={previewing}
+          preparing={preparing}
+          onSelect={onSelect}
+          onPreview={onPreview}
+          onToggleLanguage={onToggleLanguage}
+        />
       )}
     </Sheet>
+  );
+}
+
+/**
+ * The scrolling list itself. Its own component so that "has this been
+ * scrolled" lives and dies with one opening of the sheet: the body is
+ * unmounted when the sheet closes, and the next opening starts again from
+ * the first few rows.
+ */
+function VoiceList(props: Omit<DeviceVoiceRowsProps, 'scrolled'>) {
+  const [scrolled, setScrolled] = React.useState(false);
+  const markScrolled = React.useCallback(() => setScrolled(true), []);
+  return (
+    <PageFade edges="both" surface="popover">
+      <Sheet.ScrollView onScrollBeginDrag={markScrolled}>
+        <DeviceVoiceRows {...props} scrolled={scrolled} />
+      </Sheet.ScrollView>
+    </PageFade>
   );
 }

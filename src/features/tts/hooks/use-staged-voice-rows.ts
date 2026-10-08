@@ -16,6 +16,20 @@ const FIRST_ROWS = 9;
  * that thread: twelve at a time was felt as a stutter, six is not.
  */
 const ROW_STEP = 6;
+/**
+ * How many rows are drawn before anybody has scrolled: what is seen, and two
+ * screens more to scroll into.
+ *
+ * The list used to fill itself in to the end as soon as the sheet landed, a
+ * step every fifth of a second for four seconds. Each step is about 35ms on a
+ * Galaxy A33's UI thread, and one landing while the sheet was being dragged
+ * was a stutter under the finger. Most times the sheet is opened, a voice is
+ * picked near the top or it is closed again, and none of those rows were
+ * needed. So the rest wait for the first scroll, which is the one thing that
+ * says they are wanted, and a scroll and a drag of the sheet cannot happen
+ * at once.
+ */
+const ROWS_AHEAD = 21;
 /** How long a step waits for a quiet moment before it is taken anyway. */
 const IDLE_TIMEOUT_MS = 300;
 
@@ -32,11 +46,12 @@ type Opening = { language: string; shown: number };
  * and the rest a step at a time under them, with the languages below staying
  * where they are.
  *
- * `hold` keeps the list at its first screenful, for while the sheet it is in
- * is still rising: a step landing then stalls the rise partway.
+ * `hold` keeps the list as it is, for while the sheet it is in is rising or
+ * being dragged: a step landing then stalls it partway. `wanted` says the
+ * list has been scrolled, so the rest of it is worth drawing.
  */
-export function useStagedVoiceRows(rows: DeviceVoiceRow[], hold = false) {
-  const count = useStagedCount(rows.length, FIRST_ROWS, ROW_STEP, hold);
+export function useStagedVoiceRows(rows: DeviceVoiceRow[], hold = false, wanted = true) {
+  const count = useStagedCount(rows.length, FIRST_ROWS, ROW_STEP, hold, wanted ? undefined : ROWS_AHEAD);
   const [opening, setOpening] = useState<Opening | null>(null);
 
   const openingRow = opening

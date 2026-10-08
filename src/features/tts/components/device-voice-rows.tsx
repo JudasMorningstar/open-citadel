@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { useSheetSettled } from '@/components/ui/sheet';
+import { useSheetResting } from '@/components/ui/sheet';
 import { DeviceLanguageRow } from '@/features/tts/components/device-language-row';
 import { DeviceVoiceItem } from '@/features/tts/components/device-voice-item';
 import { useStagedVoiceRows } from '@/features/tts/hooks/use-staged-voice-rows';
@@ -17,6 +17,8 @@ export interface DeviceVoiceRowsProps {
   previewing: string | null;
   /** The voice whose sample is being made and cannot be heard yet. */
   preparing?: string | null;
+  /** The list has been scrolled, so the rows past the first few are worth drawing. */
+  scrolled?: boolean;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
   onToggleLanguage: (language: string) => void;
@@ -32,12 +34,15 @@ export function DeviceVoiceRows({
   selected,
   previewing,
   preparing = null,
+  scrolled = true,
   onSelect,
   onPreview,
   onToggleLanguage,
 }: DeviceVoiceRowsProps) {
-  // The first screenful rises with the sheet; the rest wait for it to land.
-  const { drawn, stage } = useStagedVoiceRows(rows, !useSheetSettled());
+  // The first screenful rises with the sheet; the rest wait for it to land,
+  // and wait again whenever it is dragged. Rows committed under a finger that
+  // is dragging the sheet make it stutter and jump back.
+  const { drawn, stage } = useStagedVoiceRows(rows, !useSheetResting(), scrolled);
   // Stable, so a step or a toggle redraws the one language row that changed.
   const toggleLanguage = React.useCallback(
     (language: string, wasOpen: boolean) => {
