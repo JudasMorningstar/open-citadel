@@ -1,14 +1,12 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { ThemedText } from '@/components/themed-text';
-import { useSheetResting } from '@/components/ui/sheet';
-import { DeviceLanguageRow } from '@/features/tts/components/device-language-row';
-import { DeviceVoiceItem } from '@/features/tts/components/device-voice-item';
-import { useStagedVoiceRows } from '@/features/tts/hooks/use-staged-voice-rows';
-import { asColor } from '@/utils/colors';
-import type { DeviceVoice, DeviceVoiceRow } from '@/utils/device-voices';
+import { ThemedText } from "@/components/themed-text";
+import { useSheetResting } from "@/components/ui/sheet";
+import { DeviceVoiceItem } from "@/features/tts/components/device-voice-item";
+import { useStagedVoiceRows } from "@/features/tts/hooks/use-staged-voice-rows";
+import { asColor } from "@/utils/colors";
+import type { DeviceVoice, DeviceVoiceRow } from "@/utils/device-voices";
 
 export interface DeviceVoiceRowsProps {
   rows: DeviceVoiceRow[];
@@ -21,13 +19,11 @@ export interface DeviceVoiceRowsProps {
   scrolled?: boolean;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
-  onToggleLanguage: (language: string) => void;
 }
 
 /**
- * The phone voice list's rows: the default, then each language with its
- * voices under it while it is open. Only open languages have their voices
- * drawn, and those a few at a time (`useStagedVoiceRows`).
+ * The voice list's rows: headings and the voices under them, a few at a
+ * time (`useStagedVoiceRows`).
  */
 export function DeviceVoiceRows({
   rows,
@@ -37,27 +33,21 @@ export function DeviceVoiceRows({
   scrolled = true,
   onSelect,
   onPreview,
-  onToggleLanguage,
 }: DeviceVoiceRowsProps) {
   // The first screenful rises with the sheet; the rest wait for it to land,
   // and wait again whenever it is dragged. Rows committed under a finger that
   // is dragging the sheet make it stutter and jump back.
-  const { drawn, stage } = useStagedVoiceRows(rows, !useSheetResting(), scrolled);
-  // Stable, so a step or a toggle redraws the one language row that changed.
-  const toggleLanguage = React.useCallback(
-    (language: string, wasOpen: boolean) => {
-      if (!wasOpen) stage(language);
-      onToggleLanguage(language);
-    },
-    [stage, onToggleLanguage],
-  );
-  const [primaryVar, mutedVar] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
+  const drawn = useStagedVoiceRows(rows, !useSheetResting(), scrolled);
+  const [primaryVar, mutedVar] = useCSSVariable([
+    "--color-primary",
+    "--color-muted-foreground",
+  ]);
   const primary = asColor(primaryVar);
   const mutedForeground = asColor(mutedVar);
 
   const renderRow = (row: DeviceVoiceRow) => {
     switch (row.kind) {
-      case 'header':
+      case "header":
         return (
           <View key={row.key} className="bg-popover px-6 py-2">
             <ThemedText type="labelSm" color={mutedForeground}>
@@ -65,18 +55,7 @@ export function DeviceVoiceRows({
             </ThemedText>
           </View>
         );
-      case 'language':
-        return (
-          <DeviceLanguageRow
-            key={row.key}
-            language={row.language}
-            count={row.count}
-            open={row.open}
-            mutedForeground={mutedForeground}
-            onToggle={toggleLanguage}
-          />
-        );
-      case 'voice':
+      case "voice":
         return (
           <DeviceVoiceItem
             key={row.key}

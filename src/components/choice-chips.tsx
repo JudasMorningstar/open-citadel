@@ -1,13 +1,11 @@
-import React from 'react';
-import { View } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
+import { View } from "react-native";
+import { ScrollView } from "react-native-gesture-handler";
 
-import { RowFade, type FadeSurface } from '@/components/scroll-fades';
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
-import { cn } from '@/lib/cn';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
-
+import { RowFade, type FadeSurface } from "@/components/scroll-fades";
+import { ThemedText } from "@/components/themed-text";
+import { Touchable } from "@/components/ui/touchable";
+import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { cn } from "@/lib/cn";
 
 /** One option of a choice: the value it sets, and what it is called. */
 export type Choice<T> = { value: T; label: string };
@@ -22,7 +20,9 @@ type ChoiceChipsProps<T> = {
   /** The ground the row sits on, so its fade blends. Sheets are `popover`. */
   surface?: FadeSurface;
   /** Horizontal inset: the sheet gutter by default, the page gutter on a screen, none inside a padded card. */
-  gutter?: 'sheet' | 'page' | 'none';
+  gutter?: "sheet" | "page" | "none";
+  /** Share the row's width between the choices instead of scrolling, for a few that always fit. */
+  fill?: boolean;
 };
 
 /**
@@ -39,50 +39,74 @@ export function ChoiceChips<T extends string | number | null>({
   choices,
   value,
   onChange,
-  surface = 'popover',
-  gutter = 'sheet',
+  surface = "popover",
+  gutter = "sheet",
+  fill = false,
 }: ChoiceChipsProps<T>) {
-  const pad = gutter === 'sheet' ? 'px-4' : gutter === 'page' ? 'px-6' : 'px-0';
+  const pad = gutter === "sheet" ? "px-4" : gutter === "page" ? "px-6" : "px-0";
   const tokens = useThemeTokens();
+  const chips = choices.map((choice) => {
+    const selected = choice.value === value;
+    return (
+      <Touchable
+        key={String(choice.value)}
+        className={cn(
+          "min-h-10 justify-center border px-3.5",
+          fill && "flex-1 items-center",
+          selected
+            ? "border-primary bg-card shadow-sm"
+            : "border-border bg-muted",
+        )}
+        onPress={selected ? undefined : () => onChange(choice.value)}
+        haptic="select"
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        accessibilityLabel={choice.label}
+      >
+        <ThemedText
+          type="labelSm"
+          color={
+            selected ? tokens["--color-primary"] : tokens["--color-foreground"]
+          }
+        >
+          {choice.label}
+        </ThemedText>
+      </Touchable>
+    );
+  });
   return (
     <View className="gap-2">
       {label ? (
-        <View className={cn('gap-0.5', pad)}>
-          <ThemedText type="labelSm" color={tokens['--color-muted-foreground']}>
+        <View className={cn("gap-0.5", pad)}>
+          <ThemedText type="labelSm" color={tokens["--color-muted-foreground"]}>
             {label}
           </ThemedText>
           {hint ? (
-            <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
+            <ThemedText
+              type="bodySm"
+              color={tokens["--color-muted-foreground"]}
+            >
               {hint}
             </ThemedText>
           ) : null}
         </View>
       ) : null}
-      <RowFade surface={surface}>
-        {/* RNGH's ScrollView, not RN's: in a sheet, the sheet's own drag
-            takes a plain ScrollView's sideways swipe on Android, and the
-            row draws but never moves (the tag rows had the same bug). */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName={cn('gap-2', pad)}>
-          {choices.map((choice) => {
-            const selected = choice.value === value;
-            return (
-              <Touchable
-                key={String(choice.value)}
-                className={cn('min-h-10 justify-center border px-3.5', selected ? 'border-primary bg-card shadow-sm' : 'border-border bg-muted')}
-                onPress={selected ? undefined : () => onChange(choice.value)}
-                haptic="select"
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={choice.label}
-              >
-                <ThemedText type="labelSm" color={selected ? tokens['--color-primary'] : tokens['--color-foreground']}>
-                  {choice.label}
-                </ThemedText>
-              </Touchable>
-            );
-          })}
-        </ScrollView>
-      </RowFade>
+      {fill ? (
+        <View className={cn("flex-row gap-2", pad)}>{chips}</View>
+      ) : (
+        <RowFade surface={surface}>
+          {/* RNGH's ScrollView, not RN's: in a sheet, the sheet's own drag
+              takes a plain ScrollView's sideways swipe on Android, and the
+              row draws but never moves (the tag rows had the same bug). */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName={cn("gap-2", pad)}
+          >
+            {chips}
+          </ScrollView>
+        </RowFade>
+      )}
     </View>
   );
 }

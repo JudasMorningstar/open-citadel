@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  deviceVoiceName,
-  deviceVoiceRows,
-  isPlayableVoice,
-  languageCode,
-  sortVoices,
-  usefulLanguages,
-  type DeviceVoice,
+    deviceVoiceName,
+    deviceVoiceRows,
+    isPlayableVoice,
+    languageCode,
+    sortVoices,
+    type DeviceVoice,
 } from '@/utils/device-voices';
 
 const voice = (identifier: string, language: string, name = identifier): DeviceVoice => ({
@@ -26,7 +25,7 @@ const VOICES = [
 ];
 
 const kinds = (rows: ReturnType<typeof deviceVoiceRows>) =>
-  rows.map((row) => (row.kind === 'voice' ? row.voice.identifier || 'default' : row.kind === 'language' ? row.language : row.title));
+  rows.map((row) => (row.kind === 'voice' ? row.voice.identifier || 'default' : row.title));
 
 describe('languageCode', () => {
   it('is the language of a tag, however it is written', () => {
@@ -61,63 +60,24 @@ describe('sortVoices', () => {
   });
 });
 
-describe('usefulLanguages', () => {
-  it("is the saved voice's language, then the phone's", () => {
-    expect(usefulLanguages(VOICES, 'fr-fr-x-a', 'en-ZA')).toEqual(['FR', 'EN']);
-  });
-
-  it('does not repeat a language that is both', () => {
-    expect(usefulLanguages(VOICES, 'en-gb-x-a', 'en-ZA')).toEqual(['EN']);
-  });
-
-  it("is the phone's language alone with the system default chosen", () => {
-    expect(usefulLanguages(VOICES, '', 'zu-ZA')).toEqual(['ZU']);
-  });
-
-  it('falls back to English when the phone has no voice in its own language', () => {
-    expect(usefulLanguages(VOICES, '', 'xh-ZA')).toEqual(['EN']);
-  });
-
-  it('opens the only language there is', () => {
-    expect(usefulLanguages([voice('de-de-x-a', 'de-DE')], '', 'xh-ZA')).toEqual(['DE']);
-  });
-
-  it('opens nothing when none of those apply', () => {
-    expect(usefulLanguages([voice('de-de-x-a', 'de-DE'), voice('fr-fr-x-a', 'fr-FR')], '', 'xh-ZA')).toEqual([]);
-    expect(usefulLanguages([], '', 'en-ZA')).toEqual([]);
-  });
-});
-
 describe('deviceVoiceRows', () => {
-  it('starts with the default and lists every language closed', () => {
-    expect(kinds(deviceVoiceRows(VOICES, new Set()))).toEqual(['DEFAULT', 'default', 'EN', 'FR', 'ZU']);
-  });
-
-  it('draws voices only under open languages, with a count on every language', () => {
-    const rows = deviceVoiceRows(sortVoices(VOICES), new Set(['EN']));
-    expect(kinds(rows)).toEqual(['DEFAULT', 'default', 'EN', 'en-gb-x-a', 'en-us-x-a', 'en-us-x-b', 'FR', 'ZU']);
-    expect(rows.filter((row) => row.kind === 'language')).toEqual([
-      { kind: 'language', key: 'language:EN', language: 'EN', count: 3, open: true },
-      { kind: 'language', key: 'language:FR', language: 'FR', count: 1, open: false },
-      { kind: 'language', key: 'language:ZU', language: 'ZU', count: 1, open: false },
+  it('starts with the default, then lists only the English voices', () => {
+    expect(kinds(deviceVoiceRows(sortVoices(VOICES)))).toEqual([
+      'DEFAULT',
+      'default',
+      'ENGLISH',
+      'en-gb-x-a',
+      'en-us-x-a',
+      'en-us-x-b',
     ]);
   });
 
-  it('leads with the useful languages, then English, then the rest by code', () => {
-    expect(kinds(deviceVoiceRows(VOICES, new Set(), ['ZU']))).toEqual(['DEFAULT', 'default', 'ZU', 'EN', 'FR']);
-  });
-
-  it('keeps a language where it is when it opens or closes', () => {
-    const order = (open: string[]) =>
-      deviceVoiceRows(VOICES, new Set(open), ['ZU'])
-        .filter((row) => row.kind === 'language')
-        .map((row) => row.key);
-    expect(order(['FR'])).toEqual(order([]));
-    expect(order(['EN', 'FR', 'ZU'])).toEqual(order([]));
+  it('is only the default on a phone with no English voices', () => {
+    expect(kinds(deviceVoiceRows([voice('fr-fr-x-a', 'fr-FR')]))).toEqual(['DEFAULT', 'default']);
   });
 
   it('gives every row its own key', () => {
-    const keys = deviceVoiceRows(VOICES, new Set(['EN', 'FR', 'ZU'])).map((row) => row.key);
+    const keys = deviceVoiceRows(VOICES).map((row) => row.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
 });

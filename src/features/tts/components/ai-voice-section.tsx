@@ -1,12 +1,11 @@
-import React from 'react';
-import { View } from 'react-native';
+import { View } from "react-native";
 
-import { ChoiceChips, type Choice } from '@/components/choice-chips';
-import { ThemedText } from '@/components/themed-text';
-import { EnhancedVoicePicker } from '@/features/tts/components/enhanced-voice-picker';
-import { TtsDownloadCard } from '@/features/tts/components/tts-download-card';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import type { AiVoice, TtsEngineId } from '@/services/device-tts/catalogue';
+import { ChoiceChips, type Choice } from "@/components/choice-chips";
+import { ThemedText } from "@/components/themed-text";
+import { EnhancedVoicePicker } from "@/features/tts/components/enhanced-voice-picker";
+import { TtsDownloadCard } from "@/features/tts/components/tts-download-card";
+import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import type { AiVoice, TtsEngineId } from "@/services/device-tts/catalogue";
 
 export interface AiVoiceSectionProps {
   /** The chosen voice box. */
@@ -60,15 +59,31 @@ export function AiVoiceSection({
           label and them: it is what the chosen one is like, so it reads
           after the choice. */}
       <View className="gap-2">
-        <ChoiceChips label="VOICE BOX" choices={choices} value={engine} onChange={onEngineChange} gutter="none" />
-        <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
+        <ChoiceChips
+          label="VOICE BOX"
+          choices={choices}
+          value={engine}
+          onChange={onEngineChange}
+          gutter="none"
+          fill
+        />
+        <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
           {hint}
         </ThemedText>
       </View>
       {downloaded ? (
-        <EnhancedVoicePicker voices={voices} selected={selected} onPick={onPick} />
+        <EnhancedVoicePicker
+          voices={voices}
+          selected={selected}
+          onPick={onPick}
+        />
       ) : (
-        <TtsDownloadCard size={downloadSize} progress={progress} onDownload={onDownload} onCancel={onCancel} />
+        <TtsDownloadCard
+          size={downloadSize}
+          progress={progress}
+          onDownload={onDownload}
+          onCancel={onCancel}
+        />
       )}
     </View>
   );

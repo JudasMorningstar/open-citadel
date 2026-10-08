@@ -1,15 +1,19 @@
-import React from 'react';
-import { View } from 'react-native';
+import React from "react";
+import { View } from "react-native";
 
-import { useOnScreen } from '@/components/kept-alive';
-import { ThemedText } from '@/components/themed-text';
-import { DeviceVoiceSheet } from '@/features/tts/components/device-voice-sheet';
-import { VoicePickerRow } from '@/features/tts/components/voice-picker-row';
-import { useVoicePreview } from '@/features/tts/hooks/use-voice-preview';
-import { enhancedVoiceRows } from '@/features/tts/utils/enhanced-voices';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { voiceDescriptor, voiceLabel, type AiVoice } from '@/services/device-tts/catalogue';
-import type { DeviceVoice } from '@/utils/device-voices';
+import { useOnScreen } from "@/components/kept-alive";
+import { ThemedText } from "@/components/themed-text";
+import { DeviceVoiceSheet } from "@/features/tts/components/device-voice-sheet";
+import { VoicePickerRow } from "@/features/tts/components/voice-picker-row";
+import { useVoicePreview } from "@/features/tts/hooks/use-voice-preview";
+import { enhancedVoiceRows } from "@/features/tts/utils/enhanced-voices";
+import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import {
+    voiceDescriptor,
+    voiceLabel,
+    type AiVoice,
+} from "@/services/device-tts/catalogue";
+import type { DeviceVoice } from "@/utils/device-voices";
 
 export interface EnhancedVoicePickerProps {
   /** The chosen voice box's voices. */
@@ -19,7 +23,6 @@ export interface EnhancedVoicePickerProps {
   onPick: (voice: AiVoice) => void;
 }
 
-const noToggle = () => {};
 const NAMING = { label: voiceLabel, descriptor: voiceDescriptor };
 
 /**
@@ -32,10 +35,21 @@ const NAMING = { label: voiceLabel, descriptor: voiceDescriptor };
  * panel to build. A list shows every name at once and costs nothing until it
  * is opened.
  */
-export function EnhancedVoicePicker({ voices, selected, onPick }: EnhancedVoicePickerProps) {
+export function EnhancedVoicePicker({
+  voices,
+  selected,
+  onPick,
+}: EnhancedVoicePickerProps) {
   const tokens = useThemeTokens();
   const [open, setOpen] = React.useState(false);
-  const { previewingVoice, preparingVoice, previewError, previewNotice, preview, stop } = useVoicePreview();
+  const {
+    previewingVoice,
+    preparingVoice,
+    previewError,
+    previewNotice,
+    preview,
+    stop,
+  } = useVoicePreview();
   const rows = React.useMemo(() => enhancedVoiceRows(voices, NAMING), [voices]);
 
   const close = React.useCallback(() => {
@@ -76,7 +90,11 @@ export function EnhancedVoicePicker({ voices, selected, onPick }: EnhancedVoiceP
 
   return (
     <View className="gap-2">
-      <VoicePickerRow name={voiceLabel(selected)} onPress={() => setOpen(true)} accessibilityLabel="Choose an Enhanced voice" />
+      <VoicePickerRow
+        name={voiceLabel(selected)}
+        onPress={() => setOpen(true)}
+        accessibilityLabel="Choose an Enhanced voice"
+      />
       <DeviceVoiceSheet
         visible={open}
         onClose={close}
@@ -88,10 +106,9 @@ export function EnhancedVoicePicker({ voices, selected, onPick }: EnhancedVoiceP
         note={note}
         onSelect={handleSelect}
         onPreview={handlePreview}
-        onToggleLanguage={noToggle}
       />
       {note && !open ? (
-        <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
+        <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
           {note}
         </ThemedText>
       ) : null}

@@ -1,13 +1,16 @@
-import React from 'react';
-import { View } from 'react-native';
+import React from "react";
+import { View } from "react-native";
 
-import { DeviceVoiceRows, type DeviceVoiceRowsProps } from '@/features/tts/components/device-voice-rows';
-import { PageFade } from '@/components/scroll-fades';
-import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
-import { ThemedText } from '@/components/themed-text';
-import { Sheet } from '@/components/ui/sheet';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import type { DeviceVoice, DeviceVoiceRow } from '@/utils/device-voices';
+import { PageFade } from "@/components/scroll-fades";
+import { VoiceListSkeleton } from "@/components/skeletons/voice-list-skeleton";
+import { ThemedText } from "@/components/themed-text";
+import { Sheet } from "@/components/ui/sheet";
+import {
+    DeviceVoiceRows,
+    type DeviceVoiceRowsProps,
+} from "@/features/tts/components/device-voice-rows";
+import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import type { DeviceVoice, DeviceVoiceRow } from "@/utils/device-voices";
 
 export interface DeviceVoiceSheetProps {
   visible: boolean;
@@ -23,7 +26,6 @@ export interface DeviceVoiceSheetProps {
   note?: string | null;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
-  onToggleLanguage: (language: string) => void;
 }
 
 /** The list of voices to choose from, opened from the voice row: the phone's own, or a voice box's. */
@@ -38,7 +40,6 @@ export function DeviceVoiceSheet({
   note,
   onSelect,
   onPreview,
-  onToggleLanguage,
 }: DeviceVoiceSheetProps) {
   const tokens = useThemeTokens();
   return (
@@ -55,15 +56,18 @@ export function DeviceVoiceSheet({
     // to close: two live gesture recognizers over the same list, not the
     // detents or the stack behavior.
     //
-    // A plain scroll view draws every row it is given, and with every voice a
-    // phone has in it that can be hundreds of rows mounted in one go. So the
-    // rows it is given are few: only the useful languages arrive open
-    // (`usefulLanguages`), and the rest are one row each until tapped.
-    <Sheet visible={visible} onClose={onClose} stackBehavior="push" fixedHeightRatio={0.75}>
+    // A plain scroll view draws every row it is given, so the rows arrive a
+    // screenful at a time (`DeviceVoiceRows`).
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      stackBehavior="push"
+      fixedHeightRatio={0.75}
+    >
       <View className="gap-1 px-6 pb-3 pt-2">
         <ThemedText type="headlineSm">Select voice</ThemedText>
         {note ? (
-          <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
+          <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
             {note}
           </ThemedText>
         ) : null}
@@ -86,7 +90,6 @@ export function DeviceVoiceSheet({
           preparing={preparing}
           onSelect={onSelect}
           onPreview={onPreview}
-          onToggleLanguage={onToggleLanguage}
         />
       )}
     </Sheet>
@@ -99,7 +102,7 @@ export function DeviceVoiceSheet({
  * unmounted when the sheet closes, and the next opening starts again from
  * the first few rows.
  */
-function VoiceList(props: Omit<DeviceVoiceRowsProps, 'scrolled'>) {
+function VoiceList(props: Omit<DeviceVoiceRowsProps, "scrolled">) {
   const [scrolled, setScrolled] = React.useState(false);
   const markScrolled = React.useCallback(() => setScrolled(true), []);
   return (
