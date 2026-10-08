@@ -165,6 +165,7 @@ export function LogNoteDialog({
                     quietly did the same thing and only one said so. */}
                 <GoldButton
                   label="SAVE THE NOTE"
+                  size="compact"
                   onPress={onSave}
                   disabled={!isValid}
                 />

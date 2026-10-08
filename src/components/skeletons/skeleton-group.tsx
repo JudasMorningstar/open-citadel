@@ -3,9 +3,9 @@ import { View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
+  makeMutable,
   useAnimatedStyle,
   useReducedMotion,
-  useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
@@ -18,6 +18,52 @@ const PULSE_DURATION = 700;
 const PULSE_FLOOR = 0.45;
 /** Where the pulse rests when it is not running. */
 const RESTING_OPACITY = 0.7;
+
+/*
+ * One pulse for every placeholder on screen, not one per group.
+ *
+ * A page often swaps one placeholder for another: the whole Podcasts page's,
+ * then, once the library is read, the shelves' alone under the real Continue
+ * card. With a pulse per group the new one started its breath from the top,
+ * out of step with the one it replaced, and the shelves visibly emptied and
+ * filled again. Read from one clock, a placeholder that replaces another
+ * carries on the same breath.
+ *
+ * The clock runs while any group is on screen. A swap unmounts the old group
+ * in the same commit that mounts the new one, and React runs every cleanup
+ * before any setup, so the count touches zero in between: stopping waits a
+ * frame, and a group arriving in that frame keeps it running.
+ */
+const pulse = makeMutable(1);
+let holders = 0;
+let running = false;
+let stopping: ReturnType<typeof requestAnimationFrame> | null = null;
+
+function holdPulse(): () => void {
+  if (stopping !== null) {
+    cancelAnimationFrame(stopping);
+    stopping = null;
+  }
+  holders += 1;
+  if (!running) {
+    running = true;
+    pulse.set(1);
+    pulse.set(
+      withRepeat(withTiming(PULSE_FLOOR, { duration: PULSE_DURATION, easing: Easing.inOut(Easing.quad) }), -1, true),
+    );
+  }
+  return () => {
+    holders -= 1;
+    if (holders > 0) return;
+    stopping = requestAnimationFrame(() => {
+      stopping = null;
+      if (holders > 0) return;
+      running = false;
+      cancelAnimation(pulse);
+      pulse.set(1);
+    });
+  };
+}
 
 /**
  * One pulse for a whole placeholder, instead of one per bar.
@@ -52,27 +98,10 @@ export function SkeletonGroup({
   className?: string;
 }) {
   const reducedMotion = useReducedMotion();
-  const opacity = useSharedValue(reducedMotion ? RESTING_OPACITY : 1);
 
-  useEffect(() => {
-    if (reducedMotion) {
-      opacity.set(RESTING_OPACITY);
-      return undefined;
-    }
-    opacity.set(
-      withRepeat(
-        withTiming(PULSE_FLOOR, {
-          duration: PULSE_DURATION,
-          easing: Easing.inOut(Easing.quad),
-        }),
-        -1,
-        true,
-      ),
-    );
-    return () => cancelAnimation(opacity);
-  }, [opacity, reducedMotion]);
+  useEffect(() => (reducedMotion ? undefined : holdPulse()), [reducedMotion]);
 
-  const style = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  const style = useAnimatedStyle(() => ({ opacity: reducedMotion ? RESTING_OPACITY : pulse.get() }));
 
   const announced = label != null;
 

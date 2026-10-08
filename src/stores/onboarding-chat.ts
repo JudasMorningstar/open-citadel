@@ -13,6 +13,7 @@ import {
 import { sendCloudChatTurn } from '@/services/cloud-chat';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { hasLibrary } from '@/services/library-setup';
+import { clearShortlists } from '@/services/onboarding-tools/shortlist';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -96,18 +97,6 @@ type OnboardingChatState = {
   metered: boolean;
 
   /** Resolve or create the session. Safe to call more than once. */
-  /**
-   * Their library exists, whatever the conversation does next.
-   *
-   * Set by the tools that make it, and read by the composer so the way out of
-   * onboarding never depends on the model remembering to call
-   * `finish_onboarding`. It is NOT a second copy of "onboarding is over": that
-   * still lives in `settings.onboarding` and is still what the router reads.
-   * This is a different fact — the books are on the device — and the composer
-   * derives one decision from the two of them.
-   */
-  libraryReady: boolean;
-  markLibraryReady: () => void;
   start: () => Promise<void>;
   send: (text: string) => Promise<void>;
   stop: () => void;
@@ -162,11 +151,6 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
   toolName: null,
   error: null,
   metered: false,
-  libraryReady: false,
-
-  markLibraryReady: () => {
-    if (!get().libraryReady) set({ libraryReady: true });
-  },
 
   start: async () => {
     if (starting) return starting;
@@ -182,23 +166,7 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
        */
       const existing = listSessions('onboarding')[0];
       if (existing) {
-        /*
-         * A resumed conversation asks the device rather than remembering.
-         *
-         * `libraryReady` is set by a tool that ran in a process which may be
-         * gone: the Android folder picker backgrounds the app, and being
-         * killed there is ordinary. Without this the reader comes back to a
-         * library that exists and a conversation with no way out of it.
-         *
-         * Only on resume. On a fresh start this would be true for anyone
-         * reinstalling, and the composer would offer them the exit before
-         * Samwell had said a word.
-         */
-        set({
-          sessionId: existing.id,
-          messages: readMessages(existing.id),
-          libraryReady: await hasLibrary(),
-        });
+        set({ sessionId: existing.id, messages: readMessages(existing.id) });
       } else {
         const id = uuid();
         const ts = new Date().toISOString();
@@ -239,6 +207,7 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
           createdAt: ts,
         });
 
+        clearShortlists();
         set({ sessionId: id, messages: readMessages(id) });
       }
 
@@ -332,10 +301,53 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
-        // The narration stays, for the reason the Compass store spells out at
-        // length: the stream reports the message's whole text, so blanking the
-        // bubble on a tool call makes the next flush look like a restream.
+        // The bubble is not blanked on a tool call: the narration before it
+        // becomes a message of its own instead. See `onReplyPart`.
         onToolStatus: (status, name) => set({ toolStatus: status, toolName: name }),
+        /*
+         * The app's record of what a tool really did, kept in the transcript.
+         *
+         * The history each turn sends is the words of the conversation, not
+         * the tool calls in it, so without this a later turn saw Samwell
+         * claiming books were downloaded with nothing to show it happened, and
+         * he told the reader, "to be honest", that nothing had been added.
+         * Written as a system message: the transcript hides those, the server
+         * hands them to him as notes, and they survive the app being killed.
+         */
+        /*
+         * Each stretch of his reply between two tool calls is its own
+         * message, not a bubble that grows three times over. Written once it
+         * has been shown in full, in the same update that empties the
+         * streaming bubble, so the hand-over does not jump.
+         */
+        onReplyPart: (text) => {
+          const part: ChatMessage = {
+            id: uuid(),
+            sessionId,
+            role: 'assistant',
+            content: text,
+            createdAt: new Date().toISOString(),
+            via: 'cloud',
+          };
+          appendMessage(part);
+          touchSession(sessionId, part.createdAt);
+          set((state) => ({
+            messages: [...state.messages, part],
+            streamingReply: '',
+            lastStreamedMessageId: part.id,
+          }));
+        },
+        onOnboardingAction: (note) => {
+          const record: ChatMessage = {
+            id: uuid(),
+            sessionId,
+            role: 'system',
+            content: note,
+            createdAt: new Date().toISOString(),
+          };
+          appendMessage(record);
+          set((state) => ({ messages: [...state.messages, record] }));
+        },
       });
 
       /*

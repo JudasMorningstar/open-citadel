@@ -24,6 +24,15 @@ type HubState = {
   goTo: (page: HubPage) => void;
   /** Reported by the pager itself once a page settles. Not for callers. */
   settled: (page: HubPage) => void;
+  /**
+   * The Library, the page the app opens on, has drawn its content rather than
+   * its skeleton. The pager waits for this before mounting the two pages
+   * either side of it, so the launch's first content is never queued behind
+   * pages nobody is looking at yet.
+   */
+  libraryFilled: boolean;
+  /** Reported by the Library's sides. Latches: it is about the launch, not about every later load. */
+  libraryHasFilled: () => void;
 };
 
 /**
@@ -43,4 +52,6 @@ export const useHubStore = create<HubState>((set) => ({
   page: HUB.library,
   goTo: (page) => set({ page }),
   settled: (page) => set({ page }),
+  libraryFilled: false,
+  libraryHasFilled: () => set((s) => (s.libraryFilled ? s : { libraryFilled: true })),
 }));

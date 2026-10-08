@@ -1,5 +1,5 @@
 diff --git a/src/components/bottomSheet/BottomSheetContent.tsx b/src/components/bottomSheet/BottomSheetContent.tsx
-index 4a69a6892ff553836b72216b598451c56f6284cc..dc24def5343fc796fecee5bb59e13079e3d71553 100644
+index 4a69a6892ff553836b72216b598451c56f6284cc..6016a110a802672545c18e59f27cf9aa44413d08 100644
 --- a/src/components/bottomSheet/BottomSheetContent.tsx
 +++ b/src/components/bottomSheet/BottomSheetContent.tsx
 @@ -1,5 +1,6 @@
@@ -18,7 +18,56 @@ index 4a69a6892ff553836b72216b598451c56f6284cc..dc24def5343fc796fecee5bb59e13079
      isInTemporaryPosition,
    } = useBottomSheetInternal();
    //#endregion
-@@ -199,6 +202,33 @@ function BottomSheetContentComponent({
+@@ -141,10 +144,35 @@ function BottomSheetContentComponent({
+ 
+     const { highestDetentPosition } = animatedDetentsState.get();
+ 
+-    const highestSnapPoint = Math.max(
+-      highestDetentPosition ?? 0,
+-      animatedPosition.get()
+-    );
++    /**
++     * While a pan gesture is in progress the padding is taken from the
++     * highest detent alone, not from where the sheet has been dragged to.
++     *
++     * Read from `animatedPosition`, it changed by a fraction of a pixel on
++     * every frame of a downward drag (it grows with the square root of the
++     * position). The mask's `paddingBottom` and `height` followed it, and
++     * those are layout properties: each frame of the drag re-ran layout for
++     * the sheet's whole content. On a Galaxy A33 that held a small sheet to
++     * about 20ms a frame and a long list to about 30ms, which is seen as the
++     * sheet stuttering under the finger.
++     *
++     * The value only matters when the sheet is pulled above its highest
++     * detent, and there `Math.max` already picks the detent. Below it, the
++     * extra padding is off the bottom of the screen. So holding it at the
++     * detent while a finger is down changes nothing that can be seen, and
++     * the drag is a transform again.
++     */
++    const contentGestureState = animatedContentGestureState.get();
++    const handleGestureState = animatedHandleGestureState.get();
++    const isGestureActive =
++      contentGestureState === State.BEGAN ||
++      contentGestureState === State.ACTIVE ||
++      handleGestureState === State.BEGAN ||
++      handleGestureState === State.ACTIVE;
++
++    const highestSnapPoint = isGestureActive
++      ? (highestDetentPosition ?? 0)
++      : Math.max(highestDetentPosition ?? 0, animatedPosition.get());
+     /**
+      * added safe area to prevent the sheet from floating above
+      * the bottom of the screen, when sheet being over dragged or
+@@ -175,6 +203,8 @@ function BottomSheetContentComponent({
+     animatedLayoutState,
+     animatedDetentsState,
+     animatedKeyboardState,
++    animatedContentGestureState,
++    animatedHandleGestureState,
+   ]);
+   //#endregion
+ 
+@@ -199,6 +229,33 @@ function BottomSheetContentComponent({
      const paddingBottom = detached ? 0 : animatedPaddingBottom.get();
      const height = animatedContentHeightMax.get() + paddingBottom;
  
@@ -52,7 +101,7 @@ index 4a69a6892ff553836b72216b598451c56f6284cc..dc24def5343fc796fecee5bb59e13079
      return {
        paddingBottom: animate({
          point: paddingBottom,
-@@ -219,7 +249,9 @@ function BottomSheetContentComponent({
+@@ -219,7 +276,9 @@ function BottomSheetContentComponent({
      overrideReduceMotion,
      animatedLayoutState,
      animatedContentHeightMax,

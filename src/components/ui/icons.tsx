@@ -50,7 +50,7 @@
  * outline could only ignore. All four are drawn here rather than mapped.
  */
 import { createContext, useContext, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react-native';
 import Svg, { G, Path, type SvgProps } from 'react-native-svg';
 import { useDirection } from '@/hooks/use-direction';
@@ -123,6 +123,14 @@ import HgShieldCheckIcon from '@hugeicons/core-free-icons/ShieldCheckIcon';
 import HgSparklesIcon from '@hugeicons/core-free-icons/SparklesIcon';
 import HgStarIcon from '@hugeicons/core-free-icons/StarIcon';
 import HgSun03Icon from '@hugeicons/core-free-icons/Sun03Icon';
+import HgBook02Icon from '@hugeicons/core-free-icons/Book02Icon';
+import HgBug01Icon from '@hugeicons/core-free-icons/Bug01Icon';
+import HgCall02Icon from '@hugeicons/core-free-icons/Call02Icon';
+import HgHeadsetIcon from '@hugeicons/core-free-icons/HeadsetIcon';
+import HgHelpCircleIcon from '@hugeicons/core-free-icons/HelpCircleIcon';
+import HgLifebuoyIcon from '@hugeicons/core-free-icons/LifebuoyIcon';
+import HgMail01Icon from '@hugeicons/core-free-icons/Mail01Icon';
+import HgTicket01Icon from '@hugeicons/core-free-icons/Ticket01Icon';
 import HgTextBoldIcon from '@hugeicons/core-free-icons/TextBoldIcon';
 import HgTextItalicIcon from '@hugeicons/core-free-icons/TextItalicIcon';
 import HgTick02Icon from '@hugeicons/core-free-icons/Tick02Icon';
@@ -168,11 +176,25 @@ function useResolvedColor(explicit: string | undefined, fallback: string): strin
   return explicit ?? inherited ?? fallback;
 }
 
-/** Props for icons that must never be announced by a screen reader. */
-const decorative = {
-  accessibilityElementsHidden: true,
-  importantForAccessibility: 'no-hide-descendants',
-} as const;
+/**
+ * Props for icons that must never be announced by a screen reader.
+ *
+ * Two sets, because the two platforms take the instruction differently.
+ * `accessibilityElementsHidden` and `importantForAccessibility` are native
+ * props: on web they reach the DOM `<svg>` untranslated, where React warns
+ * about the casing of the second one and neither has any effect — so the glyph
+ * stays in the accessibility tree inside every button and field that already
+ * carries its own name, and every icon on the page logs an error while it does.
+ * `aria-hidden` is what says it there.
+ */
+const decorative = (
+  Platform.OS === 'web'
+    ? { 'aria-hidden': true }
+    : {
+        accessibilityElementsHidden: true,
+        importantForAccessibility: 'no-hide-descendants',
+      }
+) as Record<string, unknown>;
 
 /** The default line weight. See the note on weight above. */
 const STROKE = 2;
@@ -390,6 +412,14 @@ export const MessageCircleIcon = icon(HgBubbleChatIcon, {
   fillable: true,
 });
 export const CardIcon = icon(HgCreditCardIcon, { size: 16, color: '#737373' });
+export const HeadsetIcon = icon(HgHeadsetIcon, { size: 16, color: '#737373' });
+export const LifebuoyIcon = icon(HgLifebuoyIcon, { size: 16, color: '#737373' });
+export const HelpCircleIcon = icon(HgHelpCircleIcon, { size: 16, color: '#737373' });
+export const MailIcon = icon(HgMail01Icon, { size: 16, color: '#737373' });
+export const CallIcon = icon(HgCall02Icon, { size: 16, color: '#737373' });
+export const BugIcon = icon(HgBug01Icon, { size: 16, color: '#737373' });
+export const BookIcon = icon(HgBook02Icon, { size: 16, color: '#737373' });
+export const TicketIcon = icon(HgTicket01Icon, { size: 16, color: '#737373' });
 export const ReceiptIcon = icon(HgReceiptIcon, { size: 16, color: '#737373' });
 export const SunIcon = icon(HgSun03Icon, { size: 18, color: '#f5f5f5' });
 export const MoonIcon = icon(HgMoonIcon, { size: 18, color: '#262626' });

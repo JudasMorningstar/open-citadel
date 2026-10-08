@@ -1,0 +1,108 @@
+diff --git a/src/components/ScopedTheme/ScopedTheme.native.tsx b/src/components/ScopedTheme/ScopedTheme.native.tsx
+index bea273ddda5eace7dc8e335c660f379b065ca5f6..b723341fe54e8295cce51cb479fbbea07b30dbd2 100644
+--- a/src/components/ScopedTheme/ScopedTheme.native.tsx
++++ b/src/components/ScopedTheme/ScopedTheme.native.tsx
+@@ -8,9 +8,16 @@ type ScopedThemeProps = {
+ 
+ export const ScopedTheme: React.FC<React.PropsWithChildren<ScopedThemeProps>> = ({ theme, children }) => {
+     const uniwindContext = useUniwindContext()
++    // PATCHED (Open Citadel): the value is remade only when what is in it
++    // changes. Upstream keys it on the parent context object, so a scope inside
++    // another scope handed every component under it a new context whenever the
++    // outer one changed theme, though its own theme had not: a part of the app
++    // meant to change later was drawn again in the same pass as the part
++    // changing now.
++    const { rtl, variables } = uniwindContext
+     const value = useMemo<UniwindContextType>(
+-        () => ({ ...uniwindContext, scopedTheme: theme }),
+-        [theme, uniwindContext],
++        () => ({ rtl, variables, scopedTheme: theme }),
++        [theme, rtl, variables],
+     )
+ 
+     return (
+diff --git a/src/hooks/useCSSVariable/useCSSVariable.ts b/src/hooks/useCSSVariable/useCSSVariable.ts
+index e2010dcc7255b71c3e166189dc74c2af90281558..dd31a689ba92bd00057bf65e0d1c45c099e5e0d2 100644
+--- a/src/hooks/useCSSVariable/useCSSVariable.ts
++++ b/src/hooks/useCSSVariable/useCSSVariable.ts
+@@ -1,7 +1,6 @@
+-import { useLayoutEffect, useRef, useState } from 'react'
++import { useLayoutEffect, useMemo, useReducer } from 'react'
+ import { Platform } from 'react-native'
+ import { StyleDependency } from '../../common/consts'
+-import { arrayEquals } from '../../common/utils'
+ import { useUniwindContext } from '../../core/context'
+ import { UniwindListener } from '../../core/listener'
+ import { Logger } from '../../core/logger'
+@@ -58,46 +57,35 @@ export type GetCSSVariable = {
+  * @returns Value / Values of the CSS variable. On web it is always a string (1rem, #ff0000, etc.), but on native it can be a string or a number (16px, #ff0000)
+  */
+ export const useCSSVariable: GetCSSVariable = (name: string | Array<string>) => {
++    // PATCHED (Open Citadel): the value is worked out while rendering, from the
++    // theme this component is under, instead of being held in state.
++    //
++    // Upstream keeps it in `useState` and corrects it from a layout effect. Under
++    // a `<ScopedTheme>` whose theme changes that is two renders of the caller and
++    // everything below it: one with the old colour, then a synchronous second one
++    // from the effect, which also throws away whatever priority the first was
++    // given. It also listened for the app-wide theme even when scoped, where the
++    // answer cannot depend on it, and an array of names is a new array each time,
++    // so every caller in the app rendered again for a change that was not theirs.
++    //
++    // Here a scoped caller follows its scope through context alone, and only an
++    // unscoped one listens for the app-wide theme. This is what lets a theme
++    // change be handed to the screen in view first and to the rest of the app
++    // afterwards (see `components/theme-scope`).
+     const uniwindContext = useUniwindContext()
+-    const [value, setValue] = useState(() => getCSSVariable(name, uniwindContext))
+-    const nameRef = useRef(name)
+-    const isMountRef = useRef(true)
++    const [tick, rerender] = useReducer((count: number) => count + 1, 0)
++    const scoped = uniwindContext.scopedTheme !== null
+ 
+     useLayoutEffect(() => {
+-        if (Array.isArray(name) && Array.isArray(nameRef.current)) {
+-            if (arrayEquals(name, nameRef.current)) {
+-                return
+-            }
+-
+-            setValue(getCSSVariable(name, uniwindContext))
+-            nameRef.current = name
+-
+-            return
+-        }
+-
+-        if (name !== nameRef.current) {
+-            setValue(getCSSVariable(name, uniwindContext))
+-            nameRef.current = name
+-        }
+-    }, [name])
+-
+-    useLayoutEffect(() => {
+-        const updateValue = () => setValue(getCSSVariable(nameRef.current, uniwindContext))
+-
+-        // Skip mount as useState already resolved the value, recompute only when the context changes
+-        if (isMountRef.current) {
+-            isMountRef.current = false
+-        } else {
+-            updateValue()
+-        }
+-
+-        const dispose = UniwindListener.subscribe(
+-            updateValue,
+-            [StyleDependency.Theme, StyleDependency.Variables],
++        return UniwindListener.subscribe(
++            rerender,
++            scoped ? [StyleDependency.Variables] : [StyleDependency.Theme, StyleDependency.Variables],
+         )
++    }, [scoped])
+ 
+-        return dispose
+-    }, [uniwindContext])
++    const key = Array.isArray(name) ? name.join('\n') : name
+ 
+-    return value as never
++    // `key` stands in for `name`, which is a new array on most renders.
++    // oxlint-disable-next-line react-hooks/exhaustive-deps
++    return useMemo(() => getCSSVariable(name, uniwindContext), [key, uniwindContext, tick]) as never
+ }

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
+import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import {
     listSessions,
     readMessages,
@@ -43,6 +44,7 @@ import {
 } from '@/services/device-llm/conversation';
 import { engineGeneration, getEngine, isEngineLoaded } from '@/services/device-llm/engine';
 import { afterErrand, errandRunning, runErrand } from '@/services/device-llm/errands';
+import { markRunFinished, markRunStarted } from '@/services/device-llm/run-marker';
 import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
@@ -96,6 +98,8 @@ interface ChatStore {
     title: string;
     contextText?: string;
     passageText?: string;
+    /** A thought the user wrote down, which the chat is about instead of a passage. */
+    thoughtText?: string;
     contextLocator?: string;
   }): Promise<string>;
   openSession(id: string): Promise<void>;
@@ -637,7 +641,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ sessions: listSessions('reading') });
   },
 
-  async createSession({ bookId, title, contextText, passageText, contextLocator }) {
+  async createSession({ bookId, title, contextText, passageText, thoughtText, contextLocator }) {
     const id = uuid();
     const ts = now();
     // Spoiler boundary: Samwell may only discuss what the user has read.
@@ -653,8 +657,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .get()
       : undefined;
     const readPct = progress ? Math.round(progress.percentage * 100) : null;
+    // A blog post opened in the reader is a book row too, but it has no plot
+    // to spoil, and the boundary's wording is about books.
+    const isArticle = bookId
+      ? db.select({ kind: books.kind }).from(books).where(eq(books.id, bookId)).get()?.kind === 'article'
+      : false;
     const boundaryLine =
-      readPct !== null
+      readPct !== null && !isArticle
         ? `The user has read ${readPct}% of this book${
             progress?.currentPage ? ` (up to page ${progress.currentPage})` : ''
           }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point, not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
@@ -674,7 +683,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .run();
 
     // Persist the system message so history is always complete when reloading
-    if (contextText || passageText) {
+    if (thoughtText) {
+      // The user's own words, not a passage from something they read.
+      db.insert(chatMessages)
+        .values({
+          id: uuid(),
+          sessionId: id,
+          role: 'system',
+          content:
+            `The user wrote down this thought of their own:\n\n${thoughtText}\n\n` +
+            'Help them think it through: what it means, where it holds and where it does not, and how it connects to what they read. Be concise and insightful.',
+          createdAt: ts,
+        })
+        .run();
+    } else if (contextText || passageText) {
       const bookRow = bookId
         ? db.select({ title: books.title, author: books.author }).from(books).where(eq(books.id, bookId)).get()
         : null;
@@ -716,7 +738,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .where(eq(books.id, bookId))
         .get();
 
-      if (bookRow) {
+      if (bookRow && isArticle) {
+        // A post is grounded in the whole post, from the top.
+        const text = bookRow.filePath ? await articleText(bookRow.filePath) : null;
+        db.insert(chatMessages)
+          .values({
+            id: uuid(),
+            sessionId: id,
+            role: 'system',
+            content: articleChatPrompt(bookRow.title, bookRow.author, text),
+            createdAt: ts,
+          })
+          .run();
+      } else if (bookRow) {
         // Ground book-level chats in the text the user has actually read,
         // sliced up to their current position — not the model's own memory
         // of the book.
@@ -1042,6 +1076,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     try {
       const conversation = deviceConversationFor(activeSession.id, userMsg.id);
+      // Left on disk for the length of the turn: if Android kills the app for
+      // memory partway, the next wake can say that it happened.
+      const brain = getEngine()?.entry.id;
+      if (brain) markRunStarted(brain);
       const turn = await sendDeviceTurn(conversation, content, hooks, userMsg.id);
 
       // A reply that ran out while still reasoning never crossed back, so the
@@ -1078,6 +1116,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       finalContent = get().streamingContent.trim();
     } finally {
       deviceTurn = null;
+      markRunFinished();
     }
 
     if (limitReached) {

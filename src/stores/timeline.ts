@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { books, highlights, notes, thoughts } from "@/db/schema";
 import { useSettingsStore } from "@/stores/settings";
 import { localDayString } from "@/utils/day";
+import { keepUnchanged } from "@/utils/keep-unchanged";
 
 export type TimelineItem = {
   type: "highlight" | "thought";
@@ -252,7 +253,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           ]
         : [];
 
-    set({ groups, isLoading: false });
+    // The same day re-read on a return to the hub keeps its entries' identity.
+    set({ groups: keepUnchanged(get().groups, groups), isLoading: false });
   },
 
   setSelectedDate: (date: string) => {

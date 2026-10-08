@@ -12,7 +12,8 @@
  */
 import React from 'react';
 
-import { NEW_CHAT_TITLE, scheduleBackgroundTitles, useChatStore, uuid } from '@/stores/chat';
+import { leaveForNewChat } from '@/services/samwell-handoff';
+import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
 /** `'new'` for a fresh chat, otherwise the id of the session being opened. */
@@ -62,34 +63,13 @@ export function useChatSessions() {
     if (switching) return;
     setSwitching('new');
     try {
-      if (isGenerating) stopGeneration();
-      // A rename started from the history sheet may still be generating.
-      await useChatStore.getState().waitForRetitle();
-      // A new chat makes its own conversation on its first turn. Clear every
-      // turn-local field now so a stopped generation cannot leave the page
-      // locked while its native promise unwinds.
-      useChatStore.setState({
-        activeSession: null,
-        messages: [],
-        isGenerating: false,
-        isThinking: false,
-        isToolCalling: false,
-        toolCallStatus: null,
-        toolCallName: null,
-        streamingContent: '',
-        thinkingContent: '',
-        thinkingSeconds: null,
-        lastStreamedMessageId: null,
-        deviceLimit: null,
-        queuedBehindTitle: false,
-      });
-      // The chat just left may still be called "New chat" on device.
-      scheduleBackgroundTitles();
+      // A new chat makes its own conversation on its first turn.
+      await leaveForNewChat();
       setSession({ pendingBook: null, mode: 'chat' });
     } finally {
       setSwitching(null);
     }
-  }, [switching, isGenerating, stopGeneration, setSession]);
+  }, [switching, setSession]);
 
   const send = React.useCallback(
     async (text: string) => {

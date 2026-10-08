@@ -6,10 +6,28 @@
 # See TODO-ANDROID.md.
 node_modules/**/android/src/main/AndroidManifest.xml
 
-# react-native-executorch's postinstall downloads its prebuilt iOS frameworks
-# into the package, but only on macOS. EAS builds Android on Linux, so the
-# directory there has no `third-party/ios` and would hash differently from a Mac
-# checkout: "Runtime version mismatch" on the Android production build. Which
-# frameworks it fetches is pinned by `nativeLibsVersion` in the package's
-# package.json, and that file is still hashed.
+# react-native-executorch's postinstall writes into its own package directory:
+# prebuilt libraries and headers under third-party/, and rne-build-config.json,
+# which records the backends and libs chosen in our package.json. None of that
+# tracks the package version, so a checkout's copy drifts from a fresh install:
+#
+# - the iOS frameworks only download on macOS, so a Mac checkout never matched
+#   an Android build made on Linux;
+# - the extractor only adds files, so dropping a backend leaves its libraries
+#   behind until node_modules is deleted;
+# - pnpm does not rerun a postinstall for a package it already has, so changing
+#   the block in package.json leaves the old rne-build-config.json in place.
+#
+# All three end as "Runtime version mismatch". The outputs are ignored here and
+# their inputs are hashed instead: `nativeLibsVersion` in the package's own
+# package.json, which is still hashed, and our package.json block, which
+# fingerprint.config.js adds. See TODO-ANDROID.md.
 node_modules/react-native-executorch/third-party/ios/**
+node_modules/react-native-executorch/third-party/android/libs/**
+node_modules/react-native-executorch/third-party/include/**
+node_modules/react-native-executorch/rne-build-config.json
+# The same postinstall's archives were packed on a Mac, and unpacking them on
+# Linux leaves AppleDouble files (`._include`, `._.`) beside what they held.
+# Version 0.10.4's did; a fresh install in the build's own folder had none, and
+# the two fingerprints stopped matching.
+node_modules/react-native-executorch/third-party/._*

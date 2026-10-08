@@ -1,14 +1,22 @@
 import { toolDefinition } from '@tanstack/ai/client';
 import { z } from 'zod';
 
+import {
+  findPodcastsTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
+  ONBOARDING_FEED_TOOL_NAMES,
+} from './onboarding-follow-tools';
 import { explainAppTool } from './tools';
 
 /**
- * The four things Samwell can do while setting somebody up.
+ * The things Samwell can do while setting somebody up.
  *
- * All four execute on the device, because all four touch the device: a folder,
- * the reader's own files, a download, and the flag that says onboarding is
- * over. The server only defines the shapes and never sees a filename.
+ * All of them execute on the device, because all of them touch the device: a
+ * folder, the reader's own files, a download, a followed show or blog, and the
+ * flag that says onboarding is over. The server only defines the shapes and
+ * never sees a filename.
  *
  * This is a deliberately tiny catalogue. Onboarding is the one conversation
  * where the model has never met the person and cannot be steered by anything
@@ -96,10 +104,32 @@ export const DownloadFreeBooksOutputSchema = z.object({
   error: z.string().optional(),
 });
 
-export const FinishOnboardingInputSchema = z.object({});
+/** The finish an older build runs: goodbye first as a message, then this. */
+export const FinishOnboardingLegacyInputSchema = z.object({});
+
+/**
+ * The goodbye travels in the call.
+ *
+ * Asking for "your goodbye as a message, then this call, in the same reply"
+ * depended on a model writing text and then remembering a trailing tool call,
+ * and the one on the free route kept doing the first and not the second: the
+ * reader was left in a finished conversation with a text field, asking to be
+ * let out. A call whose argument IS the goodbye cannot be half done. The app
+ * shows it as his last message and opens the way to the library.
+ */
+export const FinishOnboardingInputSchema = z.object({
+  goodbye: z
+    .string()
+    .min(1)
+    .describe(
+      "Your last message to them, shown as your words. In a few short lines: what is in their library now, where to find you (swipe right from the Library, or the button at the top right), what to bring you (a passage that landed, a book they finished, a goal they want to move), and a warm goodbye. No question in it.",
+    ),
+});
 
 export const FinishOnboardingOutputSchema = z.object({
   ok: z.boolean(),
+  /** Why it did not end, when it did not: he had just asked them something. */
+  error: z.string().optional(),
 });
 
 export const setUpLibraryTool = toolDefinition({
@@ -131,8 +161,17 @@ export const downloadFreeBooksTool = toolDefinition({
 export const finishOnboardingTool = toolDefinition({
   name: 'finish_onboarding',
   description:
-    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first.",
+    "End onboarding with your goodbye. Call this once everything is set up or they have declined it: your `goodbye` is shown to them as your last message, and then they get the button through to their library. Do not also write the goodbye as a message. Never call it while you are waiting on an answer from them. Calling it ends the conversation: there is no turn after it.",
   inputSchema: FinishOnboardingInputSchema,
+  outputSchema: FinishOnboardingOutputSchema,
+});
+
+/** `finish_onboarding` as a build from before the goodbye argument knows it. */
+export const finishOnboardingLegacyTool = toolDefinition({
+  name: 'finish_onboarding',
+  description:
+    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first. Never call it in a message that asks them anything: a question means you are waiting for their answer, not finished.",
+  inputSchema: FinishOnboardingLegacyInputSchema,
   outputSchema: FinishOnboardingOutputSchema,
 });
 
@@ -140,6 +179,12 @@ export const ONBOARDING_TOOL_DEFINITIONS = [
   setUpLibraryTool,
   findFreeBooksTool,
   downloadFreeBooksTool,
+  // Podcasts and blogs, the Library's other two sides. See
+  // `onboarding-follow-tools`.
+  findPodcastsTool,
+  followPodcastsTool,
+  listBlogsTool,
+  followBlogsTool,
   finishOnboardingTool,
   /*
    * The same tool reading chat carries, and the same guide behind it.
@@ -152,17 +197,34 @@ export const ONBOARDING_TOOL_DEFINITIONS = [
   explainAppTool,
 ] as const;
 
-export const ONBOARDING_CLIENT_TOOL_DEFINITIONS = ONBOARDING_TOOL_DEFINITIONS.map((tool) =>
-  tool.client(),
-);
+const ALL_CLIENT_TOOLS = ONBOARDING_TOOL_DEFINITIONS.map((tool) => tool.client());
+const BOOKS_ONLY_CLIENT_TOOLS = [
+  ...ONBOARDING_TOOL_DEFINITIONS.filter(
+    (tool) => !ONBOARDING_FEED_TOOL_NAMES.has(tool.name) && tool.name !== 'finish_onboarding',
+  ),
+  finishOnboardingLegacyTool,
+].map((tool) => tool.client());
 
 /**
- * The two that touch the reader's files, and so must be confirmed first.
+ * What the route sends, for the build on the other end. One from before
+ * podcasts and blogs has no code to run their tools, so it is never offered
+ * them, and it knows `finish_onboarding` without the goodbye argument. See
+ * `ONBOARDING_FEEDS_PROP`.
+ */
+export function onboardingClientToolDefinitions({ feeds }: { feeds: boolean }) {
+  return feeds ? ALL_CLIENT_TOOLS : BOOKS_ONLY_CLIENT_TOOLS;
+}
+
+/**
+ * The ones that change what is on the reader's device, and so must be
+ * confirmed first.
  *
  * `set_up_library` deletes EPUBs from their storage on Android once it has
  * copied them, and `download_free_books` writes new files into a folder of
  * theirs. Neither is undoable from a conversation, and both are being asked
- * for by a model that has known the person for about ninety seconds.
+ * for by a model that has known the person for about ninety seconds. The two
+ * follows are undoable, but they are still choices made in the reader's name,
+ * and the card is where they see which shows and blogs those are.
  *
  * Read by the client to pick the right waiting message; the gate itself is the
  * `needsApproval` flag on the definitions above.
@@ -170,6 +232,8 @@ export const ONBOARDING_CLIENT_TOOL_DEFINITIONS = ONBOARDING_TOOL_DEFINITIONS.ma
 export const ONBOARDING_APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
   'set_up_library',
   'download_free_books',
+  'follow_podcasts',
+  'follow_blogs',
 ]);
 
 export const ONBOARDING_TOOL_NAMES: ReadonlySet<string> = new Set(

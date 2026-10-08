@@ -41,6 +41,24 @@ If a different file ever does the same thing, the old workaround still holds:
 NOT repair it, because the file is already present at the right version and
 pnpm has no reason to touch it.
 
+**Third time, 2026-09-29.** Adding `"phonemis"` to the ExecuTorch libs in
+`package.json` broke the next Android build. ExecuTorch's postinstall writes
+`rne-build-config.json` from that block, and pnpm never reran it for a package
+it already had, so the checkout kept `enablePhonemis: false` while the fresh
+install said `true`. `.fingerprintignore` now drops everything that postinstall
+writes, and `fingerprint.config.js` hashes the `package.json` blocks that
+decide it. Only two native packages have postinstalls today,
+`react-native-executorch` and `react-native-enriched-markdown`; a new one is
+the likeliest next cause.
+
+**Finding the cause, one command.** The local build skips printing the
+fingerprint diff. This reproduces its fresh install and prints the sources
+that differ:
+
+```bash
+scripts/fingerprint-diff.sh android development
+```
+
 **How to check before you burn a build:**
 
 ```bash

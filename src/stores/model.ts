@@ -22,9 +22,15 @@ import {
   localModelFiles,
   remoteUrls,
 } from "@/services/device-llm/files";
-import { totalSizeBytes } from "@/services/huggingface";
+import { makeRoomForBrain } from "@/services/device-llm/make-room";
+import { markRunFinished, markRunStarted, takeInterruptedRun } from "@/services/device-llm/run-marker";
+import { faultLabel, type MemoryVerdict } from "@/services/device-llm/exit-verdict";
+import { clearVerdict, loadVerdicts, settleInterruptedRun } from "@/services/device-llm/memory-verdict";
+import { closedByPhoneMessage, faultMessage, interruptedMessage, tooLargeMessage, wakeRoom } from "@/services/device-llm/wake-room";
+import { queryClient } from "@/lib/query-client";
+import { createModelSizeQueryOptions } from "@/query-manager/device-models";
 import { formatBytes } from "@/utils/format";
-import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
+import { checkModelMemory, modelFit, type MemoryEstimate } from "@/utils/memory-estimator";
 
 export interface InferenceSettings {
   enableToolCalling: boolean;
@@ -69,10 +75,18 @@ interface ModelStore {
   downloadProgress: Record<string, number>; // modelId → 0–1
   inference: InferenceSettings;
   memoryEstimate: MemoryEstimate | null;
+  /**
+   * Brains the phone has ended the app over, by id: read from Android's own
+   * record of the death, never assumed (`memory-verdict.ts`). One is not
+   * woken until its verdict is lifted.
+   */
+  memoryVerdicts: Record<string, MemoryVerdict>;
 
   loadModels(): Promise<void>;
   /** Fills in what each brain weighs, for any not yet measured, or only `ids`. Needs the network. */
-  measureModels(ids?: readonly string[]): Promise<void>;
+  measureModels(ids?: readonly string[], options?: { background?: boolean }): Promise<void>;
+  /** Keep a measured size: on the row, and on the brain in memory. */
+  recordModelSize(id: string, sizeBytes: number): void;
   setActiveModel(id: string): Promise<void>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): void;
@@ -82,6 +96,8 @@ interface ModelStore {
   releaseContext(): Promise<void>;
   setInference(settings: Partial<InferenceSettings>): Promise<void>;
   checkMemory(modelId: string): Promise<void>;
+  /** Lets a brain the phone closed the app over be woken again: the reader's call. */
+  liftMemoryVerdict(modelId: string): void;
 }
 
 /** How long a wake may take before it is worth explaining. */
@@ -89,6 +105,9 @@ const SLOW_WAKE_NOTICE_MS = 3000;
 
 /** Keyed so a second wake replaces the first notice rather than stacking. */
 const WAKE_TOAST_KEY = 'samwell-wake';
+
+/** Its own key: said alongside the wake notice, not in place of it. */
+const INTERRUPTED_TOAST_KEY = 'samwell-interrupted';
 
 /** Marks the one-time clear-out of the LiteRT runtime's files as done. */
 const LITERT_CLEARED_KEY = 'device.litertCleared';
@@ -210,6 +229,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   downloadProgress: {},
   inference: { ...DEFAULT_INFERENCE },
   memoryEstimate: null,
+  memoryVerdicts: {},
 
   async loadModels() {
     // Off the path to the list: the old runtime's gigabytes can take a while
@@ -249,31 +269,41 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       models,
       activeModelId,
       inference,
+      memoryVerdicts: loadVerdicts(),
       modelsHydrated: true,
     });
 
-    // The Samwell card shows the active brain's size before anything is
-    // downloaded, and on a first launch nothing had measured it: the size
-    // only arrived once the picker was opened. The rest wait for the picker.
-    if (activeModelId) {
-      void get()
-        .measureModels([activeModelId])
-        .catch((err) => console.warn('[Models] Could not measure the active brain:', err));
-    }
+    /*
+     * The sizes, prefetched: the active brain first, since the Samwell card
+     * shows it, then the rest for the picker. Each is measured once and kept
+     * on its row, so after the first launch this asks for nothing. Retried
+     * through the query cache, where a size that could not be had is asked
+     * again when something showing it mounts. See `createModelSizeQueryOptions`.
+     */
+    void (async () => {
+      if (activeModelId) await get().measureModels([activeModelId]);
+      await get().measureModels(undefined, { background: true });
+    })();
   },
 
-  async measureModels(ids) {
+  async measureModels(ids, { background = false } = {}) {
     const unmeasured = get().models.filter((m) => m.sizeBytes == null && (!ids || ids.includes(m.id)));
     await Promise.all(
       unmeasured.map(async (m) => {
-        const entry = catalogueModel(m.id);
-        if (!entry) return;
-        const sizeBytes = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
-        if (sizeBytes == null) return;
-        db.update(deviceModels).set({ sizeBytes }).where(eq(deviceModels.id, m.id)).run();
-        set(patchModel(m.id, { sizeBytes }));
+        // Shared with any surface already asking, so one brain is one request.
+        // In the background, one try each: the picker asks again on open.
+        const sizeBytes = await queryClient
+          .fetchQuery(createModelSizeQueryOptions(m.id, background ? { retry: 0 } : undefined))
+          .catch(() => null);
+        if (sizeBytes != null) get().recordModelSize(m.id, sizeBytes);
       }),
     );
+  },
+
+  recordModelSize(id, sizeBytes) {
+    if (get().models.find((m) => m.id === id)?.sizeBytes === sizeBytes) return;
+    db.update(deviceModels).set({ sizeBytes }).where(eq(deviceModels.id, id)).run();
+    set(patchModel(id, { sizeBytes }));
   },
 
   async setActiveModel(id) {
@@ -295,29 +325,27 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     const entry = catalogueModel(id);
     if (!entry || downloads.has(id)) return;
 
-    // The storage check needs the size, which a brain never browsed may not
-    // have yet.
-    let required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
-    if (required == null) {
-      required = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
-      if (required != null) {
-        db.update(deviceModels).set({ sizeBytes: required }).where(eq(deviceModels.id, id)).run();
-        set(patchModel(id, { sizeBytes: required }));
-      }
-    }
-    const freeSpace = await getFreeDiskStorageAsync();
-    if (required && freeSpace < required * 1.1) {
-      set({
-        loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
-      });
-      return;
-    }
-
+    // Claimed before anything is awaited: the size below can take a few
+    // seconds of retries, and a second tap in that gap must not start a
+    // second download. The progress row also shows from the tap.
     const controller = new AbortController();
     downloads.set(id, controller);
     set((s) => ({ downloadProgress: { ...s.downloadProgress, [id]: 0 }, loadError: null }));
 
     try {
+      // The storage check needs the size, which a brain never browsed may
+      // not have yet.
+      if (get().models.find((m) => m.id === id)?.sizeBytes == null) await get().measureModels([id]);
+      if (controller.signal.aborted) return;
+      const required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
+      const freeSpace = await getFreeDiskStorageAsync();
+      if (required && freeSpace < required * 1.1) {
+        set({
+          loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
+        });
+        return;
+      }
+
       await downloadModelFiles(entry, {
         signal: controller.signal,
         onProgress: (fraction) =>
@@ -423,12 +451,20 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       set({ memoryEstimate: null });
     }
   },
+
+  liftMemoryVerdict(modelId) {
+    set({ memoryVerdicts: clearVerdict(modelId), loadError: null });
+  },
 }));
 
 /** Loads the active brain. Only through `initContext`, which keeps it to one at a time. */
 async function wake(): Promise<void> {
   const get = useModelStore.getState;
   const set = useModelStore.setState;
+  // Each attempt starts with no error, so one that fails the same way as the
+  // last is still a change: Settings says a failure in a toast when the error
+  // appears (`useBrainErrorToast`), and a second press must not go unanswered.
+  set({ loadError: null });
   const { models, activeModelId } = get();
   const model = models.find((m) => m.id === activeModelId);
   const entry = catalogueModel(activeModelId);
@@ -440,6 +476,39 @@ async function wake(): Promise<void> {
   if (!isExecuTorchAvailable()) {
     set({ loadError: "AI chat isn't supported on this device." });
     return;
+  }
+
+  /*
+   * Memory is settled before the runtime is asked for anything. A phone
+   * short of it does not fail the load: Android kills the app, and nothing
+   * here would get to say why. See `wake-room.ts`.
+   */
+  const fit = modelFit(model.sizeBytes);
+  const room = wakeRoom(fit);
+  // A run that never finished is judged once, here, from Android's record of
+  // how the app died. Only a death the phone chose counts against the brain.
+  const interrupted = takeInterruptedRun();
+  const outcome = interrupted ? settleInterruptedRun(interrupted) : null;
+  if (outcome?.cause === 'memory') set({ memoryVerdicts: loadVerdicts() });
+
+  if (room === 'refuse') {
+    set({ loadError: tooLargeMessage(entry.name, checkModelMemory(model.sizeBytes).totalBytes) });
+    return;
+  }
+  const verdict = get().memoryVerdicts[entry.id];
+  if (verdict) {
+    set({ loadError: closedByPhoneMessage(entry.name, verdict.heldBytes, fit === 'fits') });
+    return;
+  }
+  // The last run of this brain ended with the app gone, and not for memory.
+  // He is still woken: a fault is not his size, and with no record of the
+  // death it may have been a busy phone.
+  if (interrupted?.model === entry.id && outcome) {
+    if (outcome.cause === 'fault') {
+      showToast({ key: INTERRUPTED_TOAST_KEY, message: faultMessage(faultLabel(outcome.exit)) });
+    } else if (outcome.cause === 'unknown') {
+      showToast({ key: INTERRUPTED_TOAST_KEY, message: interruptedMessage(fit) });
+    }
   }
 
   set({ isLoading: true, loadError: null });
@@ -479,7 +548,14 @@ async function wake(): Promise<void> {
       return;
     }
 
-    await loadEngine(entry, files);
+    if (room === 'makeRoom') await makeRoomForBrain();
+
+    markRunStarted(entry.id);
+    try {
+      await loadEngine(entry, files);
+    } finally {
+      markRunFinished();
+    }
     clearTimeout(slowWakeNotice);
 
     // Released while it loaded (the app went to the background), or another

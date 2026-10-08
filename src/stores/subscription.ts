@@ -1,6 +1,5 @@
 import type {
     CustomerInfo,
-    PurchasesOffering,
     PurchasesPackage,
 } from 'react-native-purchases';
 import {
@@ -13,7 +12,6 @@ import {
 } from 'samwell-shared';
 import { create } from 'zustand';
 
-import { PURCHASES_ENABLED } from '@/constants/revenuecat';
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { cloudHeaders, cloudJsonHeaders } from '@/services/cloud-identity';
 import {
@@ -24,7 +22,6 @@ import {
     AlreadyPurchased,
     PurchaseCancelled,
     purchase as buyPackage,
-    getOffering,
     manageSubscription,
     restore as restorePurchases,
 } from '@/services/purchases';
@@ -83,8 +80,6 @@ type SubscriptionState = {
    * freshly confirmed purchase can force the selection to it - see
    * `healSelectedModel`. */
   defaultModelId: string | null;
-  /** The plans on sale, in the order the server's offering lists them. */
-  offering: PurchasesOffering | null;
   /** Store renewal state. Access itself remains authoritative on the server. */
   lifecycle: SubscriptionLifecycle | null;
   /** A purchase or a restore is in flight; which plan, so one card spins. */
@@ -108,9 +103,6 @@ type SubscriptionState = {
    * move inside a month, so they are left alone rather than being invented.
    */
   applyCreditsFromTurn: (available: number) => void;
-  loadOffering: () => Promise<void>;
-  /** The plan cards' own numbers, with no account behind them. */
-  loadPlanPreview: () => Promise<void>;
   purchase: (packageToBuy: PurchasesPackage, plan: PlanId) => Promise<PurchaseOutcome>;
   restore: () => Promise<boolean>;
   manage: () => Promise<'opened' | 'test-store' | false>;
@@ -158,8 +150,6 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let accountGeneration = 0;
 let refreshInFlight: Promise<void> | null = null;
-/** The same guard for the anonymous plan read. See `loadPlanPreview`. */
-let previewInFlight: Promise<void> | null = null;
 
 /**
  * How long to wait on Samwell Cloud before giving up.
@@ -253,7 +243,6 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   catalogue: [],
   modelsByPlan: { maester: 0, grand_maester: 0, archmaester: 0 },
   defaultModelId: null,
-  offering: null,
   lifecycle: null,
   busy: null,
   loading: false,
@@ -367,71 +356,6 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     const next = Math.max(0, available);
     if (current.available === next) return;
     set({ balance: { ...current, available: next, balance: next } });
-  },
-
-  loadOffering: async () => {
-    if (!PURCHASES_ENABLED) {
-      set({ status: 'unavailable' });
-      return;
-    }
-    try {
-      set({ offering: await getOffering(), error: null });
-    } catch (error) {
-      set({ error: message(error, 'Could not load the plans.') });
-    }
-  },
-
-  /**
-   * What the plan cards say, for a reader with no account yet.
-   *
-   * The same two numbers `/billing/me` carries, from a route that asks for
-   * nobody. The cards have to be readable before anyone signs in - that is
-   * the whole point of the signed-out carousel - and the counts live on the
-   * server because the catalogue does.
-   *
-   * Deliberately quiet on failure. There is no account here to be wrong
-   * about, the cards already stand up without the count (see `PlanCard`), and
-   * an error banner over a price list somebody is reading for the first time
-   * would be the worst possible greeting. `status` is left alone for the same
-   * reason: it describes an account, and there is not one.
-   */
-  loadPlanPreview: async () => {
-    if (!baseUrl()) return;
-    // One read at a time, the way `refresh` guards itself. The effect that
-    // calls this runs again whenever the account settles, and a remount while
-    // the first is still out would otherwise put two identical requests on
-    // the wire for a number that does not change.
-    if (previewInFlight) return previewInFlight;
-    const operation = (async () => {
-      try {
-        const response = await fetchWithTimeout(`${baseUrl()}/billing/plans`, {});
-        if (!response.ok) throw new Error(`Samwell Cloud answered ${response.status}.`);
-        const body = (await response.json()) as {
-          modelsByPlan?: Record<PlanId, number>;
-          catalogue?: PlanModel[];
-        };
-        /*
-         * Never over an account's own answer. `active` and `none` are set by
-         * `refresh` alone, which only runs signed in, so either of them means
-         * a sign-in landed while this request was in flight and the reader's
-         * real catalogue is already in the store. This is the anonymous
-         * preview of it, priced against the entry band; last writer wins
-         * would sometimes be this one.
-         */
-        const settled = get().status;
-        if (settled === 'active' || settled === 'none') return;
-        set({
-          ...(body.modelsByPlan ? { modelsByPlan: body.modelsByPlan } : {}),
-          catalogue: body.catalogue ?? [],
-        });
-      } catch (error) {
-        if (__DEV__) console.warn('[Subscription] Could not read the plans:', error);
-      }
-    })().finally(() => {
-      if (previewInFlight === operation) previewInFlight = null;
-    });
-    previewInFlight = operation;
-    return operation;
   },
 
   /**

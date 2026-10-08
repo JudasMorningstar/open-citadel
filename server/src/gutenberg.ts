@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
+import { searchGutenbergOpds } from './gutenberg-opds.js';
+import { GUTENBERG_SITE, authorsOf, gutendexBooks, stringsOf, type GutendexBook } from './gutendex.js';
 import { readIdentity } from './identity.js';
 
 /**
@@ -17,39 +19,6 @@ import { readIdentity } from './identity.js';
  */
 export const gutenbergRoutes = new Hono();
 
-/**
- * Where the catalogue is read from.
- *
- * Gutendex is the JSON API for Project Gutenberg's catalogue, and this points
- * at a self-hosted instance so the free-books library later in the app is not
- * built on somebody else's rate limit. Environment rather than code because
- * the URL names self-hosted infrastructure and this repository is public, the
- * same rule `SAMWELL_CLOUD_URL` and the Logto endpoint already follow.
- *
- * The public instance is the fallback default, so a machine with no
- * configuration still works.
- */
-/*
- * `||`, not `??`, and the difference is not academic.
- *
- * Creating the key in a deployment UI and leaving the box empty is the normal
- * way this variable comes into existence, and an empty string is neither null
- * nor undefined — so `??` would keep it, the base URL would be `''`, and every
- * search would build a relative URL that `fetch` cannot parse. It fails safe
- * (the throw is caught and the site fallback answers) which is exactly what
- * makes it worth fixing: the symptom is a self-hosted instance quietly never
- * being used.
- */
-const GUTENDEX_URL = (process.env.GUTENDEX_URL?.trim() || 'https://gutendex.com').replace(
-  /\/+$/,
-  '',
-);
-
-const GUTENBERG_SITE = 'https://www.gutenberg.org';
-
-/** How long either source gets before this route gives up on it. */
-const SOURCE_TIMEOUT_MS = 12_000;
-
 export interface FreeBook {
   id: number;
   title: string;
@@ -64,49 +33,13 @@ export interface FreeBook {
 /**
  * The EPUB URL for an ebook id.
  *
- * Deterministic, which is what makes the HTML fallback below viable: scraping
- * only has to recover the id, never a download link. `.epub3.images` is the
+ * Deterministic, which is what keeps the fallback below simple: Gutenberg's
+ * search only has to give back the id, never a download link. `.epub3.images` is the
  * format Gutenberg itself marks Recommended, and runs a few hundred kB for a
  * typical book.
  */
 export function gutenbergEpubUrl(id: number): string {
   return `${GUTENBERG_SITE}/ebooks/${id}.epub3.images`;
-}
-
-async function fetchWithTimeout(url: string, accept: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SOURCE_TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: accept,
-        // Gutenberg blocks unidentified clients. Naming the app is both the
-        // polite thing and the thing that keeps the fallback working.
-        'User-Agent': 'OpenCitadel/1.0 (+https://open-citadel.online)',
-      },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-type GutendexBook = {
-  id?: unknown;
-  title?: unknown;
-  authors?: { name?: unknown }[];
-  subjects?: unknown;
-  download_count?: unknown;
-  formats?: Record<string, unknown>;
-};
-
-/** "Dyer, Frank Lewis" is how the catalogue stores it, not how anyone says it. */
-function humanizeAuthor(name: string): string {
-  const [surname, rest] = name.split(/,\s*/, 2);
-  if (!rest) return name.trim();
-  // Life dates ride along on some records: "Twain, Mark, 1835-1910".
-  const given = rest.replace(/,?\s*\d{3,4}\??\s*-\s*\d{0,4}\??\s*$/, '').trim();
-  return given ? `${given} ${surname}`.trim() : surname.trim();
 }
 
 function fromGutendex(book: GutendexBook): FreeBook | null {
@@ -128,16 +61,8 @@ function fromGutendex(book: GutendexBook): FreeBook | null {
   const hasEpub = Object.keys(formats).some((key) => key.includes('epub'));
   if (!hasEpub) return null;
 
-  const authors = Array.isArray(book.authors) ? book.authors : [];
-  const author =
-    authors
-      .map((entry) => (typeof entry?.name === 'string' ? humanizeAuthor(entry.name) : ''))
-      .filter(Boolean)
-      .join(' and ') || 'Unknown';
-
-  const subjects = Array.isArray(book.subjects)
-    ? book.subjects.filter((s): s is string => typeof s === 'string').slice(0, 6)
-    : [];
+  const author = authorsOf(book) ?? 'Unknown';
+  const subjects = stringsOf(book.subjects).slice(0, 6);
 
   return {
     id,
@@ -209,25 +134,18 @@ export function keywords(query: string): string[] {
   return out;
 }
 
-/** English, and an EPUB to actually open. Every probe carries both. */
-const CATALOGUE_FILTERS = '&languages=en&mime_type=application%2Fepub%2Bzip';
+/**
+ * English, public domain in the USA, and an EPUB to actually open. Every probe
+ * carries all three. A book still under copyright is shared by Gutenberg with
+ * its holder's permission, which is not ours to pass on, so Samwell is never
+ * shown one to offer (the app checks again before it downloads anything).
+ */
+const CATALOGUE_FILTERS = '&languages=en&copyright=false&mime_type=application%2Fepub%2Bzip';
 
 async function gutendexQuery(params: string, limit: number): Promise<FreeBook[]> {
-  // Trailing slash on purpose. DRF's DefaultRouter registers the viewset at
-  // `/books/`, and Django's APPEND_SLASH would answer `/books?...` with a 301
-  // to exactly this URL. Following a redirect on every search is a round trip
-  // spent to save a character.
-  const url = `${GUTENDEX_URL}/books/?${params}${CATALOGUE_FILTERS}`;
-
-  const response = await fetchWithTimeout(url, 'application/json');
-  if (!response.ok) {
-    throw new Error(`Gutendex returned HTTP ${response.status}`);
-  }
-
-  const body = (await response.json()) as { results?: unknown };
-  const results = Array.isArray(body.results) ? body.results : [];
+  const { results } = await gutendexBooks(`${params}${CATALOGUE_FILTERS}`);
   return results
-    .map((entry) => fromGutendex(entry as GutendexBook))
+    .map(fromGutendex)
     .filter((book): book is FreeBook => book !== null)
     .slice(0, limit);
 }
@@ -316,68 +234,28 @@ async function searchGutendex(query: string, limit: number): Promise<FreeBook[]>
     .map((entry) => entry.book);
 }
 
-/*
- * The fallback: Gutenberg's own search page.
+/**
+ * The fallback: Gutenberg's own search, through its OPDS feed rather than its
+ * web pages, which its terms reserve for people (see `gutenberg-opds.ts`).
  *
- * Deliberately crude, and only has to recover the ebook id and the two lines
- * of text beside it, because `gutenbergEpubUrl` derives the rest. It exists
- * because the primary source is a self-hosted instance that can be down for
- * reasons that have nothing to do with Project Gutenberg, and a reader's first
- * two minutes with the app is a bad time to discover a container did not come
- * back up.
+ * It exists because the primary source is a self-hosted instance that can be
+ * down, or empty for the hours after it is first deployed, for reasons that
+ * have nothing to do with Project Gutenberg, and a reader's first two minutes
+ * with the app is a bad time to discover a container did not come back up.
  *
  * No subjects and no download count from this path. Samwell picks from titles
  * and authors, which is worse and is still an answer.
  */
-const BOOK_LINK = /<li[^>]*class="[^"]*booklink[^"]*"[\s\S]*?<\/li>/g;
-const EBOOK_ID = /href="\/ebooks\/(\d+)"/;
-const TITLE = /<span[^>]*class="[^"]*\btitle\b[^"]*"[^>]*>([\s\S]*?)<\/span>/;
-const SUBTITLE = /<span[^>]*class="[^"]*\bsubtitle\b[^"]*"[^>]*>([\s\S]*?)<\/span>/;
-
-function decodeEntities(text: string): string {
-  return text
-    .replace(/<[^>]+>/g, '')
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 async function searchGutenbergSite(query: string, limit: number): Promise<FreeBook[]> {
-  const url = `${GUTENBERG_SITE}/ebooks/search/?query=${encodeURIComponent(query)}`;
-  const response = await fetchWithTimeout(url, 'text/html');
-  if (!response.ok) {
-    throw new Error(`gutenberg.org returned HTTP ${response.status}`);
-  }
-
-  const html = await response.text();
-  const books: FreeBook[] = [];
-
-  for (const block of html.match(BOOK_LINK) ?? []) {
-    const id = Number(block.match(EBOOK_ID)?.[1]);
-    if (!Number.isInteger(id) || id <= 0) continue;
-
-    const title = decodeEntities(block.match(TITLE)?.[1] ?? '');
-    if (!title) continue;
-
-    books.push({
-      id,
-      title,
-      author: decodeEntities(block.match(SUBTITLE)?.[1] ?? '') || 'Unknown',
-      subjects: [],
-      epubUrl: gutenbergEpubUrl(id),
-      downloads: 0,
-    });
-
-    if (books.length >= limit) break;
-  }
-
-  return books;
+  const books = await searchGutenbergOpds(query, limit);
+  return books.map(({ id, title, author }) => ({
+    id,
+    title,
+    author: author ?? 'Unknown',
+    subjects: [],
+    epubUrl: gutenbergEpubUrl(id),
+    downloads: 0,
+  }));
 }
 
 gutenbergRoutes.get('/gutenberg/search', async (c) => {
@@ -414,19 +292,19 @@ gutenbergRoutes.get('/gutenberg/search', async (c) => {
      * exactly the days somebody has just set this up.
      *
      * So an empty answer is treated as a miss rather than a verdict. The cost
-     * is one extra request on genuinely obscure queries, and even there the
-     * site's own search is fuzzier and may well do better.
+     * is one extra request on genuinely obscure queries, and even there
+     * Gutenberg's own search is fuzzier and may well do better.
      */
   } catch (error) {
     console.warn(
-      `[Gutenberg] Catalogue search failed for "${query}", falling back to the site:`,
+      `[Gutenberg] Catalogue search failed for "${query}", falling back to Gutenberg's own search:`,
       error,
     );
   }
 
   try {
     /*
-     * The site gets the keywords too, not the sentence.
+     * Gutenberg's search gets the keywords too, not the sentence.
      *
      * Its own search is fuzzier than Gutendex's, which is why it is worth
      * asking at all, but it is still matching words against a catalogue rather
@@ -435,7 +313,7 @@ gutenbergRoutes.get('/gutenberg/search', async (c) => {
      */
     const terms = keywords(query).slice(0, 4);
     const results = await searchGutenbergSite(terms.join(' ') || query, limit);
-    return c.json({ results, source: 'gutenberg.org' as const });
+    return c.json({ results, source: 'gutenberg-opds' as const });
   } catch (error) {
     console.error(`[Gutenberg] Both sources failed for "${query}":`, error);
     throw new HTTPException(502, {

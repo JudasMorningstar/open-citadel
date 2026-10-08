@@ -20,7 +20,12 @@ import {
     type StyleProp,
     type ViewStyle,
 } from "react-native";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import Animated, {
+    useAnimatedReaction,
+    useAnimatedStyle,
+    useSharedValue,
+} from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
@@ -138,6 +143,37 @@ const SheetBottomInsetContext = React.createContext(0);
  * its body back until the rise is over — see the note on `settled` in `Sheet`.
  */
 const SheetSettledContext = React.createContext(false);
+
+/**
+ * LOCAL EDIT (Open Citadel): the settled flag, for a sheet body that draws
+ * its first screenful as the sheet rises and wants to hold the rest back
+ * until the rise is over (the phone voice list). `Sheet.Deferred` holds a
+ * whole body behind a placeholder; this is for a body with no placeholder.
+ * Re-apply after any `panelui-cli update sheet`.
+ */
+export function useSheetSettled(): boolean {
+  return React.useContext(SheetSettledContext);
+}
+
+/** Whether the sheet is at a snap point and nothing is moving it. */
+const SheetRestingContext = React.createContext(false);
+
+/**
+ * LOCAL EDIT (Open Citadel): true while the sheet sits still at a snap point,
+ * false while it rises, is dragged, or springs back.
+ *
+ * For a body that goes on building itself after the sheet has landed (the
+ * phone voice list adds rows in steps). A step that commits while a finger is
+ * dragging the sheet makes it stutter: measured on the voice list, the sheet
+ * froze for 41 of 94 frames of a slow drag and jumped back up 17 times, where
+ * the same drag with nothing committing moved every frame and never went
+ * back. `useSheetSettled` cannot tell a body this, because it stays true from
+ * the first landing to the dismissal. Re-apply after any
+ * `panelui-cli update sheet`.
+ */
+export function useSheetResting(): boolean {
+  return React.useContext(SheetRestingContext);
+}
 
 function AttachedSheetFooter({
   animatedFooterPosition,
@@ -369,16 +405,44 @@ export function Sheet({
    */
   const [settled, setSettled] = React.useState(false);
 
-  const handleChange = React.useCallback((index: number) => {
-    setSettled(index >= 0);
-  }, []);
+  /*
+   * LOCAL EDIT (Open Citadel): whether the sheet is moving, for
+   * `useSheetResting`. The library writes the sheet's place between snap
+   * points into `animatedIndex` on the UI thread; off a whole number it is
+   * somewhere between two of them, which is a drag or an animation.
+   *
+   * Told to React only once the sheet has first landed (`landed`). Before
+   * that a commit would land mid-rise, which is the very thing `settled`
+   * exists to prevent, and the body is held until it lands anyway.
+   */
+  const animatedIndex = useSharedValue(-1);
+  const landed = useSharedValue(false);
+  const [moving, setMoving] = React.useState(false);
+  useAnimatedReaction(
+    () => Math.abs(animatedIndex.get() - Math.round(animatedIndex.get())) > 0.002,
+    (now, was) => {
+      if (now !== was && landed.get()) scheduleOnRN(setMoving, now);
+    },
+  );
+
+  const handleChange = React.useCallback(
+    (index: number) => {
+      landed.set(index >= 0);
+      setSettled(index >= 0);
+      // Arriving at a snap point is being at rest, whatever was last reported.
+      if (index >= 0) setMoving(false);
+    },
+    [landed],
+  );
 
   const handleDismiss = React.useCallback(() => {
+    landed.set(false);
+    setMoving(false);
     setSettled(false);
     hasPresented.current = false;
     onClose();
     setMounted(false);
-  }, [onClose]);
+  }, [onClose, landed]);
 
   // `useLayoutEffect`, not `useEffect`: presenting is the response to a tap
   // and every frame between the two is dead air. This one fires before the
@@ -568,6 +632,8 @@ export function Sheet({
     <BottomSheetModal
       ref={ref}
       stackBehavior={stackBehavior}
+      // LOCAL EDIT (Open Citadel): read by `useSheetResting`, above.
+      animatedIndex={animatedIndex}
       // Never under the status bar, whatever the content measures to.
       topInset={insets.top}
       enableDynamicSizing={!hasDetents}
@@ -601,7 +667,9 @@ export function Sheet({
     >
       <SheetBottomInsetContext.Provider value={contentOwesBottomInset}>
         <SheetSettledContext.Provider value={settled}>
-          {body}
+          <SheetRestingContext.Provider value={settled && !moving}>
+            {body}
+          </SheetRestingContext.Provider>
         </SheetSettledContext.Provider>
       </SheetBottomInsetContext.Provider>
     </BottomSheetModal>
@@ -641,6 +709,33 @@ function SheetDeferred({
 
   return (
     <Handover skeleton={skeleton} surface="popover" ready={settled}>
+      {children}
+    </Handover>
+  );
+}
+
+/**
+ * LOCAL EDIT (Open Citadel): `Sheet.Deferred` for one region of a sheet's body
+ * rather than the whole of it. The rest of the body (plain cards over data in
+ * memory) is drawn as the sheet rises; only this region (a chart) waits for
+ * the rise to end, behind a placeholder holding its place in the flow. A
+ * region that mounts in a sheet already open (a goal opened inside the
+ * overview) has no rise to wait for and draws at once, with no placeholder
+ * flashing past.
+ */
+function SheetDeferredRegion({
+  skeleton,
+  children,
+}: {
+  skeleton: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const settled = React.useContext(SheetSettledContext);
+  const [settledAtMount] = React.useState(settled);
+
+  if (settledAtMount) return <>{children}</>;
+  return (
+    <Handover skeleton={skeleton} surface="popover" ready={settled} fill={false}>
       {children}
     </Handover>
   );
@@ -745,5 +840,6 @@ function SheetFlatList<ItemT>({
 Sheet.ScrollView = SheetScrollView;
 Sheet.FlatList = SheetFlatList;
 Sheet.Deferred = SheetDeferred;
+Sheet.DeferredRegion = SheetDeferredRegion; // LOCAL EDIT (Open Citadel): see SheetDeferredRegion.
 
 export { SheetFlatList, SheetScrollView };

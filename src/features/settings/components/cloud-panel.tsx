@@ -1,10 +1,10 @@
 import { useIsFocused } from "expo-router/react-navigation";
 import React from "react";
 import { View } from "react-native";
-import type { PurchasesPackage } from "react-native-purchases";
 import { useCSSVariable } from "uniwind";
 
 import { ActionButton } from "@/components/action-button";
+import { useOnScreen } from "@/components/kept-alive";
 import { List, LogIn, RefreshCw, Settings, SlidersHorizontal } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
@@ -24,20 +24,14 @@ import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
-import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
+import { usePlanSale } from "@/features/billing/hooks/use-plan-sale";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
-import {
-    CREDIT_PLANS,
-    PLANS,
-    planForPackage,
-    planRank,
-    type PlanId,
-} from "samwell-shared";
+import { CREDIT_PLANS, PLANS, planRank } from "samwell-shared";
 
 /**
  * The cloud engine's panel.
@@ -55,7 +49,10 @@ export function CloudPanel({
   onRequestAccount: () => void;
   onAccessActivated?: () => void;
 }) {
-  const focused = useIsFocused();
+  // This panel is kept while the on-device one shows (`KeptAlive`), and
+  // nothing about a balance needs asking while it is put away.
+  const onScreen = useOnScreen();
+  const focused = useIsFocused() && onScreen;
   const [mutedForeground, primary] = useCSSVariable([
     "--color-muted-foreground",
     "--color-primary",
@@ -71,16 +68,11 @@ export function CloudPanel({
   const models = useSubscriptionStore((s) => s.models);
   const catalogue = useSubscriptionStore((s) => s.catalogue);
   const balance = useSubscriptionStore((s) => s.balance);
-  const offering = useSubscriptionStore((s) => s.offering);
   const lifecycle = useSubscriptionStore((s) => s.lifecycle);
   const busy = useSubscriptionStore((s) => s.busy);
   const loading = useSubscriptionStore((s) => s.loading);
   const error = useSubscriptionStore((s) => s.error);
   const refresh = useSubscriptionStore((s) => s.refresh);
-  const loadOffering = useSubscriptionStore((s) => s.loadOffering);
-  const loadPlanPreview = useSubscriptionStore((s) => s.loadPlanPreview);
-  const buy = useSubscriptionStore((s) => s.purchase);
-  const restore = useSubscriptionStore((s) => s.restore);
   const manage = useSubscriptionStore((s) => s.manage);
   // Counted by the server, not here. Three per tier is true today and stops
   // being true the first time `/admin/models` adds one.
@@ -95,6 +87,17 @@ export function CloudPanel({
    */
   const identity = useCloudIdentity();
   const hasIdentity = identity.kind === "account" || identity.kind === "guest";
+  /*
+   * What is on sale and what each plan holds, from TanStack Query and
+   * usually already cached: see `usePlanOffer`, inside `usePlanSale`, which
+   * also holds the purchase, the restore and the checkout. Not before the identity has
+   * settled, because the account store is what configures the purchases SDK.
+   */
+  const sale = usePlanSale({
+    enabled: identity.kind !== "unknown",
+    onActivated: onAccessActivated,
+  });
+  const { offer, onChoose, onRestore } = sale;
   useBillingLifecycle(focused ? identity.id : null);
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
@@ -118,92 +121,14 @@ export function CloudPanel({
   );
 
   /*
-   * Ask the server what this reader holds, and the store what is on sale.
-   *
-   * What is on sale is asked either way. The plans have to draw for somebody
-   * who has never signed in - App Review reads a price list behind a sign-in
-   * wall as registration required in order to buy - and neither the store's
-   * offering nor `/billing/plans` is about a person. Only the balance is, and
-   * asking for that without an account is a 401 for nothing.
+   * Ask the server what this reader holds. Only the balance is about a
+   * person, and asking for it without an account is a 401 for nothing; what
+   * is on sale is `usePlanOffer`'s, above, and asked either way.
    */
   React.useEffect(() => {
-    /*
-     * Not before the stored session and the Keychain have been read. Two
-     * reasons, and the second is the one that bites: `unknown` is not
-     * "nobody", so acting on it would ask the anonymous route about a reader
-     * who has an account; and the account store is what configures the
-     * purchases SDK, so asking the store for its offering first throws and
-     * leaves the cards with no prices until something else re-runs this.
-     */
-    if (identity.kind === "unknown") return;
-    void loadOffering();
-    if (hasIdentity) {
-      void refresh();
-      return;
-    }
-    void loadPlanPreview();
-  }, [identity.kind, hasIdentity, refresh, loadOffering, loadPlanPreview]);
-
-  /** The store package behind each plan, keyed exactly. See `planForPackage`. */
-  const packages = React.useMemo(() => {
-    const out: Partial<Record<PlanId, PurchasesPackage>> = {};
-    for (const pkg of offering?.availablePackages ?? []) {
-      const plan = planForPackage(pkg.identifier);
-      if (plan) out[plan] = pkg;
-    }
-    return out;
-  }, [offering]);
-
-  /**
-   * Report what the store did, and nothing else. Closing the management sheet
-   * is the sheet's own call: it is the thing that knows a change is in
-   * flight, and hiding it from out here mid-purchase left it on screen and
-   * unable to answer anything.
-   */
-  const onChoose = React.useCallback(
-    async (plan: PlanId, packageToBuy: PurchasesPackage) => {
-      const outcome = await buy(packageToBuy, plan);
-      if (outcome) {
-        showToast({
-          message:
-            outcome === "scheduled"
-              ? `${CREDIT_PLANS[plan].label} will begin at your next renewal.`
-              : outcome === "pending"
-                ? "Payment went through. Your plan will appear shortly."
-                : `${CREDIT_PLANS[plan].label} is yours.`,
-          tone: "success",
-          key: "billing",
-        });
-        if (outcome === "active") onAccessActivated?.();
-        return outcome;
-      }
-
-      const purchaseError = useSubscriptionStore.getState().error;
-      if (purchaseError) {
-        showToast({ message: purchaseError, key: "billing" });
-      }
-      return false;
-    },
-    [buy, onAccessActivated],
-  );
-
-  const onRestore = React.useCallback(async () => {
-    const restored = await restore();
-    if (restored) {
-      showToast({
-        message: "Subscription restored.",
-        tone: "success",
-        key: "billing",
-      });
-      onAccessActivated?.();
-      return;
-    }
-
-    const restoreError = useSubscriptionStore.getState().error;
-    if (restoreError) {
-      showToast({ message: restoreError, key: "billing" });
-    }
-  }, [onAccessActivated, restore]);
+    if (hasIdentity && onScreen) void refresh();
+  }, [hasIdentity, onScreen, refresh]);
+  const { packages } = offer;
 
   const onManage = React.useCallback(async () => {
     const result = await manage();
@@ -221,23 +146,6 @@ export function CloudPanel({
     }
   }, [manage]);
 
-  /*
-   * Everything that sells or recovers a plan goes through here rather than
-   * straight to the store, because the carousel above now draws for somebody
-   * who has no account yet. Signed in it is a passthrough.
-   */
-  const checkout = usePlanCheckout({
-    buy: onChoose,
-    restore: onRestore,
-    onAlreadyActive: onAccessActivated,
-  });
-  const { start } = checkout;
-  const startPurchase = React.useCallback(
-    (plan: PlanId, packageToBuy: PurchasesPackage) =>
-      start({ kind: "buy", plan, packageToBuy }),
-    [start],
-  );
-  const startRestore = React.useCallback(() => start({ kind: "restore" }), [start]);
   /**
    * A purchase is under way.
    *
@@ -246,7 +154,7 @@ export function CloudPanel({
    * panel would swap to the subscribed card with the store's own sheet still
    * open over it, then swap back if they changed their mind.
    */
-  const checkingOut = checkout.preparing !== null;
+  const checkingOut = sale.checkingOut;
 
   // This build cannot reach him, and no amount of signing in changes that.
   if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
@@ -332,12 +240,15 @@ export function CloudPanel({
           key="plans"
           subtitle="Monthly Neurons for Samwell's cloud brains. No account needed."
           packages={packages}
-          catalogue={catalogue}
-          modelCounts={modelCounts}
-          busy={checkout.preparing ?? busy}
-          loading={loading}
-          onChoose={startPurchase}
-          onRestore={startRestore}
+          catalogue={offer.catalogue}
+          modelCounts={offer.modelCounts}
+          busy={sale.picker.busy}
+          ready={offer.ready}
+          prebuilt
+          failed={offer.failed}
+          onRetry={offer.retry}
+          onChoose={sale.picker.onChoose}
+          onRestore={sale.picker.onRestore}
           surface="background"
           bleed={layout.gutter}
         />
@@ -415,7 +326,7 @@ export function CloudPanel({
     );
   }
 
-  if (status === "none" || (status === "unavailable" && PURCHASES_ENABLED)) {
+  if (PURCHASES_ENABLED && (status === "none" || status === "unavailable")) {
     return (
       /* The fragment and the key are not decoration: see the branch above. */
       <>
@@ -423,16 +334,19 @@ export function CloudPanel({
           key="plans"
           subtitle="Each one opens up the brains he can think with."
           packages={packages}
-          catalogue={catalogue}
-          modelCounts={modelCounts}
+          catalogue={offer.catalogue}
+          modelCounts={offer.modelCounts}
           /* `preparing` first, the same as the branch above: the checkout
              asks the server before it opens the store sheet, and without this
              the button went quiet for that round trip and invited a second
              tap. */
-          busy={checkout.preparing ?? busy}
-          loading={loading}
-          onChoose={startPurchase}
-          onRestore={startRestore}
+          busy={sale.picker.busy}
+          ready={offer.ready}
+          prebuilt
+          failed={offer.failed}
+          onRetry={offer.retry}
+          onChoose={sale.picker.onChoose}
+          onRestore={sale.picker.onRestore}
           surface="background"
           bleed={layout.gutter}
         />
@@ -440,7 +354,9 @@ export function CloudPanel({
     );
   }
 
-  if (status === "unavailable") {
+  // Reached with `none` only when this build cannot sell: no carousel of
+  // prices that will never come.
+  if (status === "unavailable" || status === "none") {
     return (
       <Card className="gap-3 p-4">
         <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
@@ -549,7 +465,6 @@ export function CloudPanel({
           modelCounts={modelCounts}
           testStore={REVENUECAT_TEST_STORE}
           busy={busy}
-          loading={loading}
           onClose={() => setManageVisible(false)}
           onChoose={onChoose}
           onRestore={onRestore}

@@ -126,6 +126,14 @@ const TOKENIZER_CONFIG = JSON.stringify({
 });
 vi.mock('react-native-blob-util', () => ({ default: { fs: { readFile: async () => TOKENIZER_CONFIG } } }));
 vi.mock('@/lib/executorch', () => ({
+  createExclusiveQueue: () => {
+    let queue: Promise<unknown> = Promise.resolve();
+    return <T>(fn: () => Promise<T>): Promise<T> => {
+      const run = queue.then(fn, fn);
+      queue = run.catch(() => undefined);
+      return run;
+    };
+  },
   getExecuTorch: () => ({
     wrapAsync:
       <A extends unknown[], R>(fn: (...args: A) => R) =>
@@ -143,7 +151,7 @@ vi.mock('@/lib/executorch', () => ({
   }),
 }));
 
-const { chunkForPrefill, ContextPressureError, createConversation, loopedTail } = await import('../conversation');
+const { ContextPressureError, createConversation, loopedTail } = await import('../conversation');
 const { getEngine, isEngineLoaded, loadEngine, unloadEngine } = await import('../engine');
 
 const FILES = { modelPath: 'm.pte', tokenizerPath: 't.json', tokenizerConfigPath: 'c.json' };
@@ -168,26 +176,6 @@ const toyFormat = {
   visible: (text: string) => text.split('CALL')[0],
 };
 
-describe('chunkForPrefill', () => {
-  it('passes short text through whole, and nothing for nothing', () => {
-    expect(chunkForPrefill('hello', 10)).toEqual(['hello']);
-    expect(chunkForPrefill('', 10)).toEqual([]);
-  });
-
-  it('breaks at line ends, never past the limit, and loses nothing', () => {
-    const text = Array.from({ length: 40 }, (_, i) => `<|turn>line ${i}`).join('\n');
-    const chunks = chunkForPrefill(text, 60);
-    expect(chunks.join('')).toBe(text);
-    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(60);
-    for (const c of chunks.slice(0, -1)) expect(c.endsWith('\n')).toBe(true);
-  });
-
-  it('cuts mid-line only when a line is longer than the limit', () => {
-    const chunks = chunkForPrefill('x'.repeat(25), 10);
-    expect(chunks).toEqual(['x'.repeat(10), 'x'.repeat(10), 'x'.repeat(5)]);
-  });
-});
-
 describe('createConversation', () => {
   beforeEach(async () => {
     await freshEngine();
@@ -207,6 +195,22 @@ describe('createConversation', () => {
     // The system prompt went in first, on its own, so its cost is the baseline.
     expect(runner.log[0]).toBe('prefill:<system>You are Samwell.</system>\n');
     expect(convo.context()?.baseline).toBe(tokens('<system>You are Samwell.</system>\n'));
+  });
+
+  it('feeds an export that returns logits per token in small pieces, the generate call too', async () => {
+    runner = new FakeRunner(8192);
+    await loadEngine({ ...ENTRY, logitsPerToken: true }, FILES);
+    const prompt = Array.from({ length: 60 }, (_, i) => `Rule ${i}: answer plainly and keep to what was read.`).join('\n');
+    const convo = createConversation({ systemPrompt: prompt });
+    runner.replies.push('Hello.');
+
+    await convo.sendMessage(`A long question. ${'Tell me more about it. '.repeat(40)}`);
+
+    const fed = runner.log.map((entry) => entry.slice('prefill:'.length));
+    expect(fed.length).toBeGreaterThan(10);
+    // One 3000-character piece of this cost a gigabyte on the phone.
+    for (const piece of fed) expect(piece.length).toBeLessThanOrEqual(320);
+    expect(fed.join('')).toContain(`<system>${prompt}</system>`);
   });
 
   it('only prefills what is new on the next turn', async () => {
@@ -394,10 +398,10 @@ describe('createConversation', () => {
     expect(replyOf(turn).content).toBe('the whole of b');
   });
 
-  it('never echoes the prompt back as the start of the reply', async () => {
+  it('does not pass the echo option the runtime dropped in 0.10.3', async () => {
     runner.replies.push('Hello.');
     await createConversation().sendMessage('Hi');
-    expect(runner.configs[0]).toMatchObject({ echo: false });
+    expect(runner.configs[0]).not.toHaveProperty('echo');
   });
 
   it('leaves every end token out of the reply, not only the eos token', async () => {

@@ -4,7 +4,6 @@ import { useCSSVariable } from 'uniwind';
 import { ThemedText } from '@/components/themed-text';
 import { PageFade } from '@/components/scroll-fades';
 import { Sheet } from '@/components/ui/sheet';
-import { InsightsSkeleton } from '@/components/skeletons/compass-skeletons';
 import { GoalAbandonDialog } from '@/features/compass/components/goal-abandon-dialog';
 import { GoalAwardDialog } from '@/features/compass/components/goal-award-dialog';
 import { GoalDetailPanel } from '@/features/compass/components/goal-detail-panel';
@@ -95,11 +94,9 @@ export function InsightsSheet({
       scrollable
       contentPanning={false}
     >
-      {/* Two SVG charts, a row of stat cards and a horizontal shelf: the
-          heaviest commit in Compass. Landing it during the sheet's own rise
-          competes with the animation for the UI thread, so the placeholder
-          holds the frames and the mount happens once the sheet has settled. */}
-      <Sheet.Deferred skeleton={<InsightsSkeleton />}>
+      {/* No `Sheet.Deferred` round the whole body: the goal's card is plain
+          and rises with the sheet. The charts under it, the heaviest commit
+          in Compass, wait inside `InsightsBody` (`Sheet.DeferredRegion`). */}
       {/* Every scrollable in the app carries fades at its edges — with the
           scrollbars all hidden, the fade is the only thing saying content
           continues past the boundary. `popover` because a sheet sits on it:
@@ -122,7 +119,6 @@ export function InsightsSheet({
           )}
         </Sheet.ScrollView>
       </PageFade>
-      </Sheet.Deferred>
 
       {/* Siblings of the sheet's body, drawn through a portal above it: a
           second modal would dismiss the sheet underneath, and these are

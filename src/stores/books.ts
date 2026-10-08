@@ -7,6 +7,9 @@ import type { ToastOptions } from "@/components/toast/types";
 import { db } from "@/db/client";
 import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import { byLastRead } from "@/features/library/utils/last-read";
+import { gutenbergIdFromUri } from "@/services/gutenberg/records";
+import { keepUnchanged } from "@/utils/keep-unchanged";
 import {
     OWNED_DIR,
     ensureOwnedDir,
@@ -29,7 +32,7 @@ import {
     type SyncStatus,
 } from "@/services/sync-coordinator";
 
-type Book = typeof books.$inferSelect;
+export type Book = typeof books.$inferSelect;
 export type BookStatus = "reading" | "queued" | "archived" | "favorite";
 
 // ── Sync state shape ─────────────────────────────────────────────────────────
@@ -157,8 +160,13 @@ interface BooksState {
    * the one that was just saved.
    */
   progressByBook: Record<string, number>;
+  /**
+   * When each book was last read (its progress row's `updatedAt`), so
+   * Continue Reading leads with the book in hand. Written with the progress.
+   */
+  lastReadByBook: Record<string, string>;
   /** Called by `saveProgressToDb` once the write has actually committed. */
-  setBookProgress: (bookId: string, percentage: number) => void;
+  setBookProgress: (bookId: string, percentage: number, readAt: string) => void;
   loadBooks: () => Promise<void>;
   /** The scan root is gone: forget it so the picker comes back. */
   forgetDirectory: () => Promise<void>;
@@ -225,6 +233,13 @@ interface BooksState {
 /** How often to do a full loadBooks() during the preparing phase */
 const LOAD_BOOKS_EVERY_N = 50;
 let _preparedSinceLastLoad = 0;
+/**
+ * A scan was asked for while one was running. The running one may already be
+ * past the folder listing, so a book that landed in the folder since (a free
+ * book downloaded mid-scan) would wait for the next launch. Instead one more
+ * scan runs as soon as this one ends. However many asked, it is one.
+ */
+let _scanAgain = false;
 
 /**
  * What the UI does with one report of a scan's progress.
@@ -295,7 +310,14 @@ function applySyncProgress(
     if (notify || rootGone) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
     if (rootGone) void get().forgetDirectory();
     if (job.status === "completed") {
-      setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
+      // Only this job's leftovers: a follow-up scan may be running by now.
+      setTimeout(() => {
+        if (get().sync.jobId === job.id) set({ sync: IDLE_SYNC });
+      }, 2000);
+    }
+    if (_scanAgain && !rootGone) {
+      _scanAgain = false;
+      void get().syncBooks();
     }
   }
 }
@@ -303,16 +325,23 @@ function applySyncProgress(
 export const useBooksStore = create<BooksState>((set, get) => ({
   books: [],
   progressByBook: {},
+  lastReadByBook: {},
   booksDirectoryUri: null,
   isLoading: false,
   sync: IDLE_SYNC,
 
-  setBookProgress: (bookId: string, percentage: number) => {
-    set((state) =>
-      state.progressByBook[bookId] === percentage
-        ? state
-        : { progressByBook: { ...state.progressByBook, [bookId]: percentage } },
-    );
+  setBookProgress: (bookId: string, percentage: number, readAt: string) => {
+    set((state) => {
+      const sameProgress = state.progressByBook[bookId] === percentage;
+      // Only a change of which book was read last reorders anything, but the
+      // time is kept current so that change is caught when it comes.
+      const sameTime = state.lastReadByBook[bookId] === readAt;
+      if (sameProgress && sameTime) return state;
+      return {
+        ...(sameProgress ? {} : { progressByBook: { ...state.progressByBook, [bookId]: percentage } }),
+        ...(sameTime ? {} : { lastReadByBook: { ...state.lastReadByBook, [bookId]: readAt } }),
+      };
+    });
   },
 
   loadBooks: async () => {
@@ -336,21 +365,32 @@ export const useBooksStore = create<BooksState>((set, get) => ({
      * holding the newer number, and they converge either way.
      */
     const [allBooks, progressRows] = await Promise.all([
-      db.select().from(books),
+      // Books only: a blog post opened in the reader is a `books` row too,
+      // and it belongs on the Blogs side, not the shelves.
+      db.select().from(books).where(eq(books.kind, 'book')),
       db
         .select({
           bookId: readingProgress.bookId,
           percentage: readingProgress.percentage,
+          updatedAt: readingProgress.updatedAt,
         })
         .from(readingProgress),
     ]);
     const progressByBook: Record<string, number> = {};
-    for (const row of progressRows) progressByBook[row.bookId] = row.percentage;
-    set(
-      firstRead
-        ? { books: allBooks, progressByBook, isLoading: false }
-        : { books: allBooks, progressByBook },
-    );
+    const lastReadByBook: Record<string, string> = {};
+    for (const row of progressRows) {
+      progressByBook[row.bookId] = row.percentage;
+      lastReadByBook[row.bookId] = row.updatedAt;
+    }
+    // Unchanged rows keep the objects the shelves already hold, so a reload
+    // that found nothing new re-renders nothing (see `keepUnchanged`).
+    const held = get();
+    const next = {
+      books: keepUnchanged(held.books, allBooks),
+      progressByBook: keepUnchanged(held.progressByBook, progressByBook),
+      lastReadByBook: keepUnchanged(held.lastReadByBook, lastReadByBook),
+    };
+    set(firstRead ? { ...next, isLoading: false } : next);
   },
 
   forgetDirectory: async () => {
@@ -465,16 +505,29 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     const { booksDirectoryUri } = get();
     if (!booksDirectoryUri) return;
 
-    // Don't start a second sync if one is already running
-    if (get().sync.status === "running") return;
+    // Never two at once: one more follows this one instead (see `_scanAgain`).
+    if (get().sync.status === "running") {
+      _scanAgain = true;
+      return;
+    }
 
     _preparedSinceLastLoad = 0;
 
     const notify = options?.notify ?? false;
 
-    await startOrResumeSync(booksDirectoryUri, (job) => {
+    const jobId = await startOrResumeSync(booksDirectoryUri, (job) => {
       applySyncProgress(job, set, get, notify);
     });
+    /*
+     * Running from the moment the job exists, not from its first progress
+     * report a beat later, so anything waiting on "is a scan going" (a free
+     * book's page, waiting for its book) never reads the gap as "it ended".
+     * Only if that job has not reported yet: a scan fast enough to have
+     * finished already must not be marked running again.
+     */
+    if (get().sync.jobId !== jobId) {
+      set({ sync: { ...IDLE_SYNC, jobId, status: "running", phase: "scanning" } });
+    }
   },
 
   updateBookStatus: async (bookId: string, status: BookStatus | null) => {
@@ -599,9 +652,15 @@ export const useBooksStore = create<BooksState>((set, get) => ({
 
 // ── Selectors ────────────────────────────────────────────────────────────────
 
+/** The books being read, the one read most recently first (see `byLastRead`). */
 export const useCurrentlyReading = () =>
   useBooksStore(
-    useShallow((s) => s.books.filter((b) => b.status === "reading")),
+    useShallow((s) =>
+      byLastRead(
+        s.books.filter((b) => b.status === "reading"),
+        s.lastReadByBook,
+      ),
+    ),
   );
 export const useQueuedBooks = () =>
   useBooksStore(
@@ -623,6 +682,33 @@ export const useArchivedBooks = () =>
 export const useFavoriteBooks = () =>
   useBooksStore(useShallow((s) => s.books.filter((b) => b.isFavorite === 1)));
 export const useAllBooks = () => useBooksStore(useShallow((s) => s.books));
+let _gutenbergIndex: { books: Book[]; ids: Map<number, string> } | null = null;
+
+/**
+ * The library's books by their Project Gutenberg eBook number, recognised by
+ * the number their file is named with (`epubFileName`), so it holds across
+ * rescans and renames.
+ *
+ * Rebuilt only when the list of books itself changes. A scan writes the store
+ * several times a second and leaves `books` alone, and decoding every file
+ * name on each of those writes would be the whole library's worth of work per
+ * tick on the JS thread.
+ */
+export function gutenbergBookIds(books: Book[]): Map<number, string> {
+  if (_gutenbergIndex?.books !== books) {
+    const ids = new Map<number, string>();
+    for (const book of books) {
+      const gutenbergId = gutenbergIdFromUri(book.sourceUri ?? book.filePath);
+      if (gutenbergId != null && !ids.has(gutenbergId)) ids.set(gutenbergId, book.id);
+    }
+    _gutenbergIndex = { books, ids };
+  }
+  return _gutenbergIndex.ids;
+}
+
+/** The library's copy of a Project Gutenberg book: its id, or null while it is not here. */
+export const useLibraryBookFromGutenberg = (gutenbergId: number) =>
+  useBooksStore((s) => gutenbergBookIds(s.books).get(gutenbergId) ?? null);
 export const useSyncState = () => useBooksStore((s) => s.sync);
 /**
  * Whether a scan is going on, and nothing else about it.

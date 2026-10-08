@@ -18,24 +18,40 @@
  * **Theme tokens do not apply in native mode.** The platform draws the control
  * with its own colours, metrics and typography — that is the entire point, and
  * it means `className` and the variant props are ignored on those components.
+ *
+ * The one exception is which appearance it draws: `colorScheme` is the single
+ * theme signal the toolkit accepts, and `NativeHost` is what passes it. Mount
+ * every host through that rather than reaching for `Host` directly, or the
+ * control resolves its own appearance from the system and stops tracking the
+ * app's theme.
  */
+import { Platform } from 'react-native';
 import type { ComponentType, ReactNode } from 'react';
+
+export { NativeHost, type NativeHostProps } from '@/lib/native-host';
 
 interface NativeUIModule {
   Host: ComponentType<{
     children?: ReactNode;
     /**
-     * Whether the host resizes itself to the platform content.
+     * Which axes the platform is allowed to size.
      *
-     * This is on for every control here, and it is the whole answer to the
-     * jump. Sizing the *host* and leaving the control unsized inside it hands
-     * the platform a box it never agreed to: it lays out against its own
-     * intrinsic size, and settles into the box on the first thing that forces
-     * a second pass — which for a button is the first press.
+     * **It is not a one-off measurement.** An axis given to `matchContents` is
+     * given for good: the host writes the platform's measured size straight
+     * into the layout every time the platform's geometry changes, and dirties
+     * the layout when it does. So a control that lays itself out again under a
+     * press drags its box with it, and everything below it moves — which is
+     * the defect this spent three attempts on, twice reasoning about the first
+     * measurement when the problem was every one after it.
      *
-     * The per-axis form is for a control with no intrinsic width, like a
-     * slider or a picker: the width comes from ordinary layout and only the
-     * height is reported back.
+     * The rule that comes out of that: **never hand over an axis whose size
+     * you already know.** State it in `style` instead and match only what is
+     * genuinely the platform's — a labelled button's width, a toggle's width.
+     * An axis left out is never written to, so an explicit size on it is safe.
+     *
+     * Where nothing can be stated the axis has to stay matched. A picker is
+     * the honest example: a menu is a compact button and a wheel is a rotor,
+     * and only the platform knows which it drew.
      */
     matchContents?: boolean | { vertical?: boolean; horizontal?: boolean };
     /**
@@ -55,6 +71,14 @@ interface NativeUIModule {
      * platform's business and stay its business.
      */
     ignoreSafeArea?: 'all' | 'container' | 'keyboard';
+    /**
+     * The appearance the platform draws the hosted control in.
+     *
+     * Passed by `NativeHost` from the app's own theme, because the host would
+     * otherwise resolve it from the system — which is a different question,
+     * and one whose answer does not change when the theme does.
+     */
+    colorScheme?: 'light' | 'dark';
     style?: unknown;
     [key: string]: unknown;
   }>;
@@ -97,7 +121,7 @@ export function getNativeUI(): NativeUIModule | null {
 
   // Web has no SwiftUI and no Compose; @expo/ui renders plain views there,
   // which loses the styling without gaining anything.
-  if (process.env.EXPO_OS === 'web') return null;
+  if (Platform.OS === 'web') return null;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -158,6 +182,27 @@ interface SwiftUIModifiers {
    * changing any code on a report of "the colour did nothing".
    */
   presentationBackground: (color: string) => unknown;
+  /**
+   * Greys a control out and stops it answering.
+   *
+   * Optional because the module is cast whole rather than feature-checked, and
+   * an older `@expo/ui` without it would otherwise be a crash instead of a
+   * menu row that is merely still tappable. Call it through a guard.
+   */
+  disabled?: (disabled: boolean) => unknown;
+  /**
+   * Fires when the view is put on screen, and when it is taken off again.
+   *
+   * The way to find out that a menu has opened. SwiftUI builds a menu's
+   * content only once it is presented, so an item inside one appears exactly
+   * when the menu does — which is the only signal the control gives, since it
+   * owns its open state and reports nothing about it.
+   *
+   * Optional for the same reason as `disabled`: the module is cast whole, and
+   * a version without these should lose the backdrop rather than crash.
+   */
+  onAppear?: (handler: () => void) => unknown;
+  onDisappear?: (handler: () => void) => unknown;
 }
 
 /**
@@ -174,7 +219,9 @@ interface SwiftUIComponents {
   Host: ComponentType<{
     children?: ReactNode;
     matchContents?: boolean | { vertical?: boolean; horizontal?: boolean };
-    ignoreSafeArea?: unknown;
+    ignoreSafeArea?: 'all' | 'container' | 'keyboard';
+    /** As on the portable host above — see `NativeHost`. */
+    colorScheme?: 'light' | 'dark';
     style?: unknown;
   }>;
   RNHostView: ComponentType<{ children?: ReactNode; matchContents?: boolean }>;
@@ -197,7 +244,7 @@ export function getSwiftUI(): SwiftUIComponents | null {
   if (swiftUIResolved) return swiftUI;
   swiftUIResolved = true;
 
-  if (process.env.EXPO_OS !== 'ios') return null;
+  if (Platform.OS !== 'ios') return null;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -215,6 +262,131 @@ export function getSwiftUI(): SwiftUIComponents | null {
   return swiftUI;
 }
 
+/**
+ * A hosting boundary, as both toolkits declare it. The same three props matter
+ * on either side — see `NativeUIModule.Host` above for what each one costs.
+ */
+type NativeHostComponent = ComponentType<{
+  children?: ReactNode;
+  matchContents?: boolean | { vertical?: boolean; horizontal?: boolean };
+  ignoreSafeArea?: 'all' | 'container' | 'keyboard';
+  colorScheme?: 'light' | 'dark';
+  style?: unknown;
+}>;
+
+type RNHostComponent = ComponentType<{
+  children?: ReactNode;
+  matchContents?: boolean;
+  style?: unknown;
+}>;
+
+/**
+ * SwiftUI's menu, and the button that fills a row of it.
+ *
+ * Separate from `getSwiftUI` on purpose: that resolver refuses a module with no
+ * popover in it, and a version that ships one control but not the other would
+ * take the menu down with it. Each native path asks only for what it needs.
+ */
+interface SwiftUIMenuComponents {
+  Host: NativeHostComponent;
+  RNHostView: RNHostComponent;
+  /**
+   * `label` takes a React element as well as a string — the element is passed
+   * through a native slot and becomes the thing you press. That is what lets
+   * the trigger stay a real Fab rather than a platform button wearing its name.
+   */
+  Menu: ComponentType<{
+    label?: ReactNode;
+    children?: ReactNode;
+    modifiers?: unknown[];
+  }>;
+  Button: ComponentType<{
+    label?: string;
+    systemImage?: string;
+    role?: 'default' | 'cancel' | 'destructive';
+    onPress?: () => void;
+    modifiers?: unknown[];
+  }>;
+}
+
+let swiftUIMenuResolved = false;
+let swiftUIMenu: SwiftUIMenuComponents | null = null;
+
+export function getSwiftUIMenu(): SwiftUIMenuComponents | null {
+  if (swiftUIMenuResolved) return swiftUIMenu;
+  swiftUIMenuResolved = true;
+
+  if (Platform.OS !== 'ios') return null;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const module = require('@expo/ui/swift-ui') as Partial<SwiftUIMenuComponents>;
+    swiftUIMenu =
+      module.Host && module.RNHostView && module.Menu && module.Button
+        ? (module as SwiftUIMenuComponents)
+        : null;
+  } catch {
+    swiftUIMenu = null;
+  }
+
+  return swiftUIMenu;
+}
+
+/**
+ * Compose's dropdown menu — the same instruction, answered by a different
+ * control.
+ *
+ * It is not the shape SwiftUI's menu is. This one is controlled: it takes the
+ * open state rather than owning it, and it splits the trigger and the items
+ * into named slots instead of reading the label off a prop. Both differences
+ * reach the caller, so they are written out here rather than smoothed over.
+ */
+interface ComposeMenuComponents {
+  Host: NativeHostComponent;
+  RNHostView: RNHostComponent;
+  Text: ComponentType<{ children?: ReactNode; color?: string }>;
+  DropdownMenu: ComponentType<{
+    children?: ReactNode;
+    expanded?: boolean;
+    onDismissRequest?: () => void;
+  }> & {
+    Trigger: ComponentType<{ children?: ReactNode }>;
+    Items: ComponentType<{ children?: ReactNode }>;
+  };
+  DropdownMenuItem: ComponentType<{
+    children?: ReactNode;
+    enabled?: boolean;
+    onClick?: () => void;
+    elementColors?: { textColor?: string; disabledTextColor?: string };
+  }> & {
+    Text: ComponentType<{ children?: ReactNode }>;
+    LeadingIcon: ComponentType<{ children?: ReactNode }>;
+  };
+}
+
+let composeMenuResolved = false;
+let composeMenu: ComposeMenuComponents | null = null;
+
+export function getComposeMenu(): ComposeMenuComponents | null {
+  if (composeMenuResolved) return composeMenu;
+  composeMenuResolved = true;
+
+  if (Platform.OS !== 'android') return null;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const module = require('@expo/ui/jetpack-compose') as Partial<ComposeMenuComponents>;
+    composeMenu =
+      module.Host && module.RNHostView && module.DropdownMenu && module.DropdownMenuItem
+        ? (module as ComposeMenuComponents)
+        : null;
+  } catch {
+    composeMenu = null;
+  }
+
+  return composeMenu;
+}
+
 let modifiersResolved = false;
 let modifiers: SwiftUIModifiers | null = null;
 
@@ -222,7 +394,7 @@ export function getSwiftUIModifiers(): SwiftUIModifiers | null {
   if (modifiersResolved) return modifiers;
   modifiersResolved = true;
 
-  if (process.env.EXPO_OS !== 'ios') return null;
+  if (Platform.OS !== 'ios') return null;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -253,7 +425,7 @@ export function getComposeModifiers(): ComposeModifiers | null {
   if (composeResolved) return compose;
   composeResolved = true;
 
-  if (process.env.EXPO_OS !== 'android') return null;
+  if (Platform.OS !== 'android') return null;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

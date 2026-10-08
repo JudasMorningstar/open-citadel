@@ -54,13 +54,10 @@ export function OnboardingScreen() {
   /**
    * Leaving the concierge, however it ended.
    *
-   * `finish_onboarding` normally does this from inside the conversation, and
-   * when it has, this repeats work that is already done and costs a settings
-   * write. When it has NOT — Samwell said his goodbye and called nothing,
-   * which is how this button came to be reachable without him — it is the only
-   * thing that marks onboarding over and closes the free grant. Doing it here
-   * unconditionally is what makes the button honest: it always means the same
-   * thing, whatever the model did or did not do.
+   * The button only appears once `finish_onboarding` has run, so this mostly
+   * repeats work already done, at the cost of a settings write. Done anyway so
+   * the button always means the same thing: onboarding over, free grant
+   * closed, whatever the model did or did not do on the way here.
    */
   const finishAndLeave = React.useCallback(async () => {
     await completeOnboarding();
