@@ -79,7 +79,7 @@ retire() { # <model-id>
 echo "Maester"
 register 'z-ai/glm-5.3-flash'              maester
 register 'openai/gpt-6-luna-pro'           maester
-register 'deepseek/deepseek-v4.1-flash'    maester
+register 'anthropic/claude-haiku-5.5'      maester
 
 echo "Grand Maester"
 register 'anthropic/claude-sonnet-5.5'     grand_maester
@@ -121,6 +121,9 @@ retire 'openai/gpt-5.6-terra'
 retire 'openai/gpt-6-sol'
 # DeepSeek V4.1 Flash replaced V4 Flash in Maester, 2026-09-29.
 retire 'deepseek/deepseek-v4-flash-0731'
+# Claude Haiku 5.5 replaced V4.1 Flash in Maester, 2026-10-07: a third of the
+# price, and it reads images.
+retire 'deepseek/deepseek-v4.1-flash'
 
 echo
 echo "Catalogue now:"
