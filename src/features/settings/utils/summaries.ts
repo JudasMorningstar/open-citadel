@@ -1,3 +1,5 @@
+import { onDeviceKindName } from '@/features/tts/utils/voice-copy';
+
 /*
  * The one line under each row of the Settings root. Each says what is set
  * rather than what the setting is: the row's title already names it, and the
@@ -42,7 +44,7 @@ export type VoiceFacts = {
 };
 
 export function voiceSummary({ mode, name }: VoiceFacts): string {
-  const kind = mode === 'ai' ? 'Natural' : 'Phone';
+  const kind = onDeviceKindName(mode);
   return name ? `${kind}${DOT}${name}` : `${kind} voice`;
 }
 

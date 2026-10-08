@@ -26,6 +26,11 @@ export function useVoicePreview() {
   const [previewingVoice, setPreviewingVoice] = useState<ReaderVoice | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  // Whether the sample asked for can be heard yet. An Enhanced voice is made
+  // on the phone before it plays, which on a slower one is several seconds of
+  // silence after the press (a Galaxy A33 took 3.7 to 7.3 for Kokoro). Until
+  // sound starts the press has to show it was taken, or it reads as ignored.
+  const [audible, setAudible] = useState(false);
   const playerRef = useRef<AudioPlayer | null>(null);
   const playbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Bumped on every `preview`/`stop` call so a synthesis or file write that's
@@ -56,6 +61,8 @@ export function useVoicePreview() {
       return;
     }
     setPreviewingVoice(voice);
+    // The phone's own voice starts as it is asked, so there is nothing to wait through.
+    setAudible(true);
     setPreviewNotice(voice === DEVICE_VOICE ? null : `${voiceLabel(voice)} is unavailable. Playing the device voice instead.`);
     try {
       speech.speak(previewText(DEVICE_VOICE), {
@@ -83,11 +90,14 @@ export function useVoicePreview() {
     async (voice: ReaderVoice) => {
       const generation = ++generationRef.current;
       stopPlayer();
-      await deviceSpeech()?.stop().catch(() => undefined);
-      if (generation !== generationRef.current) return;
+      // Said before anything is waited on, so the press is answered in its
+      // own frame: the row shows it is working from the moment it is touched.
       setPreviewError(null);
       setPreviewNotice(null);
+      setAudible(false);
       setPreviewingVoice(voice);
+      await deviceSpeech()?.stop().catch(() => undefined);
+      if (generation !== generationRef.current) return;
 
       try {
         await setAudioModeAsync({
@@ -135,6 +145,9 @@ export function useVoicePreview() {
             clearTimeout(playbackTimerRef.current);
             playbackTimerRef.current = null;
           }
+          // The first sound has reached the speaker. React drops a repeat of
+          // the same value, so this costs one render however often it fires.
+          if (status.currentTime > 0 && generation === generationRef.current) setAudible(true);
           if (status.error && playerRef.current === player) {
             stopPlayer();
             playDeviceVoice(generation, voice);
@@ -160,5 +173,8 @@ export function useVoicePreview() {
     void deviceSpeech()?.stop().catch(() => undefined);
   }, [stopPlayer]);
 
-  return { previewingVoice, previewError, previewNotice, preview, stop };
+  /** The voice whose sample was asked for and cannot be heard yet. */
+  const preparingVoice = audible ? null : previewingVoice;
+
+  return { previewingVoice, preparingVoice, previewError, previewNotice, preview, stop };
 }

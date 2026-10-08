@@ -15,6 +15,8 @@ export interface DeviceVoiceRowsProps {
   /** The saved voice's identifier, '' for the system default. */
   selected: string;
   previewing: string | null;
+  /** The voice whose sample is being made and cannot be heard yet. */
+  preparing?: string | null;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
   onToggleLanguage: (language: string) => void;
@@ -29,6 +31,7 @@ export function DeviceVoiceRows({
   rows,
   selected,
   previewing,
+  preparing = null,
   onSelect,
   onPreview,
   onToggleLanguage,
@@ -75,6 +78,7 @@ export function DeviceVoiceRows({
             voice={row.voice}
             isSelected={row.voice.identifier === selected}
             isPreviewing={previewing === row.voice.identifier}
+            isPreparing={preparing === row.voice.identifier}
             primary={primary}
             mutedForeground={mutedForeground}
             onSelect={onSelect}

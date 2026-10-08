@@ -29,6 +29,15 @@ export interface MemoryEstimate {
 const FITS_FRACTION = 0.4;
 const TIGHT_FRACTION = 0.55;
 
+/**
+ * The phone's RAM as it reports it, or null when it will not say. A phone sold
+ * as "6 GB" reports about 5.3: compare against what phones report, not what
+ * they are sold as.
+ */
+export function deviceMemoryBytes(): number | null {
+  return Device.totalMemory ?? null;
+}
+
 export function modelFit(modelBytes: number | null): MemoryStatus {
   const totalBytes = Device.totalMemory ?? 0;
   // Nothing to judge with: say yes rather than hide a model over a missing

@@ -6,6 +6,7 @@ import { PageFade } from '@/components/scroll-fades';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { DeviceVoice, DeviceVoiceRow } from '@/utils/device-voices';
 
 export interface DeviceVoiceSheetProps {
@@ -16,12 +17,16 @@ export interface DeviceVoiceSheetProps {
   /** The saved voice's identifier, '' for the system default. */
   selected: string;
   previewing: string | null;
+  /** The voice whose sample is being made and cannot be heard yet. */
+  preparing?: string | null;
+  /** Something a sample has to say for itself: it is still loading, or it failed. */
+  note?: string | null;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
   onToggleLanguage: (language: string) => void;
 }
 
-/** The list of the phone's voices, opened from the native voice row. */
+/** The list of voices to choose from, opened from the voice row: the phone's own, or a voice box's. */
 export function DeviceVoiceSheet({
   visible,
   onClose,
@@ -29,10 +34,13 @@ export function DeviceVoiceSheet({
   loading,
   selected,
   previewing,
+  preparing,
+  note,
   onSelect,
   onPreview,
   onToggleLanguage,
 }: DeviceVoiceSheetProps) {
+  const tokens = useThemeTokens();
   return (
     // Fixed height, one detent, and a plain `Sheet.ScrollView` rather than
     // `Sheet.FlatList` — the same shape `PlanInfoSheet` uses, which is the
@@ -52,8 +60,13 @@ export function DeviceVoiceSheet({
     // rows it is given are few: only the useful languages arrive open
     // (`usefulLanguages`), and the rest are one row each until tapped.
     <Sheet visible={visible} onClose={onClose} stackBehavior="push" fixedHeightRatio={0.75}>
-      <View className="flex-row items-center justify-between px-6 pb-3 pt-2">
+      <View className="gap-1 px-6 pb-3 pt-2">
         <ThemedText type="headlineSm">Select voice</ThemedText>
+        {note ? (
+          <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
+            {note}
+          </ThemedText>
+        ) : null}
       </View>
 
       {/* A placeholder only for a real wait: the phone has not answered yet.
@@ -72,6 +85,7 @@ export function DeviceVoiceSheet({
               rows={rows}
               selected={selected}
               previewing={previewing}
+              preparing={preparing}
               onSelect={onSelect}
               onPreview={onPreview}
               onToggleLanguage={onToggleLanguage}

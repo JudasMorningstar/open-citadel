@@ -109,12 +109,12 @@ export const LOW_MEMORY_ANDROID = process.env.EXPO_OS === 'android'
 export const ENGINE_INFO: Record<TtsEngineId, { label: string; hint: string; downloadSize: string }> = {
   supertonic: {
     label: 'SUPERTONIC',
-    hint: 'Starts quickly and keeps up on most phones.',
+    hint: 'Starts quickly. The lighter of the two.',
     downloadSize: '400 MB',
   },
   kokoro: {
     label: 'KOKORO',
-    hint: 'The most natural sound, in US and UK accents.',
+    hint: 'The most natural voices, in US and UK accents.',
     downloadSize: '350 MB',
   },
 };

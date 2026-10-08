@@ -2,26 +2,37 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { NativeVoicePicker } from '@/features/tts/components/native-voice-picker';
-import { ReadingSpeedStepper } from '@/features/tts/components/reading-speed-stepper';
 import { ThemedText } from '@/components/themed-text';
-import { KeptAlive } from '@/components/kept-alive';
-import { AiVoiceSection } from '@/features/tts/components/ai-voice-section';
+import { EnhancedVoicePane } from '@/features/tts/components/enhanced-voice-pane';
+import { LiteVoicePane } from '@/features/tts/components/lite-voice-pane';
+import { VoiceKindPanes } from '@/features/tts/components/voice-kind-panes';
 import { useAiVoiceEngine } from '@/features/tts/hooks/use-ai-voice-engine';
-import { TtsModeCards } from '@/features/tts/components/tts-mode-cards';
+import { useVoiceKind } from '@/features/tts/hooks/use-voice-kind';
+import { OnDeviceVoiceSwitch } from '@/features/tts/components/on-device-voice-switch';
+import { VoiceSourceCards } from '@/features/tts/components/voice-source-cards';
+import { EnhancedFitMark } from '@/features/tts/components/enhanced-fit-mark';
+import { EnhancedFitSheet } from '@/features/tts/components/enhanced-fit-sheet';
+import { enhancedFit } from '@/features/tts/utils/enhanced-fit';
+import { CLOUD_VOICES_SOON, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint } from '@/features/tts/utils/voice-copy';
 import { Touchable } from '@/components/ui/touchable';
 import {
   AI_VOICES_SUPPORTED,
-  DEFAULT_VOICE,
-  DEVICE_VOICE,
   NATIVE_SPEED_SUPPORTED,
   NATIVE_VOICE_AVAILABLE,
-  isAiVoice,
-  voiceMode,
+  type VoiceMode,
 } from '@/services/device-tts/catalogue';
 import { prefetchDeviceVoices } from '@/query-manager/device-voices';
-import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
+import { deviceMemoryBytes } from '@/utils/memory-estimator';
+
+/** On-device is the only source until cloud voices open, so its card has nothing to do. */
+const noop = () => {};
+
+/** The kinds, left to right as the switch draws them. */
+const KIND_ORDER = ON_DEVICE_KINDS.map((kind) => kind.mode);
+
+/** How this phone copes with the Enhanced voices. A fact about the phone, so it is read once. */
+const ENHANCED_FIT = enhancedFit(deviceMemoryBytes());
 
 export interface TtsSettingsPanelProps {
   /** Closes the sheet this panel is mounted in, shown as a "DONE" control
@@ -38,21 +49,26 @@ export interface TtsSettingsPanelProps {
 }
 
 /**
- * The reading voice's settings. Two choices, AI first and native (the phone's
- * own voices) as the fallback for phones that cannot run it, and each shows
- * its own controls:
+ * The reading voice's settings. The first choice is where the voice runs:
+ * on-device, or in the cloud (drawn shut until cloud voices open). On-device
+ * then has two kinds, on one switch, and each shows its own controls:
  *
- * - AI: which engine reads (Supertonic or Kokoro), then that engine's download
- *   card until its voices are on the device, and only then the voice carousel
- *   and reading speed. Before that there is nothing to preview or pick.
- * - Native: the list of the phone's voices, and reading speed (Android only).
- *   Nothing to download.
+ * - Enhanced (`ai`): which voice box reads (Supertonic or Kokoro), then that
+ *   engine's download card until its voices are on the device, and only then
+ *   the voice carousel and reading speed. Before that there is nothing to
+ *   preview or pick.
+ * - Lite (`native`): the list of the phone's voices, and reading speed
+ *   (Android only). Nothing to download.
  *
- * Where there is no native path at all (web), only the AI controls show.
+ * The switch only shows where there is a choice to make: a phone that cannot
+ * run the Enhanced voices at all says so in a line and shows the Lite ones,
+ * and where there is no Lite path at all (web) only the Enhanced controls
+ * show. A phone that can run them but will pause says so in a mark beside
+ * their line, which opens `EnhancedFitSheet`: a warning, never a lock.
  *
- * The mode cards answer the press and the controls under them follow a render
- * behind when they have to be built first. Controls drawn once are kept, so
- * going back to them is a reveal.
+ * Everything that belongs to a kind is in its pane, and the two panes trade
+ * places under the switch (`VoiceKindPanes`). Panes drawn once are kept, so
+ * going back to one is a reveal.
  *
  * Otherwise self-contained: it and the components it hosts read and write
  * `useSettingsStore`/`useTtsStore` directly, so the Settings page and the
@@ -62,12 +78,8 @@ export interface TtsSettingsPanelProps {
 export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
-  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
-  const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
-  const ttsNaturalVoice = useSettingsStore((s) => s.ttsNaturalVoice);
-  const ttsPhoneVoice = useSettingsStore((s) => s.ttsPhoneVoice);
-  const ttsPhoneVoiceLanguage = useSettingsStore((s) => s.ttsPhoneVoiceLanguage);
-  const ai = useAiVoiceEngine({ warm });
+  const { mode, liteVoiceId, selectKind, selectPhoneVoice } = useVoiceKind();
+  const ai = useAiVoiceEngine();
 
   React.useEffect(() => {
     // The phone's first answer is the slow one, so it is asked for now,
@@ -75,27 +87,37 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
     if (NATIVE_VOICE_AVAILABLE) prefetchDeviceVoices();
   }, []);
 
-  const mode = voiceMode(ttsVoice);
-  const shownMode = React.useDeferredValue(mode);
-  const showSpeed = shownMode === 'native' ? NATIVE_SPEED_SUPPORTED : ai.downloaded;
+  const nativeNote = NATIVE_SPEED_SUPPORTED ? null : LITE_SPEED_FIXED;
+  const canSwitchKind = NATIVE_VOICE_AVAILABLE && AI_VOICES_SUPPORTED;
+  const [fitVisible, setFitVisible] = React.useState(false);
+  const openFit = React.useCallback(() => setFitVisible(true), []);
+  const closeFit = React.useCallback(() => setFitVisible(false), []);
 
-  // The saved phone voice's identifier, '' for the system default (which is
-  // also what an AI voice or nothing at all means here).
-  const nativeVoiceId = isAiVoice(ttsVoice) || ttsVoice === DEVICE_VOICE ? '' : (ttsVoice ?? '');
-  const nativeNote = NATIVE_SPEED_SUPPORTED ? null : 'Reading speed cannot be changed with a phone voice.';
+  const switchToLite = () => {
+    setFitVisible(false);
+    selectKind('native');
+  };
 
-  const selectAi = () => {
-    if (mode !== 'ai') void setTtsVoice(ttsNaturalVoice ?? DEFAULT_VOICE);
+  const panes: Record<VoiceMode, React.ReactNode> = {
+    native: (
+      <LiteVoicePane
+        hint={canSwitchKind ? onDeviceHint('native') : null}
+        selected={liteVoiceId}
+        onSelect={selectPhoneVoice}
+        note={nativeNote}
+        showSpeed={NATIVE_SPEED_SUPPORTED}
+      />
+    ),
+    ai: (
+      <EnhancedVoicePane
+        hint={canSwitchKind ? onDeviceHint('ai') : null}
+        mark={<EnhancedFitMark fit={ENHANCED_FIT} onPress={openFit} />}
+        section={ai.section}
+        showSpeed={ai.downloaded}
+        rates={ai.rates}
+      />
+    ),
   };
-  const selectNative = () => {
-    if (mode !== 'native') void setTtsVoice(ttsPhoneVoice || DEVICE_VOICE, ttsPhoneVoiceLanguage);
-  };
-  const selectPhoneVoice = React.useCallback(
-    (identifier: string, language: string) => {
-      void setTtsVoice(identifier || DEVICE_VOICE, language || null);
-    },
-    [setTtsVoice],
-  );
 
   return (
     <View className="gap-4">
@@ -112,31 +134,28 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
         </View>
       ) : null}
 
-      {NATIVE_VOICE_AVAILABLE && (
-        <TtsModeCards
-          mode={mode}
-          aiSupported={AI_VOICES_SUPPORTED}
-          aiDownloaded={ai.downloaded}
-          onSelectAi={selectAi}
-          onSelectNative={selectNative}
-        />
-      )}
+      <VoiceSourceCards
+        source="device"
+        cloudLocked
+        cloudStatus={CLOUD_VOICES_SOON}
+        onSelectDevice={noop}
+        onSelectCloud={noop}
+      />
 
-      <KeptAlive active={shownMode === 'native'} warm={warm}>
-        <View className="gap-2">
-          <NativeVoicePicker selected={nativeVoiceId} onSelect={selectPhoneVoice} />
-          {nativeNote && (
-            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-              {nativeNote}
-            </ThemedText>
-          )}
-        </View>
-      </KeptAlive>
-      <KeptAlive active={shownMode === 'ai'} warm={warm}>
-        <AiVoiceSection {...ai.section} />
-      </KeptAlive>
+      {NATIVE_VOICE_AVAILABLE && !AI_VOICES_SUPPORTED ? (
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+          {ENHANCED_UNSUPPORTED}
+        </ThemedText>
+      ) : null}
 
-      {showSpeed && <ReadingSpeedStepper rates={shownMode === 'ai' ? ai.rates : undefined} />}
+      {/* The switch and what it shows are one group, closer to each other
+          than to the cards above: each kind's line sits right under it. */}
+      <View className="gap-2">
+        {canSwitchKind ? <OnDeviceVoiceSwitch mode={mode} onChange={selectKind} /> : null}
+        <VoiceKindPanes order={KIND_ORDER} value={mode} warm={warm} panes={panes} />
+      </View>
+
+      <EnhancedFitSheet visible={fitVisible} onClose={closeFit} fit={ENHANCED_FIT} onUseLite={switchToLite} />
     </View>
   );
 }

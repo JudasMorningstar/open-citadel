@@ -2,7 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
-import { Info, type LucideIcon } from "@/components/icons";
+import { Info, Lock, type LucideIcon } from "@/components/icons";
 import { SamwellText } from "@/components/samwell-text";
 import { ThemedText } from "@/components/themed-text";
 import { Card } from "@/components/ui/card";
@@ -22,13 +22,18 @@ export interface ModeCardProps {
   /** Shows an info button in the corner. Omitted when the card has nothing to explain. */
   onInfo?: () => void;
   disabled?: boolean;
+  /**
+   * Not open yet: the card takes no press and wears a lock in its corner, so
+   * it reads as "not yet" and not as "broken". Say when in `status`.
+   */
+  locked?: boolean;
   /** A smaller icon and tighter padding, for a card that shares a drawer with other controls. */
   compact?: boolean;
 }
 
 /**
- * One of two side-by-side choices (Samwell on-device or cloud, a native or AI
- * reading voice): the selected one is outlined in the primary colour.
+ * One of two side-by-side choices (Samwell on-device or cloud, a reading voice
+ * on-device or cloud): the selected one is outlined in the primary colour.
  */
 export function ModeCard({
   active,
@@ -39,8 +44,10 @@ export function ModeCard({
   onSelect,
   onInfo,
   disabled,
+  locked,
   compact,
 }: ModeCardProps) {
+  const off = disabled || locked;
   const [primary, mutedForeground] = useCSSVariable([
     "--color-primary",
     "--color-muted-foreground",
@@ -49,9 +56,9 @@ export function ModeCard({
     <Touchable
       className="flex-1"
       onPress={onSelect}
-      disabled={disabled}
+      disabled={off}
       accessibilityRole="radio"
-      accessibilityState={{ selected: active, disabled }}
+      accessibilityState={{ selected: active, disabled: off }}
     >
       {/* `flex-1` on the card, not just on the Touchable around it. The row
           stretches both Touchables to the taller of the two, but the card
@@ -64,7 +71,7 @@ export function ModeCard({
           "flex-1 justify-between",
           compact ? "gap-2 p-3" : "gap-3 p-4",
           active && "border-primary",
-          disabled && "opacity-50",
+          off && "opacity-50",
         )}
       >
         <View className={compact ? "gap-1.5" : "gap-2"}>
@@ -97,6 +104,11 @@ export function ModeCard({
           >
             {status}
           </ThemedText>
+        ) : null}
+        {locked ? (
+          <View className="absolute right-2 top-2">
+            <Lock size={15} color={asColor(mutedForeground)} />
+          </View>
         ) : null}
         {onInfo ? (
           <Touchable

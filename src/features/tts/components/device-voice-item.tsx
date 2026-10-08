@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native';
 
 import { Volume2 } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
+import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 import type { DeviceVoice } from '@/utils/device-voices';
 
@@ -10,6 +11,8 @@ export interface DeviceVoiceItemProps {
   voice: DeviceVoice;
   isSelected: boolean;
   isPreviewing: boolean;
+  /** The sample was asked for and cannot be heard yet: the speaker gives way to a spinner. */
+  isPreparing?: boolean;
   primary?: string;
   mutedForeground?: string;
   onSelect: (voice: DeviceVoice) => void;
@@ -21,11 +24,13 @@ export interface DeviceVoiceItemProps {
  * preview flip re-renders the affected rows, not every voice in the list.
  */
 const pressedDim = ({ pressed }: { pressed: boolean }) => (pressed ? { opacity: 0.6 } : null);
+const ICON_BOX = { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' } as const;
 
 export const DeviceVoiceItem = React.memo(function DeviceVoiceItem({
   voice,
   isSelected,
   isPreviewing,
+  isPreparing = false,
   primary,
   mutedForeground,
   onSelect,
@@ -35,6 +40,8 @@ export const DeviceVoiceItem = React.memo(function DeviceVoiceItem({
     <Touchable
       className="flex-row items-center gap-4 border-b border-card px-6 py-4"
       onPress={() => onSelect(voice)}
+      // Choosing a voice is a selection, and is felt as one.
+      haptic="select"
       accessibilityRole="radio"
       accessibilityState={{ selected: isSelected }}
     >
@@ -64,10 +71,15 @@ export const DeviceVoiceItem = React.memo(function DeviceVoiceItem({
           }}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={`Preview ${voice.name}`}
+          accessibilityLabel={isPreparing ? `Preparing ${voice.name}. Stop` : `Preview ${voice.name}`}
+          accessibilityState={{ busy: isPreparing }}
           style={pressedDim}
         >
-          <Volume2 size={18} color={isPreviewing ? primary : mutedForeground} />
+          {/* The speaker's own box either way, so the row does not shift
+              when one gives way to the other. */}
+          <View style={ICON_BOX}>
+            {isPreparing ? <Spinner size="sm" /> : <Volume2 size={18} color={isPreviewing ? primary : mutedForeground} />}
+          </View>
         </Pressable>
       ) : null}
       {isSelected && (

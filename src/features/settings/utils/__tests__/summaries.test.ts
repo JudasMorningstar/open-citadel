@@ -44,12 +44,12 @@ describe('samwellSummary', () => {
 
 describe('voiceSummary', () => {
   it('names the voice under its kind', () => {
-    expect(voiceSummary({ mode: 'ai', name: 'Yennefer' })).toBe('Natural · Yennefer');
-    expect(voiceSummary({ mode: 'native', name: 'English (UK)' })).toBe('Phone · English (UK)');
+    expect(voiceSummary({ mode: 'ai', name: 'Yennefer' })).toBe('Enhanced · Yennefer');
+    expect(voiceSummary({ mode: 'native', name: 'English (UK)' })).toBe('Lite · English (UK)');
   });
 
   it('falls back to the kind alone', () => {
-    expect(voiceSummary({ mode: 'native', name: null })).toBe('Phone voice');
+    expect(voiceSummary({ mode: 'native', name: null })).toBe('Lite voice');
   });
 });
 

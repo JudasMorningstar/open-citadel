@@ -1,15 +1,7 @@
 import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
-
-import { AudioLines, ChevronUp } from '@/components/icons';
 import { DeviceVoiceSheet } from '@/features/tts/components/device-voice-sheet';
-import { ThemedText } from '@/components/themed-text';
 import { useDeviceVoices } from '@/features/tts/hooks/use-device-voices';
-import { Card } from '@/components/ui/card';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { Touchable } from '@/components/ui/touchable';
-import { asColor } from '@/utils/colors';
+import { VoicePickerRow } from '@/features/tts/components/voice-picker-row';
 import { deviceVoiceName, type DeviceVoice } from '@/utils/device-voices';
 
 export interface NativeVoicePickerProps {
@@ -24,7 +16,6 @@ export interface NativeVoicePickerProps {
  * of every voice the phone has, each with a preview.
  */
 export function NativeVoicePicker({ selected, onSelect }: NativeVoicePickerProps) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
   const [open, setOpen] = React.useState(false);
   const { voices, rows, loading, previewing, preview, stop, toggleLanguage } = useDeviceVoices(selected);
 
@@ -43,20 +34,7 @@ export function NativeVoicePicker({ selected, onSelect }: NativeVoicePickerProps
 
   return (
     <>
-      <Touchable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="Choose a phone voice">
-        <Card className="flex-row items-center justify-between p-3">
-          <View className="flex-row items-center gap-3">
-            <PrefixIcon icon={AudioLines} size={28} />
-            <ThemedText type="bodyMd">Voice</ThemedText>
-          </View>
-          <View className="flex-row items-center gap-1">
-            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-              {deviceVoiceName(voices, selected)}
-            </ThemedText>
-            <ChevronUp size={14} color={asColor(mutedForeground)} />
-          </View>
-        </Card>
-      </Touchable>
+      <VoicePickerRow name={deviceVoiceName(voices, selected)} onPress={() => setOpen(true)} accessibilityLabel="Choose a Lite voice" />
 
       <DeviceVoiceSheet
         visible={open}
