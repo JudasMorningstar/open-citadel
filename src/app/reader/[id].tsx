@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Keyboard,
   Alert,
   Animated,
   StyleSheet,
@@ -32,14 +33,21 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
-import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
+import { ScreenInteractive } from "@/components/navigation/screen-interactive";
+import { useReaderOpenMetric } from "@/features/reader/hooks/use-reader-open-metric";
+import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
+import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
+import { useReadAlong } from "@/features/audiobook/hooks/use-read-along";
+import { ReadAloudBanner } from "@/features/reader/components/read-aloud-banner";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
+import { PlansSheet } from "@/features/billing/components/plans-sheet";
+import { CloudVoiceFailureSheet } from "@/features/tts/components/cloud-voice-failure-sheet";
 import { TtsSettingsSheet } from "@/features/tts/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, slideDownPastEdge, slideUpFromEdge, spacing } from "@/constants/theme";
@@ -55,7 +63,7 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
 import { sessionExists } from "@/services/chat-sessions";
 import { showChatOnSamwellPage } from "@/services/samwell-handoff";
-import { suggestTags } from "@/services/tag-suggest";
+import { highlightSurrounding, suggestTags } from "@/services/tag-suggest";
 import {
   startMediaSession,
   stopMediaSession,
@@ -66,8 +74,8 @@ import {
 // for it, and an under-guess is invisible in code and very visible on a page.
 const HEADER_CONTENT_HEIGHT = READER_HEADER_HEIGHT;
 
-/** How long the reading placeholder is held after Readium reports the
- * publication — see `readerPainted`. Measured, not guessed. */
+/** How long the reading placeholder is held after Readium first reports
+ * where it is — see `readerPainted`. Measured, not guessed. */
 const PAINT_GRACE_MS = 450;
 
 // Reserved space above the bottom safe area for the floating TTS controls /
@@ -109,7 +117,11 @@ export default function ReaderScreen() {
   const router = useRouter();
   const readerRef = useRef<ReadiumViewRef>(null);
   const insets = useSafeAreaInsets();
-  const { onSynthesisRequest, onSynthesisCancel } = useKokoroTtsBridge(readerRef);
+  // Whichever voice reads, on the phone or in the cloud, answers Readium
+  // through this; a cloud voice that cannot go on is held and drawn below.
+  const readAloud = useReadAloudBridge(readerRef, id);
+  const { onSynthesisRequest, onSynthesisCancel, onUtterance, onUpcoming } = readAloud;
+  const cloudFailure = useCloudVoiceFailure(readerRef, readAloud);
 
   const {
     currentBook,
@@ -166,36 +178,41 @@ export default function ReaderScreen() {
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
 
+  /** Readium has said where it is: the first location report since the book opened. */
+  const [readerLocated, setReaderLocated] = useState(false);
+
   /**
    * Whether Readium has had time to actually draw a page behind the cover.
    *
-   * `publicationReady` says the publication is loaded, not that anything has
-   * been painted with it — measured on an A33, the first text lands roughly
-   * 450ms later. Dropping the cover on that signal, or a frame or two after
-   * it, let the skeleton leave before the passage arrived: the blank between
-   * them.
+   * Neither signal Readium gives is "painted". `publicationReady` says the
+   * publication is loaded, and the first location report can come later
+   * still: a cover timed from `publicationReady` lifted on a blank page that
+   * then drew wherever Readium was landing. The first location report is
+   * where Readium landed (the Readium patch keeps back Android's echo of the
+   * opening locator, which it holds before it has moved anywhere), but it
+   * says it knows *where* it is, which happens before it has drawn anything —
+   * measured on an A33, the text lands roughly 450ms after it.
    *
-   * `onLocationChange` looked like the honest signal and is worse — it reports
-   * that Readium knows *where* it is, which happens before it has drawn
-   * anything, so it uncovers even earlier.
-   *
-   * So this is a measured wait rather than an event, which is worth being
-   * plain about: there is no "first paint" callback on the view to hang it on.
+   * So the cover waits for the report and then that measured time, which is
+   * worth being plain about: there is no "first paint" callback on the view
+   * to hang it on. A book being read along is moved to the voice at the
+   * report (`useReadAlong`), so that move lands under the cover too.
    * Overshooting is close to free — the cover is a placeholder the reader is
    * already looking at — while undershooting is the flash this exists to
    * remove, so the number leans long. Re-measure if the reader's mount path
    * changes.
    */
   const [readerPainted, setReaderPainted] = useState(false);
+  useReaderOpenMetric(readerPainted, currentBook?.kind ?? null);
 
   // Reset lives with `setPublicationReady(false)` on book change rather than in
   // here, so this effect only ever schedules — an effect that also writes state
   // synchronously is the cascading-render pattern the compiler warns about.
   useEffect(() => {
-    if (!publicationReady) return undefined;
+    if (!publicationReady || !readerLocated) return undefined;
     const timer = setTimeout(() => setReaderPainted(true), PAINT_GRACE_MS);
     return () => clearTimeout(timer);
-  }, [publicationReady]);
+  }, [publicationReady, readerLocated]);
   // Bookmark note prompt — shown after adding a bookmark
   const [bookmarkNotePrompt, setBookmarkNotePrompt] = useState<{
     id: string;
@@ -205,6 +222,28 @@ export default function ReaderScreen() {
   // TTS
   const [ttsState, setTtsState] = useState<TTSState | null>(null);
   const isTTSActive = ttsState !== null;
+  // Where a link asked to open (a highlight on the timeline, a passage in a
+  // chat), when it asked for somewhere rather than the saved position. The
+  // router hands the param over decoded; decoding it again threw on any `%`
+  // in the passage's stored context ("15% a month"), and the reader quietly
+  // opened at the saved position instead.
+  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
+
+  // A book being heard in the player: the reader follows its voice, and its
+  // read-aloud controls are the player's. Opened at a place of its own, it
+  // stays there, off the voice, as a highlight tapped inside the reader does.
+  const readAlong = useReadAlong({
+    bookId: id,
+    readerRef,
+    ready: readerLocated,
+    tint: asColor(primary) ?? "#f2ca50",
+    opensAway: jumpLocator !== null,
+  });
+  const detachReadAlong = readAlong.detach;
+  const followLocation = readAlong.onLocationChange;
+  const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
+  // BACK TO NOW points the way the voice is: on when the page fell behind it, back when it was read ahead.
+  const backToNowLabel = readAlong.banner?.voiceWay === 1 ? "BACK TO NOW →" : readAlong.banner?.voiceWay === -1 ? "← BACK TO NOW" : "BACK TO NOW";
   // Tracks the last known TTS utterance locator
   const ttsLastLocatorRef = useRef<Locator | null>(null);
   // Tracks the last utterance TEXT seen during TTS. iOS fires many word-level
@@ -278,17 +317,19 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     setPublicationReady(false);
+    setReaderLocated(false);
     setReaderPainted(false);
     if (id) openBook(id);
     return () => closeBook();
   }, [id]);
 
-  // Where a link asked to open (a highlight on the timeline, a passage in a
-  // chat), when it asked for somewhere rather than the saved position. The
-  // router hands the param over decoded; decoding it again threw on any `%`
-  // in the passage's stored context ("15% a month"), and the reader quietly
-  // opened at the saved position instead.
-  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
+  // Highlights Samwell suggested before he could find their passage are moved
+  // to it, once the book is on screen: it reads the book's text, which has no
+  // place in the frames that bring the reader in.
+  const repairSuggestedHighlights = useReaderStore((s) => s.repairSuggestedHighlights);
+  useEffect(() => {
+    if (readerPainted && id) void repairSuggestedHighlights(id);
+  }, [readerPainted, id, repairSuggestedHighlights]);
 
   // When opened at a jump, offer a way back to saved progress — but only if
   // the jump is on a different page.
@@ -333,7 +374,9 @@ export default function ReaderScreen() {
   const handleLocationChange = useCallback(
     (loc: Locator) => {
       currentLocatorRef.current = loc;
+      setReaderLocated(true);
       updateProgress(loc);
+      followLocation(loc);
       // Detect mismatch: TTS is paused but user navigated away (different chapter OR page)
       if (ttsPausedLocatorRef.current) {
         const sameLocation =
@@ -343,7 +386,7 @@ export default function ReaderScreen() {
         setTtsMismatch(!sameLocation);
       }
     },
-    [updateProgress],
+    [updateProgress, followLocation],
   );
 
   const handlePublicationReady = useCallback(
@@ -521,6 +564,7 @@ export default function ReaderScreen() {
         (currentLocator.href.includes(link.href.split("#")[0]) ||
           link.href.split("#")[0].endsWith(currentLocator.href.split("#")[0]));
       if (currentLocator && !sameChapter) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo({
         href: link.href,
         type: "application/xhtml+xml",
@@ -528,7 +572,7 @@ export default function ReaderScreen() {
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   const handleHighlightPress = useCallback(
@@ -538,11 +582,12 @@ export default function ReaderScreen() {
         currentLocator?.locations?.position === locator.locations?.position &&
         currentLocator?.href === locator.href;
       if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo(locator);
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   const handleReturnToProgress = useCallback(() => {
@@ -573,6 +618,7 @@ export default function ReaderScreen() {
     }
   }, []);
 
+
   const handleTTSUtterance = useCallback((event: TTSUtteranceEvent) => {
     // Dedup: iOS fires many word-level events per sentence (same text, different
     // locator); Android fires one per utterance. Deduping reduces bridge traffic
@@ -580,6 +626,8 @@ export default function ReaderScreen() {
     if (event.utterance === ttsLastUtteranceRef.current) return;
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
+    // The rest of the paragraph, for a cloud voice to fetch ahead from.
+    onUtterance(event.locator.text?.after);
 
     // No goTo here: the native side (HybridReadiumView.swift's
     // `manager.onUtterance`) turns the page itself now, and waits for that
@@ -588,7 +636,7 @@ export default function ReaderScreen() {
     // calling goTo from here could only ever race the audio, not sequence
     // before it. currentLocatorRef still updates from the native
     // onLocationChange event this navigation fires either way.
-  }, []);
+  }, [onUtterance]);
 
   const handleTTSToggle = useCallback(() => {
     if (!isTTSActive) {
@@ -742,11 +790,12 @@ export default function ReaderScreen() {
         currentLocator?.locations?.position === locator.locations?.position &&
         currentLocator?.href === locator.href;
       if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo(locator);
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   // TTS decoration is now applied natively (BaseReaderFragment / HybridReadiumView),
@@ -765,7 +814,8 @@ export default function ReaderScreen() {
           },
         })),
     },
-  ], [highlights, primary]);
+    readAlong.decorations,
+  ], [highlights, primary, readAlong.decorations]);
 
   // iOS: onSelectionChange never fires, so selection is handled via the native
   // menu. These become the menu items (Readium replaces the default iOS actions
@@ -784,9 +834,29 @@ export default function ReaderScreen() {
     [],
   );
 
+  // The read-aloud bar: the player's controls while the reader follows it.
+  const ttsBar = readAlong.following
+    ? readAlong.controls
+    : {
+        isPlaying: ttsState?.isPlaying ?? false,
+        working: readAloud.cloud.working,
+        onPlayPause: handleTTSPlayPause,
+        onSkipPrevious: () => readerRef.current?.ttsSkipPrevious(),
+        onSkipNext: () => readerRef.current?.ttsSkipNext(),
+      };
+
+  // The read-aloud icon, for a book heard in the player: stops it while its
+  // controls are up, else (paused in the mini player) starts it, as an
+  // unlit icon would read aloud.
+  const ttsToggle = readAlong.following
+    ? readAlong.controls.active
+      ? readAlong.controls.onStop
+      : readAlong.controls.onPlayPause
+    : handleTTSToggle;
+
   const initialLocation = useMemo(
-    () => jumpLocator ?? savedLocator ?? undefined,
-    [jumpLocator, savedLocator],
+    () => jumpLocator ?? readAlong.initialLocator ?? savedLocator ?? undefined,
+    [jumpLocator, readAlong.initialLocator, savedLocator],
   );
 
   // The header zone is a transparent tap strip above the reading area.
@@ -862,6 +932,7 @@ export default function ReaderScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <ScreenInteractive when={readerPainted} />
       {/* Holds the reading area's top edge. */}
       <View pointerEvents="none" style={{ height: readerTop }} />
 
@@ -896,6 +967,7 @@ export default function ReaderScreen() {
             selectionActions={selectionActions}
             suppressNativeSelectionMenu={true}
             onLocationChange={handleLocationChange}
+            onNavigatedByUser={readAlong.onNavigatedByUser}
             onPublicationReady={handlePublicationReady}
             onSelectionChange={handleSelectionChange}
             onSelectionAction={handleSelectionAction}
@@ -905,6 +977,7 @@ export default function ReaderScreen() {
             onTTSError={handleTTSError}
             onTTSSynthesisRequest={onSynthesisRequest}
             onTTSSynthesisCancel={onSynthesisCancel}
+            onTTSUpcoming={onUpcoming}
           />
         )}
 
@@ -966,14 +1039,14 @@ export default function ReaderScreen() {
           title={currentBook.title}
           progress={progress ?? undefined}
           isBookmarked={isBookmarked}
-          isTTSActive={isTTSActive}
+          isTTSActive={speaking}
           onBookmarkToggle={handleBookmarkToggle}
           onBack={() => leave("back")}
           onContents={() => {
             showHeader();
             setShowToc(true);
           }}
-          onTTSToggle={handleTTSToggle}
+          onTTSToggle={ttsToggle}
           onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
@@ -983,7 +1056,7 @@ export default function ReaderScreen() {
           when read-aloud is switched on and go back down past it when it is
           switched off, as the mini player does (`slideUpFromEdge`); inside
           that, they follow the header as it hides and shows. */}
-      {isTTSActive && (
+      {speaking && (
         <ReanimatedView.View
           entering={slideUpFromEdge}
           exiting={slideDownPastEdge}
@@ -1008,10 +1081,11 @@ export default function ReaderScreen() {
             pointerEvents="box-none"
           >
             <TTSControls
-              isPlaying={ttsState?.isPlaying ?? false}
-              onPlayPause={handleTTSPlayPause}
-              onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
-              onSkipNext={() => readerRef.current?.ttsSkipNext()}
+              isPlaying={ttsBar.isPlaying}
+              working={ttsBar.working}
+              onPlayPause={ttsBar.onPlayPause}
+              onSkipPrevious={ttsBar.onSkipPrevious}
+              onSkipNext={ttsBar.onSkipNext}
             />
           </Animated.View>
         </ReanimatedView.View>
@@ -1074,18 +1148,7 @@ export default function ReaderScreen() {
             const row = useReaderStore
               .getState()
               .highlights.find((h) => h.id === menuHighlight.id);
-            let surrounding: string | undefined;
-            if (row?.context) {
-              try {
-                const { before, after } = JSON.parse(row.context) as {
-                  before?: string;
-                  after?: string;
-                };
-                surrounding = [before, after].filter(Boolean).join(" … ") || undefined;
-              } catch {
-                // Suggest from the highlight text alone.
-              }
-            }
+            const surrounding = highlightSurrounding(row?.context);
             const noteText = (highlightNotes[menuHighlight.id] ?? [])
               .map((n) => n.text)
               .join("\n");
@@ -1103,7 +1166,7 @@ export default function ReaderScreen() {
       )}
 
       {/* Return to progress banner — hidden when TTS is active to avoid conflicting banners */}
-      {preJumpLocator && publicationReady && !isTTSActive && (
+      {preJumpLocator && publicationReady && !speaking && (
         <View
           className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
           style={{ bottom: insets.bottom + spacing[4] }}
@@ -1125,29 +1188,25 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* TTS page-mismatch banner — shown when TTS is paused and user navigates away */}
+      {/* The page has moved away from the voice: read-aloud paused and left
+          behind, or a book heard in the player whose pages were turned by hand. */}
       {ttsMismatch && isTTSActive && (
-        <View
-          className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
-          style={{ bottom: insets.bottom + spacing[4] + 60 }}
-        >
-          <Touchable
-            className="flex-1"
-            onPress={handleTTSResumeFromPaused}
-          >
-            <ThemedText type="labelSm" color={asColor(primary)}>
-              ← RESUME FROM PAUSED
-            </ThemedText>
-          </Touchable>
-          <Touchable
-            className="flex-1"
-            onPress={handleTTSContinueFromHere}
-          >
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-              READ FROM HERE
-            </ThemedText>
-          </Touchable>
-        </View>
+        <ReadAloudBanner
+          backLabel="← RESUME FROM PAUSED"
+          onBack={handleTTSResumeFromPaused}
+          hereLabel="READ FROM HERE"
+          onHere={handleTTSContinueFromHere}
+          bottom={insets.bottom + spacing[4] + 60}
+        />
+      )}
+      {readAlong.banner && (
+        <ReadAloudBanner
+          backLabel={backToNowLabel}
+          onBack={readAlong.banner.onBackToNow}
+          hereLabel="LISTEN FROM HERE"
+          onHere={readAlong.banner.onListenFromHere}
+          bottom={insets.bottom + spacing[4] + 60}
+        />
       )}
 
       <TocSheet
@@ -1167,6 +1226,8 @@ export default function ReaderScreen() {
           without leaving the book. Same panel Settings uses, so the two
           never disagree about what "the voice" currently is. */}
       <TtsSettingsSheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} />
+      <CloudVoiceFailureSheet {...cloudFailure.sheet} />
+      <PlansSheet nested {...cloudFailure.plans} />
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (
@@ -1206,6 +1267,15 @@ function BookmarkNotePrompt({
   onSkip: () => void;
   top: number;
 }) {
+  // Before the field goes: Android leaves the keyboard up once it has gone.
+  const save = () => {
+    Keyboard.dismiss();
+    onSave();
+  };
+  const skip = () => {
+    Keyboard.dismiss();
+    onSkip();
+  };
   const [primary, mutedForeground] = useCSSVariable([
     "--color-primary",
     "--color-muted-foreground",
@@ -1229,16 +1299,16 @@ function BookmarkNotePrompt({
           autoFocus
           returnKeyType="done"
           blurOnSubmit
-          onSubmitEditing={onSave}
+          onSubmitEditing={save}
         />
       </View>
       <View className="flex-row justify-end gap-4">
-        <Touchable onPress={onSkip} hitSlop={8}>
+        <Touchable onPress={skip} hitSlop={8}>
           <ThemedText type="labelSm" color={asColor(mutedForeground)}>
             SKIP
           </ThemedText>
         </Touchable>
-        <Touchable onPress={onSave} hitSlop={8}>
+        <Touchable onPress={save} hitSlop={8}>
           <ThemedText type="labelSm" color={asColor(primary)}>
             SAVE
           </ThemedText>

@@ -31,6 +31,9 @@ export function PlanPicker({
   | "packages"
   | "catalogue"
   | "modelCounts"
+  | "voices"
+  | "infoOpensOn"
+  | "onSample"
   | "busy"
   | "ready"
   | "prebuilt"
@@ -38,6 +41,8 @@ export function PlanPicker({
   | "onRetry"
   | "onChoose"
   | "onRestore"
+  | "onAccount"
+  | "onInsiderCode"
   | "surface"
   | "bleed"
 >) {

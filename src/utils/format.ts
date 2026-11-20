@@ -5,6 +5,15 @@
  * `src/app/settings.tsx` and `src/stores/model.ts`.
  */
 
+/**
+ * 3412 as "3,412": counts this size are read at a glance, not parsed. Always
+ * a comma, whatever the phone's language: `toLocaleString` writes "3 412" or
+ * "3.412" in other locales, which a model reading a tool result can misread.
+ */
+export function formatCount(n: number): string {
+  return String(Math.max(0, Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 const KB = 1024;
 const MB = 1024 * KB;
 const GB = 1024 * MB;
@@ -21,6 +30,11 @@ export function formatBytes(bytes: number | null | undefined): string {
   if (bytes >= MB) return `${Math.round(bytes / MB)} MB`;
   if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;
   return `${Math.round(bytes)} B`;
+}
+
+/** "60", "22", "4.5": whole hours from ten up, where a tenth stops meaning anything. */
+export function formatHours(hours: number): string {
+  return hours >= 10 ? String(Math.round(hours)) : String(Math.round(hours * 10) / 10);
 }
 
 /**

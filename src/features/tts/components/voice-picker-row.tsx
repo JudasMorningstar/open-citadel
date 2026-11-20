@@ -15,6 +15,8 @@ export interface VoicePickerRowProps {
   onPress: () => void;
   /** What a screen reader says the row does, e.g. "Choose a Lite voice". */
   accessibilityLabel: string;
+  /** What the row is, on its left. "Voice" unless the kind of voice has a name of its own ("Narrator"). */
+  label?: string;
 }
 
 /**
@@ -22,16 +24,17 @@ export interface VoicePickerRowProps {
  * and Enhanced voices are both chosen this way, so the two kinds differ in
  * what they sound like and not in how they are picked.
  */
-export function VoicePickerRow({ name, onPress, accessibilityLabel }: VoicePickerRowProps) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
+export function VoicePickerRow({ name, onPress, accessibilityLabel, label = 'Voice' }: VoicePickerRowProps) {
+  const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
   return (
     // A tap is felt: the row opens something, and a press with no answer
     // under the finger reads as missed until the sheet has started to rise.
     <Touchable onPress={onPress} haptic="tap" accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
       <Card className="flex-row items-center justify-between p-3">
         <View className="flex-row items-center gap-3">
-          <PrefixIcon icon={AudioLines} size={28} />
-          <ThemedText type="bodyMd">Voice</ThemedText>
+          {/* Gold, as every icon box that leads a row is (Settings, the voice boxes). */}
+          <PrefixIcon icon={AudioLines} size={28} color={asColor(primary)} />
+          <ThemedText type="bodyMd">{label}</ThemedText>
         </View>
         <View className="flex-row items-center gap-1">
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>

@@ -1,22 +1,27 @@
 import 'dotenv/config';
 
 import { serve } from '@hono/node-server';
-import { chat, toHttpResponse, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import { chat, maxIterations, toHttpResponse, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { openRouterText } from '@tanstack/ai-openrouter';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import {
-  COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
+  DISCOVERY_TOOL_NAMES,
+  LISTENING_TOOL_NAMES,
   onboardingClientToolDefinitions,
   onboardingSystemPrompt,
   readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
-  SAMWELL_CLIENT_TOOL_DEFINITIONS,
+  SAMWELL_DISCOVERY_TOOL_PROMPT,
   SAMWELL_JOURNEY_TOOL_PROMPT,
+  SAMWELL_LISTENING_TOOL_PROMPT,
+  SAMWELL_MOMENTS_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_UNIFIED_SYSTEM_PROMPT,
+  SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
   CREDIT_PLANS,
   FORECAST_WORKLOAD,
@@ -29,13 +34,16 @@ import {
   type CloudModelOption,
   type ModelPricing,
   type PlanId,
+  voicesForPlan,
 } from 'samwell-shared';
 import { z } from 'zod';
 
 import { accountRoutes } from './account-routes.js';
+import { APP_HEADERS, appGate, appGateRoutes, gateConfigFromEnv } from './app-gate.js';
 import { guestRoutes } from './guest-routes.js';
 import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
+import { pickFallbackModels } from './fallback-models.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
 import { gutenbergCatalogRoutes } from './gutenberg-catalog.js';
@@ -52,8 +60,10 @@ import {
   summarizeOldest,
   withCompaction,
 } from './compaction.js';
-import { runStructuredAnalysis } from './structured-analysis.js';
+import { threadCheckpoints } from './compaction-checkpoints.js';
+import { summarizeForCompaction } from './compaction-summary.js';
 import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
+import { publisherRoutes } from './publisher-routes.js';
 import { tagsRoutes } from './tags.js';
 import { takeawayRoutes } from './takeaway.js';
 import {
@@ -96,10 +106,22 @@ import {
   sweepStaleReservations,
 } from './billing.js';
 import { readIdentity } from './identity.js';
+import { asOneRun } from './one-run.js';
+import { clientToolDefinitionsFor, offeredClientTools, offersAny } from './offered-tools.js';
+import { createReadWebPageTool } from './web-page.js';
+import { pageKey, readablePageUrl } from './web-page-text.js';
+import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
+import { ttsRoutes } from './tts-production.js';
+import { transcribeRoutes, transcribeWorker } from './transcribe-production.js';
+import { voiceCatalog } from './voice-catalog.js';
+import { startVoiceMetadataRefresh } from './voice-metadata.js';
+import { voiceAdminRoutes, voiceSampleRoutes } from './voice-routes.js';
 type RunAgentInput = {
   threadId?: string;
   runId?: string;
   messages?: unknown[];
+  /** AG-UI: the tools the client registered and can run. See `offered-tools.ts`. */
+  tools?: unknown;
   forwardedProps?: Record<string, unknown>;
   data?: Record<string, unknown>;
 };
@@ -126,8 +148,8 @@ function readModelId(
 }
 
 /**
- * Which Samwell is answering: the reading companion, Compass, or the
- * introduction.
+ * Which Samwell is answering: the one Samwell, or, for builds from before
+ * the merge, the reading companion or Compass; or the introduction.
  *
  * Sent as a forwarded prop rather than inferred from the messages, because
  * the surfaces can carry identical text and only the caller knows which one it
@@ -138,11 +160,18 @@ function readModelId(
  * asked `/onboarding/status`, was told no, and sent the same conversation down
  * the metered path instead. Same Samwell, same tools, same script; the reader
  * is paying for it now. See `onboarding.ts`.
+ *
+ * `samwell` is reading and goals in one conversation, sent by builds that
+ * dropped the Chat / Compass switch. `reading` and `compass` stay for the
+ * builds that still have it: an install keeps its JavaScript until it
+ * restarts onto an update, and a store build older than the update gate
+ * cannot be asked to.
  */
-type SamwellMode = 'reading' | 'compass' | 'onboarding';
+type SamwellMode = 'samwell' | 'reading' | 'compass' | 'onboarding';
 
 function readMode(body: RunAgentInput): SamwellMode {
   const raw = body.forwardedProps?.mode ?? body.data?.mode;
+  if (raw === 'samwell') return 'samwell';
   if (raw === 'compass') return 'compass';
   if (raw === 'onboarding') return 'onboarding';
   return 'reading';
@@ -159,13 +188,49 @@ function readMode(body: RunAgentInput): SamwellMode {
  * re-sent on every request, so they are part of what the reader pays for -
  * and one mode-to-prompts decision is one chance to keep the two agreeing.
  */
-function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean): string[] {
+function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declaredTools: unknown): string[] {
   // Compass names search_journey in its own prompt, since Compass only
   // ever runs here. The reading persona is shared with the on-device
   // engine, so the journey paragraph is added on this route alone.
-  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT];
+  // The web is the cloud's alone, and onboarding has no use for it: see
+  // `SAMWELL_WEB_SEARCH_TOOL_PROMPT`.
+  // The podcasts and blogs paragraph only for an app that declared those
+  // tools: an older build is never offered them, and must not be told of them.
+  const listening = offersAny(declaredTools, LISTENING_TOOL_NAMES) ? [SAMWELL_LISTENING_TOOL_PROMPT] : [];
+  // Likewise finding and vetting new sources, which only a build with the
+  // discovery tools can act on.
+  const discovery = offersAny(declaredTools, DISCOVERY_TOOL_NAMES) ? [SAMWELL_DISCOVERY_TOOL_PROMPT] : [];
+  if (mode === 'samwell') {
+    return [
+      SAMWELL_UNIFIED_SYSTEM_PROMPT,
+      SAMWELL_JOURNEY_TOOL_PROMPT,
+      SAMWELL_APP_GUIDE_TOOL_PROMPT,
+      SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+      ...listening,
+      ...discovery,
+      SAMWELL_MOMENTS_PROMPT,
+    ];
+  }
+  if (mode === 'compass') {
+    return [
+      COMPASS_SYSTEM_PROMPT,
+      SAMWELL_JOURNEY_TOOL_PROMPT,
+      SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+      ...listening,
+      ...discovery,
+      SAMWELL_MOMENTS_PROMPT,
+    ];
+  }
   if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
-  return [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT, SAMWELL_APP_GUIDE_TOOL_PROMPT];
+  return [
+    SAMWELL_SYSTEM_PROMPT,
+    SAMWELL_JOURNEY_TOOL_PROMPT,
+    SAMWELL_APP_GUIDE_TOOL_PROMPT,
+    SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+    ...listening,
+    ...discovery,
+    SAMWELL_MOMENTS_PROMPT,
+  ];
 }
 
 /*
@@ -301,6 +366,8 @@ type MeteredBilling = {
   turnKey: string;
   /** What this turn may spend in total, set when it was admitted. */
   turnCeiling: number;
+  /** Dollars spent outside the model's own tokens (web searches), read at the settle. */
+  extraCostUsd: () => number;
 };
 
 async function* meterStream(
@@ -335,6 +402,7 @@ async function* meterStream(
             usage.cachedPromptTokens,
             CACHED_SHARE,
           );
+          const extraUsd = billing.extraCostUsd();
           const actual = costToCredits(
             modelCostUsd(
               billing.pricing,
@@ -343,7 +411,7 @@ async function* meterStream(
                 cachedInputTokens: cachedTokens,
                 outputTokens: completionTokens,
               },
-            ),
+            ) + extraUsd,
             billing.creditValue,
           );
           const spend = recordTurnSpend(
@@ -356,7 +424,8 @@ async function* meterStream(
           const settle = await settleCredits({
             usageEventId,
             actualCredits: actual,
-            usage,
+            // The recorded cost is everything the turn spent, searches too.
+            usage: extraUsd > 0 ? { ...usage, costUsd: (usage.costUsd ?? 0) + extraUsd } : usage,
             priceSnapshot: {
               inputPricePerMillion: billing.pricing.inputPricePerMillion,
               outputPricePerMillion: billing.pricing.outputPricePerMillion,
@@ -391,6 +460,15 @@ async function* meterStream(
         }
       } else if (chunk.type === 'RUN_ERROR') {
         settled = true;
+        /*
+         * Said here, because nothing else says it. An error that arrives as
+         * an event is not thrown, so the catch below never sees it; unlogged,
+         * a request OpenRouter refused outright looked from the log like a
+         * turn that simply never ended.
+         */
+        console.error(
+          `[Samwell Cloud] Run error on ${modelId}: ${JSON.stringify(chunk).slice(0, 800)}`,
+        );
         if (billing) {
           await releaseReservation({
             usageEventId,
@@ -452,11 +530,15 @@ function turnKeyOwner(key: string): string {
 }
 
 await initDb();
+// The voice catalogue seeds an empty table the way `initDb` seeds the chat one.
+await voiceCatalog.ensureSchema();
 
 // Background, and deliberately not awaited: the first refresh must not hold
 // up the server accepting requests, and every model already has a usable
 // floor to fall back on until it lands.
 startModelContextRefresh();
+// Voice prices and voice lists, on the same rhythm and as soft about failure.
+startVoiceMetadataRefresh();
 
 /**
  * Where each open turn's continuation count lives.
@@ -508,6 +590,21 @@ const reservationSweeper = setInterval(() => {
 }, 5 * 60_000);
 reservationSweeper.unref?.();
 
+/*
+ * Transcription jobs a deploy interrupted are picked up again, and the
+ * transcripts nobody collected in a day are released uncharged. Not awaited,
+ * for the reason the refreshes above are not.
+ */
+transcribeWorker.resume().catch((error) => {
+  console.error('[Transcribe] Resuming unfinished jobs failed:', error);
+});
+const transcribeSweeper = setInterval(() => {
+  transcribeWorker.sweep().catch((error) => {
+    console.error('[Transcribe] Sweep failed:', error);
+  });
+}, 10 * 60_000);
+transcribeSweeper.unref?.();
+
 const insiderRegrantSweeper = setInterval(() => {
   sweepInsiderRegrants().catch((error) => {
     console.error('[Samwell Cloud] Insider regrant sweep failed:', error);
@@ -526,13 +623,25 @@ app.use(
     // `Authorization` carries the Logto access token every metered route now
     // requires. The device header it replaced is gone: Grand Maester Samwell
     // runs on accounts, so there is nothing anonymous left to allow.
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', ...Object.values(APP_HEADERS)],
     allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   }),
 );
 
+/*
+ * A copy of the app the server no longer serves is answered 426 before any
+ * route sees it (see `app-gate`). Left out: the health check, the gate's own
+ * question, which must always be answerable, and the admin routes, which are
+ * called with curl rather than by the app.
+ */
+const UNGATED = ['/health', '/app/gate', '/admin'];
+const gate = appGate();
+app.use('*', (c, next) => (UNGATED.some((path) => c.req.path.startsWith(path)) ? next() : gate(c, next)));
+app.route('/app', appGateRoutes());
+
 app.get('/health', async (c) => {
   const models = await listCloudModels();
+  const voices = await voiceCatalog.list();
   return c.json({
     ok: true,
     service: 'samwell-cloud',
@@ -564,6 +673,9 @@ app.get('/health', async (c) => {
      * which is the one failure App Review is looking for here.
      */
     deletionReady: managementConfigured(),
+    // The oldest copies of the app still served (see `app-gate`), so one curl
+    // says what a phone below them is being told.
+    appGate: gateConfigFromEnv(),
     models: models.map((model) => model.id),
     // Which model the house is paying for on the onboarding route.
     //
@@ -592,6 +704,17 @@ app.get('/health', async (c) => {
     modelsMissingPrices: models
       .filter((model) => model.inputPricePerMillion === null || model.outputPricePerMillion === null)
       .map((model) => model.id),
+    /*
+     * The same two questions for the cloud voices. A plan that reaches no
+     * voice draws an empty Cloud pane, and a voice with no price refuses
+     * every piece; neither says anything in a log.
+     */
+    voicesByPlan: Object.fromEntries(
+      PLAN_ORDER.map((plan) => [plan, voicesForPlan(voices, plan).length]),
+    ),
+    voicesMissingPrices: voices
+      .filter((voice) => voice.pricePerMillionCharacters === null)
+      .map((voice) => voice.id),
   });
 });
 
@@ -758,12 +881,23 @@ app.route('/library', gutenbergRoutes);
 // The free books catalogue the app browses. Open, read-only and capped per
 // caller: the books are free to everyone, so browsing them needs no sign-in.
 app.route('/library', gutenbergCatalogRoutes);
+// What publishers have asked of the app (no whole posts, no cloud AI, not in
+// Explore), for every phone to apply. See `samwell-shared/publishers.ts`.
+app.route('/publishers', publisherRoutes);
 // What a reader holds, what they spent it on, and insider codes. The store's
 // own word about subscriptions arrives on the second of these, from
 // RevenueCat, keyed to a secret only it and the deployment know.
 app.route('/billing', billingRoutes);
 app.route('/billing', billingWebhookRoutes);
 app.route('/admin/insider', insiderAdminRoutes);
+// Reading a book aloud in a cloud voice, a piece at a time, and the free
+// samples a reader tries voices with. See `tts.ts` and `voice-routes.ts`.
+app.route('/tts', ttsRoutes);
+app.route('/tts', voiceSampleRoutes);
+app.route('/admin/voices', voiceAdminRoutes);
+// A podcast episode turned into a transcript, as a job the phone starts and
+// collects. Scribe fetches the audio by URL; the server never handles it.
+app.route('/transcribe', transcribeRoutes);
 // Deleting an account, which App Review requires the app to offer and only
 // this side can carry out: the Logto user goes with the rows.
 app.route('/account', accountRoutes);
@@ -812,7 +946,7 @@ app.post('/chat/http', async (c) => {
    * and a request that is about to be refused must not spend one of the
    * house's onboarding turns on its way to being refused.
    *
-   * See `tool-loop.ts` for why twelve.
+   * See `limits.ts` in samwell-shared for why forty, and why it is a backstop.
    */
   const loop = admitRequest(
     openTurns,
@@ -923,6 +1057,32 @@ app.post('/chat/http', async (c) => {
    * (spec §14). A refusal here is a 402 with the numbers, which the app
    * turns into the reader-facing message.
    */
+  /*
+   * Web search, for reading and Compass. Built per request so what a search
+   * costs lands on this request's bill: the tool reports it, and the settle
+   * below adds it to the tokens.
+   */
+  const searchesWeb = mode !== 'onboarding';
+  let searchCostUsd = 0;
+  // The pages those searches returned: the only ones `read_web_page` may read.
+  const searchedPages = new Set<string>();
+  const webSearch = createWebSearchTool(
+    (usd) => {
+      searchCostUsd += usd;
+    },
+    (urls) => {
+      for (const raw of urls) {
+        const url = readablePageUrl(raw);
+        if (url) searchedPages.add(pageKey(url));
+      }
+    },
+  );
+  // Reading a page is part of vetting a source, so it goes to the builds that
+  // were told how to vet one.
+  const webTools = offersAny(body.tools, DISCOVERY_TOOL_NAMES)
+    ? [webSearch, createReadWebPageTool(searchedPages)]
+    : [webSearch];
+
   let metered: MeteredBilling | null = null;
   if (!onTheHouse) {
     /*
@@ -960,7 +1120,7 @@ app.post('/chat/http', async (c) => {
       ) +
       // The persona and the book grounding are re-sent by the server on every
       // request; the client never sends them, so the estimate adds them.
-      [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts].reduce(
+      [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts].reduce(
         (sum, text) => sum + estimateTextTokens(text),
         0,
       );
@@ -973,7 +1133,11 @@ app.post('/chat/http', async (c) => {
           inputTokens: promptTokens,
           cachedInputTokens: cachedTokens,
           outputTokens: FORECAST_WORKLOAD.outputTokens,
-        }),
+        }) +
+          // Room for one web search where the turn can make one. The settle
+          // charges what was actually spent, searches included; this only
+          // keeps the hold honest about what the turn may do.
+          (searchesWeb ? WEB_SEARCH_FALLBACK_COST_USD : 0),
         creditValue,
       ) * RESERVE_SAFETY,
     );
@@ -1038,6 +1202,7 @@ app.post('/chat/http', async (c) => {
       creditValue,
       turnKey: turnKey(accountId, body.threadId),
       turnCeiling: turn.ceiling,
+      extraCostUsd: () => searchCostUsd,
     };
   }
 
@@ -1047,16 +1212,10 @@ app.post('/chat/http', async (c) => {
    * From the plan's models ONLY. This is where a Maester turn is prevented
    * from quietly landing on an Archmaester model - the reroute would cost
    * the house the difference, which is exactly the leak credits exist to
-   * close. Filtered by capability as well: this request carries tool
-   * definitions, so a model that cannot call tools is not a substitute for
-   * one that can - it is a destination where the request arrives broken.
-   * Every model in the catalogue happens to support tools today, which is
-   * exactly why this is worth pinning down now: `/admin/models` can add one
-   * that does not, and nothing else would catch it.
+   * close. And no more than OpenRouter will take: see `pickFallbackModels`,
+   * which also keeps to models that can call tools.
    */
-  const fallbackModels = planModels.filter(
-    (model) => model.id !== modelId && model.capabilities.includes('tools'),
-  );
+  const fallbackModels = pickFallbackModels(planModels, modelId);
 
   /*
    * Compact against the smallest window the request could actually land on,
@@ -1079,7 +1238,41 @@ app.post('/chat/http', async (c) => {
     ABSOLUTE_COMPACTION_CEILING,
   );
 
+  /*
+   * Stop means stop, here as well as on the phone. Without this a reader who
+   * pressed stop closed the connection and nothing else: the model went on
+   * writing, a server tool went on searching, and the hold sat until the
+   * sweep. TanStack aborts the adapter and every running server tool through
+   * this controller, and `toHttpResponse` fires it when the response stream
+   * is cancelled.
+   */
+  const abortController = new AbortController();
+  /*
+   * Which turn, and which step of it, every line about this request is.
+   *
+   * The thread is cut to eight characters: enough to tell one reader's turn
+   * from another in a log, not an identifier worth keeping. Without it the
+   * logs could not say whether a run of requests was one turn or three, which
+   * is the first question about any turn that stopped early.
+   */
+  const turnLabel = `thread=${(body.threadId ?? 'none').slice(0, 8)} step=${loop.continuations}`;
+  c.req.raw.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
+  /*
+   * The reader's side closed the connection before the reply was done: stop
+   * pressed, the app stopping a turn itself, or the network dropping. Nothing
+   * else aborts this controller (the request's own signal above, or the
+   * response stream being cancelled). TanStack logs it as a "fatal" error
+   * from the model's stream, which reads like the server failing; it is not,
+   * and this line says what it is.
+   */
+  abortController.signal.addEventListener(
+    'abort',
+    () => console.log(`[Samwell Cloud] Reader disconnected mid-reply: ${turnLabel}`),
+    { once: true },
+  );
+
   const stream = chat({
+    abortController,
     adapter: openRouterText(modelId as any, {
       httpReferer: process.env.OPENROUTER_HTTP_REFERER,
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
@@ -1098,32 +1291,27 @@ app.post('/chat/http', async (c) => {
     // Not cached for Anthropic, even in onboarding: this route is the
     // reader's bill, and it does not price in a cache write. See
     // `cachedOnboardingPrompt`.
-    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
+    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts],
+    // The device's tools as definitions only (the app runs them), and the
+    // web search as a server tool TanStack runs here in its own agent loop.
     tools:
-      mode === 'compass'
-        ? COMPASS_CLIENT_TOOL_DEFINITIONS
-        : mode === 'onboarding'
-          ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
-          : SAMWELL_CLIENT_TOOL_DEFINITIONS,
+      mode === 'onboarding'
+        ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
+        : [...offeredClientTools(clientToolDefinitionsFor(mode), body.tools), ...webTools],
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     /*
-     * No `agentLoopStrategy` here on purpose.
+     * This bounds iterations INSIDE one server-side loop. Every tool but one runs
+     * on the device and ends the run at its call; the exception is
+     * `web_search`, which TanStack runs here and then asks the model again.
+     * `@tanstack/ai` defaults to `maxIterations(5)`: four searches and an
+     * answer in one response, which is the day that bound was left for. What
+     * bounds a turn across requests is still `tool-loop.ts`.
      *
-     * It looks like the answer to a runaway turn and it is not. It bounds
-     * iterations INSIDE one server-side loop, and every tool Samwell has runs
-     * on the device, so the run ends at the first tool call and the number it
-     * would cap is always one. What actually bounds a turn is `tool-loop.ts`,
-     * counting requests across the whole run.
-     *
-     * Nor is there a hole to close: `@tanstack/ai` already defaults this to
-     * `maxIterations(5)`, which is a sensible bound for the day a server tool
-     * is added. Replacing a reasonable default with our own arbitrary number
-     * would be a change that reads as a safeguard while doing nothing, and
-     * pairing it with a message-count clause would leave a trap - a long
-     * thread silently losing its server-side continuation, on a line nobody
-     * would think to look at.
+     * Only a turn that may vet a source goes further, since searches and page
+     * reads share the count: running out mid-check leaves no answer at all.
      */
+    agentLoopStrategy: maxIterations(webTools.length > 1 ? 8 : 5),
     middleware: [
       withCompaction({
         // A share of the window rather than all of it: the system prompts,
@@ -1139,8 +1327,11 @@ app.post('/chat/http', async (c) => {
           // companion whose whole value is continuity should not forget the
           // book you told it about two hundred messages ago.
           summarizeOldest({
-            summarize: (dropped) =>
-              summarizeForCompaction({ dropped, modelId, accountId }),
+            summarize: (dropped, previous) =>
+              summarizeForCompaction({ dropped, previous, modelId, accountId }),
+            // Reused by this conversation's next requests, and by the
+            // round trips of this turn's tool calls.
+            checkpoints: threadCheckpoints(accountId, body.threadId),
           }),
           // Last resort, if summarising failed or was not enough.
           evictOldest(),
@@ -1204,13 +1395,16 @@ app.post('/chat/http', async (c) => {
   });
 
   console.log(
-    `[Samwell Cloud] ${mode} turn: model=${modelId} thinkingBudget=${thinkingBudget}` +
+    `[Samwell Cloud] ${mode} turn: ${turnLabel} model=${modelId} thinkingBudget=${thinkingBudget}` +
       (mode === 'onboarding'
         ? ` billed=${onTheHouse ? 'house' : 'reader'}`
         : ` plan=${plan}`),
   );
 
-  return toHttpResponse(meterStream(stream, usageEventId, body.threadId, modelId, metered), {
+  // `asOneRun` joins the agent loop's steps (a search, then the answer) into
+  // the one run per response that the meter and the app both expect.
+  return toHttpResponse(meterStream(asOneRun(stream), usageEventId, body.threadId, modelId, metered), {
+    abortController,
     headers: {
       'Content-Type': 'application/x-ndjson',
       'Cache-Control': 'no-cache',
@@ -1247,70 +1441,6 @@ const CONTEXT_BUDGET_RATIO = 0.66;
  * expensive one.
  */
 const ABSOLUTE_COMPACTION_CEILING = 60_000;
-
-const CompactionSummarySchema = z.object({
-  summary: z.string(),
-});
-
-const COMPACTION_SUMMARY_PROMPT = `You are compressing the earlier part of a conversation so it can be carried forward in a smaller context window.
-
-Write a factual summary in the third person. Preserve, in this order of priority:
-- what the reader is trying to understand or decide
-- any book, chapter or passage being discussed, by name
-- conclusions already reached, so they are not re-litigated
-- commitments or preferences the reader stated
-
-Leave out pleasantries, restated questions, and anything already obvious from the recent messages that follow. Do not invent detail that is not present. Aim for one short paragraph.`;
-
-/**
- * Summarise the turns compaction is about to drop.
- *
- * Metered but not counted against the reader's cap: this is machinery they did
- * not ask for, so it should not consume their quota, while still being
- * recorded because it costs real money. A failure here is not fatal —
- * `summarizeOldest` leaves the history intact and the composed strategy falls
- * through to `evictOldest`.
- */
-async function summarizeForCompaction({
-  dropped,
-  modelId,
-  accountId,
-}: {
-  dropped: { role: string; content: unknown }[];
-  modelId: string;
-  accountId: string;
-}): Promise<string> {
-  const transcript = dropped
-    .map((message) => {
-      const text =
-        typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-      return `${message.role}: ${text}`;
-    })
-    .join('\n\n');
-
-  const usageEventId = `compaction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await recordUsageEvent({
-    id: usageEventId,
-    accountId,
-    modelId,
-    countsTowardLimit: false,
-    kind: 'compaction_summary',
-  });
-
-  const result = await runStructuredAnalysis({
-    modelId,
-    systemPrompts: [COMPACTION_SUMMARY_PROMPT],
-    messages: [{ role: 'user', content: transcript }],
-    schema: CompactionSummarySchema,
-    usageEventId,
-    maxCompletionTokens: 600,
-    failureCode: 'compaction_summary_failed',
-  });
-
-  return result.summary;
-}
 
 app.onError((err, c) => {
   console.error('[Samwell Cloud] Request failed:', err);

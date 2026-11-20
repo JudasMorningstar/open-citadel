@@ -1,7 +1,7 @@
 {
   "name": "open-citadel",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "expo start",
@@ -61,6 +61,7 @@
     "expo-media-library": "~57.0.4",
     "expo-network": "~57.0.2",
     "expo-notifications": "~57.0.15",
+    "expo-observe": "~57.0.27",
     "expo-router": "~57.0.17",
     "expo-secure-store": "~57.0.3",
     "expo-sharing": "~57.0.16",
@@ -76,6 +77,7 @@
     "jszip": "^3.10.1",
     "linkedom": "^0.18.13",
     "lucide-react-native": "^1.48.0",
+    "pako": "1.0.11",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -88,6 +90,7 @@
     "react-native-pager-view": "8.0.2",
     "react-native-purchases": "^10.9.0",
     "react-native-reanimated": "4.6.0",
+    "react-native-reorderable-list": "0.18.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screen-transitions": "^4.0.0",
     "react-native-screens": "~4.26.2",
@@ -154,7 +157,8 @@
       "expo-modules-core": "patches/expo-modules-core.patch",
       "@rntp/player": "patches/@rntp__player.patch",
       "react-native-executorch": "patches/react-native-executorch.patch",
-      "uniwind": "patches/uniwind.patch"
+      "uniwind": "patches/uniwind.patch",
+      "react-native-reorderable-list@0.18.2": "patches/react-native-reorderable-list@0.18.2.patch"
     }
   },
   "expo": {

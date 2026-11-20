@@ -32,10 +32,20 @@ export function useLibraryPage() {
     blogs: tab === 'blogs',
   }));
 
+  /*
+   * The switch moves in the tap's own render, and that is all the tap waits
+   * for. A side opened for the first time is drawn there as its skeleton
+   * alone, and `built` catches up in a background render: built in the tap's
+   * render, the switch stood still until the whole side had mounted and read
+   * its library, and the tap looked as if it had not landed. Built as a
+   * transition with nothing in its place, the side being left faded out onto
+   * an empty page until it landed.
+   */
   const changeTab = React.useCallback((next: LibraryTab) => {
-    setMounted((prev) => (prev[next] ? prev : { ...prev, [next]: true }));
     usePodcastPrefs.getState().set('libraryTab', next);
+    setMounted((prev) => (prev[next] ? prev : { ...prev, [next]: true }));
   }, []);
+  const built = React.useDeferredValue(mounted);
   const openTimeline = React.useCallback(() => useHubStore.getState().goTo(HUB.timeline), []);
   const openSamwell = React.useCallback(() => useHubStore.getState().goTo(HUB.samwell), []);
   const settleMs = React.useMemo(
@@ -47,5 +57,5 @@ export function useLibraryPage() {
     [openedOn],
   );
 
-  return { tab, mounted, booted, settleMs, changeTab, openTimeline, openSamwell };
+  return { tab, mounted, built, booted, settleMs, changeTab, openTimeline, openSamwell };
 }

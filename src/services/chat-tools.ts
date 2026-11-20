@@ -1,26 +1,47 @@
-import { and, desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import {
   OPEN_CITADEL_GUIDE,
-  SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_DEVICE_SYSTEM_PROMPT,
   SAMWELL_SYSTEM_PROMPT_COMPACT,
   SAMWELL_SYSTEM_PROMPT_NO_TOOLS,
 } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
-import { extractReadSections } from '@/services/book-context';
 import { formatJourneyNotes, searchJourneyNotes } from '@/services/journey';
-import { CHARS_PER_TOKEN, estimateTokens, usableTokens } from '@/services/context-budget';
 import {
-  READING_LIMITS,
-  SEARCH_LIMITS,
-  TOOL_RESULT_TOKEN_BUDGET,
-  type ToolRuntime,
-} from '@/services/tool-limits';
+  formatChapterListingForLLM,
+  formatChapterTextForLLM,
+  formatReadingForLLM,
+  listChapters,
+  readChapter,
+  searchReading,
+  type ChapterListing,
+  type ChapterText,
+  type ReadingSearchResult,
+} from '@/services/reading-tools';
+import {
+  formatBookDetails,
+  formatCollections,
+  formatLibrarySearch,
+  type CollectionListing,
+  type LibraryStatus,
+} from '@/services/library-format';
+import {
+  listCollectionsWithBooks,
+  readBookDetails,
+  resolveLibraryBook,
+  searchLibrary,
+  type BookResolution,
+} from '@/services/library-lookup';
+import { locatePassage } from '@/services/book-text/locate-passage';
+import { estimateTokens, usableTokens } from '@/services/context-budget';
+import { SEARCH_LIMITS, type ToolRuntime } from '@/services/tool-limits';
 import { useBooksStore } from '@/stores/books';
 import { useCollectionsStore } from '@/stores/collections';
 import { useReaderStore } from '@/stores/reader';
 import { useTimelineStore } from '@/stores/timeline';
+import { filterTerms, isEmptyQuery, parseSearchQuery, rankByMatch, type SearchQuery } from '@/utils/search-terms';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -88,7 +109,7 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'list_chapters',
       description:
-        "List the chapters of one of the user's books that they have already reached, with rough lengths. Use before read_chapter to see what is actually there. Never lists chapters ahead of the user's reading position.",
+        "List the chapters of one of the user's books or blog posts that they have already reached: number, title, words, paragraphs. Use before read_chapter. Never lists chapters ahead of the user's reading position.",
       parameters: {
         type: 'object',
         properties: {
@@ -106,7 +127,7 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'read_chapter',
       description:
-        'Read the full text of one chapter the user has already read, by number (from list_chapters) or title. Use when a keyword search is too narrow and you need the whole argument of a chapter.',
+        'Read a chapter the user has already read, by number (from list_chapters or a search hit) or title, paragraphs numbered. from_paragraph starts partway: before a search hit, or to continue where the last read stopped.',
       parameters: {
         type: 'object',
         properties: {
@@ -118,6 +139,10 @@ export const SAMWELL_TOOLS = [
             type: 'string',
             description: 'Chapter number from list_chapters, or its title.',
           },
+          from_paragraph: {
+            type: 'number',
+            description: 'Paragraph to start at, from 1.',
+          },
         },
         required: ['chapter'],
       },
@@ -128,13 +153,17 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'search_reading',
       description:
-        "Search the full text of the books the user is currently reading or has finished, for passages relevant to a topic. Only returns text the user has already read (never ahead of their position). Use to ground points in what the user's authors actually say.",
+        "Search the full text of what the user has read (books, opened blog posts), best passages first, each with its chapter and paragraph. Never past their position. Quote exact phrases.",
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Topic or question to find relevant passages for',
+            description: 'Words or a "quoted phrase" to find',
+          },
+          book_title: {
+            type: 'string',
+            description: 'Search only this book or post',
           },
         },
         required: ['query'],
@@ -246,7 +275,7 @@ export const SAMWELL_TOOLS = [
         properties: {
           quote: {
             type: 'string',
-            description: 'The passage text, close to word-for-word, that the user has already read',
+            description: "The passage, in the book's exact words, that the user has already read",
           },
         },
         required: ['quote'],
@@ -590,7 +619,7 @@ export function promptAndToolsFor(
 ): PromptAndTools {
   const choices: PromptAndTools[] = enableToolCalling
     ? [
-        { systemPrompt: SAMWELL_SYSTEM_PROMPT, tools: SAMWELL_TOOLS },
+        { systemPrompt: SAMWELL_DEVICE_SYSTEM_PROMPT, tools: SAMWELL_TOOLS },
         { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_DEVICE_TOOLS },
       ]
     : [];
@@ -614,6 +643,8 @@ export interface SearchResult {
   tags: string[];
   locator: string | null;
   noteText: string | null;
+  /** Each note on a highlight with its id, which update_note and delete_note take. */
+  notes?: { id: string; text: string }[];
 }
 
 // ── Tool executor ───────────────────────────────────────────────────────────
@@ -662,6 +693,11 @@ export const TOOL_STATUS: Record<string, string> = {
   remove_book_from_collection: 'Updating collection…',
   delete_collection: 'Removing that collection…',
   list_collections: 'Looking over your collections…',
+  search_library: 'Looking through your library…',
+  get_book_details: 'Looking that book up…',
+  // Runs on the server, not here, but the status line is the same question.
+  web_search: 'Searching the web…',
+  read_web_page: 'Reading that page…',
   start_reading: 'Opening that up…',
   clear_queue: 'Clearing your queue…',
   rename_book: 'Fixing that title…',
@@ -685,6 +721,13 @@ export const TOOL_STATUS: Record<string, string> = {
   pause_trackable: 'Pausing that…',
   resume_trackable: 'Starting that again…',
   search_journey: 'Remembering…',
+
+  // Podcasts and blogs, on both surfaces.
+  list_my_podcasts: 'Looking over your podcasts…',
+  search_podcast_episodes: 'Looking through your episodes…',
+  get_podcast_episode: 'Reading the show notes…',
+  list_my_blogs: 'Looking over your blogs…',
+  search_blog_posts: 'Looking through your blogs…',
 
   // The app explaining itself, and the first run. Same table again: what he is
   // doing right now is one question, whichever surface is asking it.
@@ -743,29 +786,16 @@ export async function executeToolCall(
         status: toolStatus(name),
       };
     case 'search_reading':
-      return {
-        result: await searchReading((args.query as string) ?? '', ctx.runtime),
-        status: toolStatus(name),
-      };
+      return { result: await searchReading(args, ctx), status: toolStatus(name) };
     case 'search_journey':
       return {
         result: formatJourneyNotes(searchJourneyNotes((args.query as string) ?? '')),
         status: toolStatus(name),
       };
     case 'list_chapters':
-      return {
-        result: await listChapters(args.book_title as string | undefined, ctx),
-        status: toolStatus(name),
-      };
+      return { result: await listChapters(args, ctx), status: toolStatus(name) };
     case 'read_chapter':
-      return {
-        result: await readChapter(
-          args.book_title as string | undefined,
-          (args.chapter as string) ?? '',
-          ctx,
-        ),
-        status: toolStatus(name),
-      };
+      return { result: await readChapter(args, ctx), status: toolStatus(name) };
     case 'suggest_next_book':
       return {
         result: await suggestNextBook(ctx.runtime),
@@ -793,7 +823,7 @@ export async function executeToolCall(
       };
     case 'suggest_highlight':
       return {
-        result: await suggestHighlight(args.quote as string, ctx),
+        result: await suggestHighlight(args.quote as string, args.book_title as string | undefined, ctx),
         status: toolStatus(name),
       };
     case 'suggest_thought':
@@ -823,7 +853,11 @@ export async function executeToolCall(
       };
     case 'toggle_favorite':
       return {
-        result: await toggleFavoriteForModel(args.book_titles as string[] | undefined, ctx),
+        result: await toggleFavoriteForModel(
+          args.book_titles as string[] | undefined,
+          typeof args.favorite === 'boolean' ? args.favorite : undefined,
+          ctx,
+        ),
         status: toolStatus(name),
       };
     case 'mark_as_finished':
@@ -864,19 +898,12 @@ export async function executeToolCall(
       };
     case 'update_note':
       return {
-        result: await updateNoteForModel(
-          args.note_id as string,
-          args.highlight_id as string,
-          args.text as string,
-        ),
+        result: await updateNoteForModel(args.note_id as string, args.text as string),
         status: toolStatus(name),
       };
     case 'delete_note':
       return {
-        result: await deleteNoteForModel(
-          args.note_id as string,
-          args.highlight_id as string,
-        ),
+        result: await deleteNoteForModel(args.note_id as string),
         status: toolStatus(name),
       };
     case 'update_thought':
@@ -911,9 +938,29 @@ export async function executeToolCall(
       };
     case 'list_collections':
       return {
-        result: await listCollectionsForModel(),
+        result: listCollectionsWithBooks(args.collection_name as string | undefined) ?? { error: 'collection_not_found' },
         status: toolStatus(name),
       };
+    case 'search_library':
+      return {
+        result: searchLibrary(
+          {
+            query: args.query as string | undefined,
+            status: args.status as LibraryStatus | undefined,
+            collection: args.collection as string | undefined,
+            favorites: args.favorites as boolean | undefined,
+          },
+          ctx.runtime,
+        ),
+        status: toolStatus(name),
+      };
+    case 'get_book_details': {
+      const resolved = resolveBookByTitle(args.book_title as string | undefined, ctx);
+      return {
+        result: resolved.ok ? await readBookDetails(resolved.book) : resolutionError(resolved),
+        status: toolStatus(name),
+      };
+    }
     default:
       return { result: { error: `Unknown tool: ${name}` }, status: toolStatus(name) };
   }
@@ -938,15 +985,20 @@ async function searchHighlights(
   }
 
   const results: SearchResult[] = [];
+  // Read the way every library search reads a query (`search-terms`): quoted
+  // phrases whole, words by their stem, the filler of a question dropped.
+  const parsed = parseSearchQuery(q);
+  const words = queryWords(q, parsed);
 
   // Each filter TYPE the caller supplied must ALL hold (AND) — query, tag,
   // and book_title narrow together, not as alternatives. Within a single
-  // type, any of its own words matching is enough (OR): e.g. a two-word
-  // query matches either word, but {query, tag} together requires both.
+  // type, any of its own words matching is enough (OR); the ranking below
+  // then puts the highlights holding more of them first.
   const conditions = [];
   if (q) {
-    const words = q.split(/\s+/).filter(Boolean);
-    conditions.push(or(...words.map((w) => or(like(highlights.text, `%${w}%`), like(books.title, `%${w}%`)))));
+    conditions.push(
+      or(...words.map((w) => or(like(highlights.text, `%${w}%`), like(books.title, `%${w}%`), like(notes.text, `%${w}%`)))),
+    );
   }
   if (b) {
     const words = b.split(/\s+/).filter(Boolean);
@@ -954,96 +1006,82 @@ async function searchHighlights(
   }
   if (t) conditions.push(like(highlights.tags, `%"${t}"%`));
 
-  const rows = db
-    .select({
-      id: highlights.id,
-      text: highlights.text,
-      tags: highlights.tags,
-      locator: highlights.locator,
-      bookId: highlights.bookId,
-      bookTitle: books.title,
-      noteText: notes.text,
-    })
+  // Which highlights match, first; what they carry, after. Joined to its
+  // notes, a highlight matched by one note came back with that note alone,
+  // and Samwell could neither see nor edit the others.
+  const matched = db
+    .selectDistinct({ id: highlights.id, createdAt: highlights.createdAt })
     .from(highlights)
     .innerJoin(books, eq(highlights.bookId, books.id))
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
     .where(and(...conditions))
     .orderBy(desc(highlights.createdAt))
-    .limit(limits.matched)
-    .all();
-
-  // Dedup by highlight id (a highlight can have multiple notes)
-  const seen = new Map<string, SearchResult>();
-  for (const row of rows) {
-    if (seen.has(row.id)) {
-      const existing = seen.get(row.id)!;
-      if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
-      continue;
-    }
-    seen.set(row.id, {
-      id: row.id,
-      type: 'highlight',
-      bookId: row.bookId,
-      bookTitle: row.bookTitle,
-      text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      locator: row.locator,
-      noteText: row.noteText ?? null,
-    });
-  }
-  results.push(...seen.values());
+    // A wider net than is returned, so the ranking has something to choose from.
+    .limit(q ? limits.matched * RANK_POOL : limits.matched)
+    .all()
+    .map((row) => row.id);
 
   // Also search notes text directly (may surface highlights via note content),
   // still respecting book_title/tag if the caller gave them.
+  const noted: string[] = [];
   if (q) {
-    const noteConditions = [
-      or(...q.split(/\s+/).filter(Boolean).map((w) => like(notes.text, `%${w}%`))),
-    ];
+    const noteConditions = [or(...words.map((w) => like(notes.text, `%${w}%`)))];
     if (b) {
       const words = b.split(/\s+/).filter(Boolean);
       noteConditions.push(or(...words.map((w) => like(books.title, `%${w}%`))));
     }
     if (t) noteConditions.push(like(highlights.tags, `%"${t}"%`));
 
-    const noteRows = db
-      .select({
-        highlightId: notes.highlightId,
-        noteText: notes.text,
-        highlightText: highlights.text,
-        highlightTags: highlights.tags,
-        highlightLocator: highlights.locator,
-        bookId: highlights.bookId,
-        bookTitle: books.title,
-      })
+    const found = db
+      .selectDistinct({ id: notes.highlightId })
       .from(notes)
       .innerJoin(highlights, eq(notes.highlightId, highlights.id))
       .innerJoin(books, eq(highlights.bookId, books.id))
       .where(and(...noteConditions))
       .limit(limits.notes)
       .all();
-
-    for (const row of noteRows) {
-      if (row.highlightId && !results.some((r) => r.id === row.highlightId)) {
-        results.push({
-          id: row.highlightId,
-          type: 'highlight',
-          bookId: row.bookId,
-          bookTitle: row.bookTitle,
-          text: row.highlightText,
-          tags: row.highlightTags ? JSON.parse(row.highlightTags) : [],
-          locator: row.highlightLocator,
-          noteText: row.noteText,
-        });
-      }
-    }
+    for (const row of found) if (row.id && !matched.includes(row.id)) noted.push(row.id);
   }
 
-  return results.slice(0, limits.matched);
+  results.push(...highlightsWithNotes([...matched, ...noted]));
+
+  return rankWhenAsked(results, parsed, (r) => `${r.text} ${r.noteText ?? ''} ${r.bookTitle ?? ''}`).slice(0, limits.matched);
+}
+
+/** How many times more rows are fetched than returned, for the ranking to choose from. */
+const RANK_POOL = 4;
+
+/** The words to look for: the query's meaningful terms, or its raw words when it had nothing but filler. */
+function queryWords(raw: string, parsed: SearchQuery): string[] {
+  const terms = filterTerms(parsed);
+  return terms.length > 0 ? terms : raw.split(/\s+/).filter(Boolean);
+}
+
+/** Best match first when the query had something to rank by; newest first otherwise. */
+function rankWhenAsked<T>(rows: T[], parsed: SearchQuery, textOf: (row: T) => string): T[] {
+  if (isEmptyQuery(parsed)) return rows;
+  const ranked = rankByMatch(rows, parsed, textOf);
+  return ranked.length > 0 ? ranked : rows;
 }
 
 // ── Helper: get recent highlights ──────────────────────────────────────────
 
 function getRecentHighlights(limit: number): SearchResult[] {
+  // The newest highlights first, then all their notes: limiting the joined
+  // rows instead let one highlight with many notes crowd out the rest.
+  const newest = db
+    .select({ id: highlights.id })
+    .from(highlights)
+    .orderBy(desc(highlights.createdAt))
+    .limit(limit)
+    .all()
+    .map((row) => row.id);
+  return highlightsWithNotes(newest);
+}
+
+/** These highlights, in this order, each with every note it carries. */
+function highlightsWithNotes(ids: readonly string[]): SearchResult[] {
+  if (ids.length === 0) return [];
   const rows = db
     .select({
       id: highlights.id,
@@ -1052,34 +1090,66 @@ function getRecentHighlights(limit: number): SearchResult[] {
       locator: highlights.locator,
       bookId: highlights.bookId,
       bookTitle: books.title,
+      noteId: notes.id,
       noteText: notes.text,
     })
     .from(highlights)
     .innerJoin(books, eq(highlights.bookId, books.id))
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
-    .orderBy(desc(highlights.createdAt))
-    .limit(limit)
+    .where(inArray(highlights.id, [...ids]))
+    .orderBy(notes.createdAt)
     .all();
+  const byId = new Map(highlightResults(rows).map((result) => [result.id, result]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
+}
 
-  const seen = new Map<string, SearchResult>();
+/** A highlight joined to its notes, one row a note, as one result a highlight with every note and its id. */
+function highlightResults(
+  rows: readonly {
+    id: string;
+    text: string;
+    tags: string | null;
+    locator: string | null;
+    bookId: string;
+    bookTitle: string;
+    noteId: string | null;
+    noteText: string | null;
+  }[],
+): SearchResult[] {
+  const seen = new Map<string, SearchResult & { notes: { id: string; text: string }[] }>();
   for (const row of rows) {
-    if (seen.has(row.id)) {
-      const existing = seen.get(row.id)!;
-      if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
-      continue;
+    let entry = seen.get(row.id);
+    if (!entry) {
+      entry = {
+        id: row.id,
+        type: 'highlight',
+        bookId: row.bookId,
+        bookTitle: row.bookTitle,
+        text: row.text,
+        tags: parseTags(row.tags),
+        locator: row.locator,
+        noteText: null,
+        notes: [],
+      };
+      seen.set(row.id, entry);
     }
-    seen.set(row.id, {
-      id: row.id,
-      type: 'highlight',
-      bookId: row.bookId,
-      bookTitle: row.bookTitle,
-      text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      locator: row.locator,
-      noteText: row.noteText ?? null,
-    });
+    if (row.noteId && row.noteText && !entry.notes.some((note) => note.id === row.noteId)) {
+      entry.notes.push({ id: row.noteId, text: row.noteText });
+      entry.noteText = entry.noteText ? `${entry.noteText} | ${row.noteText}` : row.noteText;
+    }
   }
   return [...seen.values()];
+}
+
+/** Tags as stored (a JSON array), or none when the column is empty or not JSON. */
+function parseTags(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const tags: unknown = JSON.parse(json);
+    return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 // ── search_thoughts implementation ─────────────────────────────────────────
@@ -1108,7 +1178,7 @@ async function searchThoughts(
       bookId: null,
       bookTitle: null,
       text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
+      tags: parseTags(row.tags),
       locator: null,
       noteText: null,
     }));
@@ -1116,20 +1186,19 @@ async function searchThoughts(
 
   // query and tag must both hold when both are given — see the identical
   // fix in searchHighlights above for why this used to be a plain OR.
+  const parsed = parseSearchQuery(q);
   const conditions = [];
-  if (q) {
-    const words = q.split(/\s+/).filter(Boolean);
-    conditions.push(or(...words.map((w) => like(thoughts.text, `%${w}%`))));
-  }
+  if (q) conditions.push(or(...queryWords(q, parsed).map((w) => like(thoughts.text, `%${w}%`))));
   if (t) conditions.push(like(thoughts.tags, `%"${t}"%`));
 
-  const rows = db
+  const pool = db
     .select()
     .from(thoughts)
     .where(and(...conditions))
     .orderBy(desc(thoughts.createdAt))
-    .limit(limits.matched)
+    .limit(q ? limits.matched * RANK_POOL : limits.matched)
     .all();
+  const rows = rankWhenAsked(pool, parsed, (row) => row.text).slice(0, limits.matched);
 
   return rows.map((row) => ({
     id: row.id,
@@ -1137,7 +1206,7 @@ async function searchThoughts(
     bookId: null,
     bookTitle: null,
     text: row.text,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: parseTags(row.tags),
     locator: null,
     noteText: null,
   }));
@@ -1163,8 +1232,10 @@ async function addTags(
     return { success: false, tags: [] };
   }
 
-  const existing: string[] = row.tags ? JSON.parse(row.tags) : [];
-  const merged = Array.from(new Set([...existing, ...newTags]));
+  const existing = parseTags(row.tags);
+  // Trimmed and without blanks: a model's " focus" and "focus" are one tag to the reader.
+  const cleaned = (Array.isArray(newTags) ? newTags : []).map((tag) => String(tag).trim()).filter(Boolean);
+  const merged = Array.from(new Set([...existing, ...cleaned]));
   const tagsJson = JSON.stringify(merged);
 
   db.update(table)
@@ -1191,10 +1262,15 @@ async function deleteEntry(
     return { success: false };
   }
 
+  // Through the stores, which delete a highlight's notes with it and redraw
+  // what is on screen: the reader under a chat started from it kept drawing a
+  // highlight Samwell had deleted, and the timeline kept listing it.
   if (type === 'highlight') {
-    db.delete(notes).where(eq(notes.highlightId, id)).run();
+    await useReaderStore.getState().deleteHighlight(id);
+    await useTimelineStore.getState().loadTimeline();
+  } else {
+    await useTimelineStore.getState().deleteThought(id);
   }
-  db.delete(table).where(eq(table.id, id)).run();
 
   console.log(`[Samwell] deleteEntry: success, id=${id}`);
   return { success: true };
@@ -1206,27 +1282,34 @@ function suggestionId(): string {
   return `sugg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * A highlight Samwell proposes, anchored where the passage is in the book.
+ *
+ * It used to be anchored at the reader's position when he suggested it: the
+ * timeline showed the highlight and the book never drew it, since the reader
+ * draws a highlight by finding its text on the page it points at. Now the
+ * quote is found in what has been read (`locatePassage`), and what the card
+ * shows and approving saves is the book's own wording at its own place. A
+ * quote that cannot be found is said back to him to correct, rather than
+ * saved somewhere it is not.
+ */
 async function suggestHighlight(
   quote: string,
+  bookTitle: string | undefined,
   ctx: ToolCallContext,
-): Promise<{ ok: boolean; suggestionId: string | null; error?: string }> {
-  if (!ctx.bookId) {
-    return { ok: false, suggestionId: null, error: 'no_book_context' };
+): Promise<{ ok: boolean; suggestionId: string | null; passage?: string; error?: string }> {
+  if (!quote?.trim()) return { ok: false, suggestionId: null, error: 'quote_required' };
+  const resolved = resolveLibraryBook(bookTitle, ctx.bookId, { includePosts: true });
+  if (!resolved.ok) {
+    // Named the way the reading tools name it, near matches and all, so he can ask which.
+    const error = resolved.error === 'no_book_specified' ? 'no_book_context' : resolved.error;
+    const matches = resolved.matches?.length ? ` (did you mean: ${resolved.matches.join('; ')})` : '';
+    return { ok: false, suggestionId: null, error: `${error}${matches}` };
   }
+  const book = resolved.book;
 
-  const progress = db
-    .select({ locator: readingProgress.locator })
-    .from(readingProgress)
-    .where(eq(readingProgress.bookId, ctx.bookId))
-    .get();
-
-  // Without a saved reading position there's nothing to anchor the highlight
-  // to — registering the suggestion anyway would let the user tap Approve
-  // and have it silently do nothing. Fail here instead, where the model can
-  // react to it.
-  if (!progress?.locator) {
-    return { ok: false, suggestionId: null, error: 'no_reading_position' };
-  }
+  const located = await locatePassage(book, quote);
+  if ('error' in located) return { ok: false, suggestionId: null, error: located.error };
 
   const id = suggestionId();
   db.insert(chatSuggestions)
@@ -1235,15 +1318,15 @@ async function suggestHighlight(
       sessionId: ctx.sessionId,
       kind: 'highlight',
       status: 'pending',
-      text: quote,
+      text: located.text,
       tags: null,
-      bookId: ctx.bookId,
-      locator: progress.locator,
+      bookId: book.id,
+      locator: JSON.stringify(located.locator),
       createdAt: new Date().toISOString(),
     })
     .run();
 
-  return { ok: true, suggestionId: id };
+  return { ok: true, suggestionId: id, passage: located.text };
 }
 
 async function suggestThought(
@@ -1267,332 +1350,6 @@ async function suggestThought(
     .run();
 
   return { ok: true, suggestionId: id };
-}
-
-// ── search_reading implementation (spoiler-bounded full-text) ──────────────
-
-export interface ReadingSnippet {
-  book: string;
-  author: string;
-  /** Chapter or section the passage came from, where the book names one. */
-  section: string | null;
-  snippet: string;
-}
-
-/** Below this, too little has been read for a search to say anything useful. */
-const READING_MIN_READ_CHARS = 2_000;
-
-
-export interface ReadingSearchResult {
-  snippets: ReadingSnippet[];
-  /**
-   * Titles of the read sections that were searched.
-   *
-   * Returned so a search that finds nothing is still informative: Samwell
-   * learns what is actually in reach and can requery in the book's own
-   * language, instead of concluding the library is empty or asking the reader
-   * to supply the passage himself.
-   */
-  chapters: string[];
-}
-
-/**
- * The spoiler boundary for one book: how far the reader has got.
- *
- * `null` means the book is finished and fully readable. `undefined` means
- * nothing is safely readable — a book marked as reading with no saved
- * position, which must fail closed rather than default to the whole text.
- */
-function readLocatorFor(book: Book): unknown | undefined {
-  if (book.status !== 'reading') return null;
-  const prog = db
-    .select({ locator: readingProgress.locator })
-    .from(readingProgress)
-    .where(eq(readingProgress.bookId, book.id))
-    .get();
-  if (!prog?.locator) return undefined;
-  return JSON.parse(prog.locator);
-}
-
-async function searchReading(query: string, runtime: ToolRuntime): Promise<ReadingSearchResult> {
-  const limits = READING_LIMITS[runtime];
-  const words = query
-    .toLowerCase()
-    .split(/[^a-z0-9']+/)
-    .filter((w) => w.length >= 3);
-  if (words.length === 0) return { snippets: [], chapters: [] };
-
-  const reading = db.select().from(books).where(eq(books.status, 'reading')).all();
-  const finished = db
-    .select()
-    .from(books)
-    .where(eq(books.status, 'archived'))
-    .orderBy(desc(books.completedAt))
-    .limit(limits.finishedBooks)
-    .all();
-
-  const snippets: ReadingSnippet[] = [];
-  const chapters: string[] = [];
-  let totalChars = 0;
-
-  for (const book of [...reading, ...finished]) {
-    if (snippets.length >= limits.maxSnippets || totalChars >= limits.totalChars) break;
-    if (!book.filePath) continue;
-
-    try {
-      const locator = readLocatorFor(book);
-      if (locator === undefined) continue;
-
-      // Sections rather than one blob: the book's own structure says which
-      // parts are jacket copy and what each chapter is called, and both are
-      // lost the moment it is flattened.
-      const sections = await extractReadSections(book.filePath, locator as never);
-      const body = sections.filter((sec) => !sec.frontMatter);
-      const readChars = body.reduce((n, sec) => n + sec.text.length, 0);
-      if (readChars < READING_MIN_READ_CHARS) continue;
-
-      for (const section of body) {
-        if (section.title && !chapters.includes(section.title)) chapters.push(section.title);
-      }
-
-      let perBook = 0;
-
-      for (const section of body) {
-        if (perBook >= limits.maxPerBook) break;
-        if (snippets.length >= limits.maxSnippets) break;
-
-        const lower = section.text.toLowerCase();
-        const takenAt: number[] = [];
-
-        for (const word of words) {
-          if (perBook >= limits.maxPerBook) break;
-
-          const idx = lower.indexOf(word);
-          if (idx < 0) continue;
-          // Two query words landing in the same paragraph would otherwise
-          // return near-identical snippets and spend the budget twice.
-          if (takenAt.some((t) => Math.abs(t - idx) < limits.window * 2)) continue;
-
-          const start = Math.max(0, idx - limits.window);
-          const end = Math.min(section.text.length, idx + limits.window);
-          const snippet =
-            (start > 0 ? '…' : '') +
-            section.text.slice(start, end).trim() +
-            (end < section.text.length ? '…' : '');
-
-          snippets.push({
-            book: book.title,
-            author: book.author,
-            section: section.title,
-            snippet,
-          });
-          takenAt.push(idx);
-          perBook++;
-          totalChars += snippet.length;
-        }
-      }
-    } catch {
-      // Skip unreadable/unparseable books.
-    }
-  }
-
-  return { snippets, chapters };
-}
-
-/**
- * Share of the result budget the fallback chapter list may spend. It is a
- * consolation prize for a failed search, not the answer, so it takes a slice
- * rather than the whole allowance.
- */
-const CHAPTER_LIST_BUDGET_SHARE = 0.4;
-
-// ── Book browsing (list_chapters / read_chapter) ────────────────────────────
-
-export interface ChapterEntry {
-  /** Spine position, and the handle `read_chapter` takes. */
-  index: number;
-  title: string | null;
-  /** Roughly how long the section is, so a caller can judge before reading it. */
-  approxWords: number;
-  /** The section the reader is partway through. */
-  current: boolean;
-}
-
-export interface ChapterListing {
-  book: string;
-  author: string;
-  chapters: ChapterEntry[];
-}
-
-/**
- * The chapters of a book the reader has actually reached.
- *
- * Deliberately stops at the reading position rather than listing the whole
- * table of contents. Chapter titles ahead of the reader give away plot as
- * readily as the text does, so the spoiler boundary applies to the map as
- * well as the territory.
- */
-async function listChapters(
-  bookTitle: string | undefined,
-  ctx: ToolCallContext,
-): Promise<ChapterListing | { error: string }> {
-  const resolved = resolveBookByTitle(bookTitle, ctx);
-  if (!resolved.ok) return { error: resolved.error };
-  const book = resolved.book;
-  if (!book.filePath) return { error: 'book_file_missing' };
-
-  const locator = readLocatorFor(book);
-  if (locator === undefined) return { error: 'nothing_read_yet' };
-
-  const sections = await extractReadSections(book.filePath, locator as never);
-  const body = sections.filter((sec) => !sec.frontMatter);
-
-  return {
-    book: book.title,
-    author: book.author,
-    chapters: body.map((sec) => ({
-      index: sec.index,
-      title: sec.title,
-      approxWords: Math.round(sec.text.split(/\s+/).length / 10) * 10,
-      current: sec.partial,
-    })),
-  };
-}
-
-export interface ChapterText {
-  book: string;
-  title: string | null;
-  index: number;
-  text: string;
-  /** True when the reader has not finished this chapter and it was cut short. */
-  partial: boolean;
-  /** True when the text was trimmed to fit the caller's budget. */
-  truncated: boolean;
-}
-
-/**
- * The full text of one already-read chapter.
- *
- * The counterpart to {@link listChapters}: having seen what is there, read
- * the one that matters instead of matching keywords blindly. Only offered
- * where the context window can hold a chapter, which on device it cannot.
- */
-async function readChapter(
-  bookTitle: string | undefined,
-  chapter: string,
-  ctx: ToolCallContext,
-): Promise<ChapterText | { error: string }> {
-  const resolved = resolveBookByTitle(bookTitle, ctx);
-  if (!resolved.ok) return { error: resolved.error };
-  const book = resolved.book;
-  if (!book.filePath) return { error: 'book_file_missing' };
-
-  const locator = readLocatorFor(book);
-  if (locator === undefined) return { error: 'nothing_read_yet' };
-
-  const sections = await extractReadSections(book.filePath, locator as never);
-  const body = sections.filter((sec) => !sec.frontMatter);
-  if (body.length === 0) return { error: 'nothing_read_yet' };
-
-  const wanted = chapter.trim().toLowerCase();
-  const asIndex = Number.parseInt(wanted, 10);
-  const section =
-    body.find((sec) => sec.index === asIndex) ??
-    body.find((sec) => sec.title?.toLowerCase() === wanted) ??
-    body.find((sec) => sec.title?.toLowerCase().includes(wanted));
-
-  if (!section) return { error: 'chapter_not_found_or_not_read_yet' };
-
-  const maxChars = TOOL_RESULT_TOKEN_BUDGET[ctx.runtime] * Math.floor(CHARS_PER_TOKEN);
-  const truncated = section.text.length > maxChars;
-
-  return {
-    book: book.title,
-    title: section.title,
-    index: section.index,
-    text: truncated ? `${section.text.slice(0, maxChars)}…` : section.text,
-    partial: section.partial,
-    truncated,
-  };
-}
-
-export function formatChapterListingForLLM(listing: ChapterListing | { error: string }): string {
-  if ('error' in listing) return `Could not list chapters: ${listing.error}.`;
-  if (listing.chapters.length === 0) {
-    return `The reader has not started "${listing.book}" yet, so there is nothing to browse.`;
-  }
-  const lines = listing.chapters.map(
-    (c) =>
-      `${c.index}. ${c.title ?? '(untitled section)'} (~${c.approxWords} words)` +
-      `${c.current ? ' (currently reading, partially read)' : ''}`,
-  );
-  return (
-    `Chapters of "${listing.book}" the reader has reached. Use read_chapter with the number or title to read one in full.\n\n` +
-    lines.join('\n')
-  );
-}
-
-export function formatChapterTextForLLM(chapter: ChapterText | { error: string }): string {
-  if ('error' in chapter) return `Could not read that chapter: ${chapter.error}.`;
-  const header = `"${chapter.book}", ${chapter.title ?? `section ${chapter.index}`}`;
-  const notes = [
-    chapter.partial ? 'the reader is partway through this chapter, so it stops at their position' : null,
-    chapter.truncated ? 'the text was trimmed to fit' : null,
-  ].filter(Boolean);
-  const suffix = notes.length > 0 ? `\n\n(Note: ${notes.join('; ')}.)` : '';
-  return `From ${header}:\n\n${chapter.text}${suffix}`;
-}
-
-export function formatReadingForLLM(
-  result: ReadingSearchResult,
-  tokenBudget: number,
-): string {
-  const { snippets, chapters } = result;
-
-  if (snippets.length === 0) {
-    // A failed search still hands back the map. Naming the sections that were
-    // searched lets Samwell try again in the book's own words, which is the
-    // difference between a dead end and a second attempt.
-    const base =
-      'No passage matched in the parts of these books the reader has reached. Only text up to their current position is searchable.';
-    if (chapters.length === 0) {
-      return `${base} Try asking about their highlights instead.`;
-    }
-    const listBudget = tokenBudget * CHAPTER_LIST_BUDGET_SHARE;
-    const listed: string[] = [];
-    let spent = 0;
-    for (const title of chapters) {
-      const cost = estimateTokens(title);
-      if (listed.length > 0 && spent + cost > listBudget) break;
-      spent += cost;
-      listed.push(title);
-    }
-    const more = chapters.length - listed.length;
-    return (
-      `${base} Sections read so far: ${listed.join('; ')}` +
-      `${more > 0 ? ` (and ${more} more)` : ''}.` +
-      ' Search again with wording drawn from these, or ask about their highlights.'
-    );
-  }
-
-  const blocks: string[] = [];
-  let spent = 0;
-
-  for (const [i, s] of snippets.entries()) {
-    const from = s.section ? `"${s.book}", ${s.section}` : `"${s.book}"`;
-    const block = `${i + 1}. From ${from} by ${s.author}:\n   "${s.snippet}"`;
-    const cost = estimateTokens(block);
-    if (blocks.length > 0 && spent + cost > tokenBudget) break;
-    spent += cost;
-    blocks.push(block);
-  }
-
-  const omitted = snippets.length - blocks.length;
-  if (omitted > 0) {
-    blocks.push(`(${omitted} more passage${omitted === 1 ? '' : 's'} not shown.)`);
-  }
-
-  return blocks.join('\n\n');
 }
 
 // ── suggest_next_book implementation ───────────────────────────────────────
@@ -1722,7 +1479,11 @@ export function formatSearchResultsForLLM(
   for (const [i, r] of results.entries()) {
     const lines = [`${i + 1}. "${clampText(r.text)}"`];
     if (r.bookTitle) lines.push(`   Book: ${r.bookTitle}`);
-    if (r.noteText) lines.push(`   Note: ${clampText(r.noteText)}`);
+    if (r.notes && r.notes.length > 0) {
+      for (const note of r.notes) lines.push(`   Note (note_id ${note.id}): ${clampText(note.text)}`);
+    } else if (r.noteText) {
+      lines.push(`   Note: ${clampText(r.noteText)}`);
+    }
     if (r.tags.length > 0) lines.push(`   Tags: ${r.tags.join(', ')}`);
     lines.push(`   ID: ${r.id}`);
     lines.push(`   Ref: [[ref:${r.type}:${r.id}]]`);
@@ -1810,7 +1571,15 @@ export function formatToolResultForLLM(
         : JSON.stringify(result);
     case 'list_collections':
       return Array.isArray(result)
-        ? formatCollectionsForLLM(result as CollectionSummary[], tokenBudget)
+        ? formatCollections(result as CollectionListing[], tokenBudget)
+        : 'No collection by that name. Call list_collections without a name to see them all.';
+    case 'search_library': {
+      const found = result as Parameters<typeof formatLibrarySearch>[0];
+      return formatLibrarySearch(found, undefined, tokenBudget);
+    }
+    case 'get_book_details':
+      return result && typeof result === 'object' && 'book' in result
+        ? formatBookDetails(result as Parameters<typeof formatBookDetails>[0])
         : JSON.stringify(result);
     case 'list_chapters':
       return formatChapterListingForLLM(result as ChapterListing | { error: string });
@@ -1826,37 +1595,14 @@ export function formatToolResultForLLM(
 
 type Book = typeof books.$inferSelect;
 
-type BookResolution =
-  | { ok: true; book: Book }
-  | { ok: false; error: 'no_book_specified' | 'book_not_found' | 'ambiguous_book'; matches?: string[] };
-
-/** Resolves a book from a (possibly partial) title, falling back to the book
- * the current chat is about when no title is given — so "add this to my
- * queue" said mid-book-chat just works. */
+/** Which book a title means: one decision, in `library-lookup.ts`, for every tool. */
 function resolveBookByTitle(title: string | undefined, ctx: ToolCallContext): BookResolution {
-  const trimmed = title?.trim();
+  return resolveLibraryBook(title, ctx.bookId);
+}
 
-  if (!trimmed) {
-    if (!ctx.bookId) return { ok: false, error: 'no_book_specified' };
-    const book = db.select().from(books).where(eq(books.id, ctx.bookId)).get();
-    if (!book) return { ok: false, error: 'book_not_found' };
-    return { ok: true, book };
-  }
-
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  const rows = db
-    .select()
-    .from(books)
-    .where(and(eq(books.kind, 'book'), or(...words.map((w) => like(books.title, `%${w}%`)))))
-    .all();
-
-  if (rows.length === 0) return { ok: false, error: 'book_not_found' };
-  if (rows.length === 1) return { ok: true, book: rows[0] };
-
-  const exact = rows.find((b) => b.title.toLowerCase() === trimmed.toLowerCase());
-  if (exact) return { ok: true, book: exact };
-
-  return { ok: false, error: 'ambiguous_book', matches: rows.map((b) => b.title) };
+/** A failed lookup as the model should read it: near matches named, so it can ask which. */
+function resolutionError(resolution: Extract<BookResolution, { ok: false }>): { error: string; matches?: string[] } {
+  return resolution.matches ? { error: resolution.error, matches: resolution.matches } : { error: resolution.error };
 }
 
 type CollectionResolution =
@@ -1983,16 +1729,26 @@ async function reorderQueueForModel(
   return { ok: failed.length === 0, succeeded: queued.map((b) => b.title), failed };
 }
 
+/**
+ * Favourite or unfavourite books.
+ *
+ * With `favorite` given, each book ends up that way whatever it was: "add it
+ * to my favourites" said of a book already there used to take it out. Without
+ * it (an older server), each book flips, as the tool always did. The state is
+ * read from the book's own row, not the store's list, which may not hold it.
+ */
 async function toggleFavoriteForModel(
   bookTitles: string[] | undefined,
+  favorite: boolean | undefined,
   ctx: ToolCallContext,
 ): Promise<BookBatchActionResult> {
   const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
   const succeeded: string[] = [];
 
   for (const book of resolved) {
-    await useBooksStore.getState().toggleFavorite(book.id);
-    succeeded.push(book.title);
+    const wanted = favorite ?? book.isFavorite !== 1;
+    await useBooksStore.getState().setFavorite(book.id, wanted);
+    succeeded.push(`${book.title} (${wanted ? 'now a favourite' : 'no longer a favourite'})`);
   }
 
   return { ok: failed.length === 0, succeeded, failed };
@@ -2021,12 +1777,23 @@ interface NoteResult {
 interface CreateCollectionResult {
   ok: boolean;
   collectionId?: string;
+  alreadyExisted?: boolean;
   error?: string;
 }
 
 async function createCollectionForModel(name: string): Promise<CreateCollectionResult> {
   const trimmed = name?.trim();
   if (!trimmed) return { ok: false, error: 'name_required' };
+
+  // Asked for again (a retried turn, or "make a Fashion collection" when one
+  // exists), the one there is answers: a second of the same name is only
+  // ever a shelf nobody can tell apart from the first.
+  const existing = db
+    .select({ id: collections.id, name: collections.name })
+    .from(collections)
+    .all()
+    .find((c) => c.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (existing) return { ok: true, collectionId: existing.id, alreadyExisted: true };
 
   const collectionId = await useCollectionsStore.getState().createCollection(trimmed);
   return { ok: true, collectionId };
@@ -2117,38 +1884,44 @@ async function clearQueueForModel(): Promise<BookBatchActionResult> {
 async function addNoteForModel(highlightId: string, text: string): Promise<NoteResult> {
   const trimmed = text?.trim();
   if (!trimmed) return { ok: false, error: 'text_required' };
+  if (!highlightId) return { ok: false, error: 'highlight_not_found' };
 
-  const row = db
-    .select({ id: highlights.id })
-    .from(highlights)
-    .where(eq(highlights.id, highlightId))
-    .get();
-  if (!row) return { ok: false, error: 'highlight_not_found' };
+  const noteId = await useReaderStore.getState().addNote(highlightId, trimmed);
+  return noteId ? { ok: true, noteId } : { ok: false, error: 'highlight_not_found' };
+}
 
-  await useReaderStore.getState().addNote(highlightId, trimmed);
-  return { ok: true };
+/**
+ * The note an id names, and its highlight. The highlight is read off the
+ * note rather than taken from the call: the id is what is unique, and a model
+ * that pairs a note with the wrong highlight should still change the note it
+ * named, not report success on a write that matched nothing.
+ */
+function findNote(noteId: string): { id: string; highlightId: string | null } | null {
+  if (!noteId) return null;
+  return db.select({ id: notes.id, highlightId: notes.highlightId }).from(notes).where(eq(notes.id, noteId)).get() ?? null;
 }
 
 /** Rewrite a note. */
 async function updateNoteForModel(
   noteId: string,
-  highlightId: string,
   text: string,
 ): Promise<NoteResult> {
   const trimmed = text?.trim();
   if (!trimmed) return { ok: false, error: 'text_required' };
+  const note = findNote(noteId);
+  if (!note) return { ok: false, error: 'note_not_found' };
 
-  await useReaderStore.getState().updateNote(noteId, highlightId, trimmed);
-  return { ok: true, noteId };
+  await useReaderStore.getState().updateNote(note.id, note.highlightId ?? '', trimmed);
+  return { ok: true, noteId: note.id };
 }
 
 /** Delete a note, leaving its highlight. */
-async function deleteNoteForModel(
-  noteId: string,
-  highlightId: string,
-): Promise<NoteResult> {
-  await useReaderStore.getState().deleteNote(noteId, highlightId);
-  return { ok: true, noteId };
+async function deleteNoteForModel(noteId: string): Promise<NoteResult> {
+  const note = findNote(noteId);
+  if (!note) return { ok: false, error: 'note_not_found' };
+
+  await useReaderStore.getState().deleteNote(note.id, note.highlightId ?? '');
+  return { ok: true, noteId: note.id };
 }
 
 /**
@@ -2175,7 +1948,7 @@ async function updateThoughtForModel(
   // Colour and tags read back off the row and handed straight through, so the
   // update touches only the text. `updateThought` takes all four and would
   // otherwise blank the two the model never mentioned.
-  const tags: string[] = row.tags ? JSON.parse(row.tags) : [];
+  const tags = parseTags(row.tags);
   // `color` is nullable on the row; the store wants a string. An untinted
   // thought stays untinted.
   await useTimelineStore.getState().updateThought(id, trimmed, row.color ?? '', tags);
@@ -2207,41 +1980,4 @@ async function updateBookCollectionBatch(
   }
 
   return { ok: failed.length === 0, collectionName: collection.name, succeeded, failed };
-}
-
-export interface CollectionSummary {
-  id: string;
-  name: string;
-  bookCount: number;
-}
-
-async function listCollectionsForModel(): Promise<CollectionSummary[]> {
-  await useCollectionsStore.getState().loadCollections();
-  return useCollectionsStore.getState().collections.map((c) => ({
-    id: c.id,
-    name: c.name,
-    bookCount: c.count,
-  }));
-}
-
-export function formatCollectionsForLLM(
-  collectionList: CollectionSummary[],
-  tokenBudget: number,
-): string {
-  if (collectionList.length === 0) return 'No collections yet.';
-
-  const lines: string[] = [];
-  let spent = 0;
-  for (const c of collectionList) {
-    const line = `- "${c.name}" (${c.bookCount} book${c.bookCount === 1 ? '' : 's'})`;
-    const cost = estimateTokens(line);
-    if (lines.length > 0 && spent + cost > tokenBudget) break;
-    spent += cost;
-    lines.push(line);
-  }
-
-  const omitted = collectionList.length - lines.length;
-  return omitted > 0
-    ? `${lines.join('\n')}\n(${omitted} more not shown.)`
-    : lines.join('\n');
 }

@@ -31,6 +31,7 @@ import {
     type SyncPhase,
     type SyncStatus,
 } from "@/services/sync-coordinator";
+import { warmReadingIndex } from "@/services/book-text/reading";
 
 export type Book = typeof books.$inferSelect;
 export type BookStatus = "reading" | "queued" | "archived" | "favorite";
@@ -217,6 +218,8 @@ interface BooksState {
   ) => Promise<void>;
   clearQueue: () => Promise<void>;
   toggleFavorite: (bookId: string) => Promise<void>;
+  /** Favourite or not, whatever it was: what an instruction means, where a toggle would undo one already done. */
+  setFavorite: (bookId: string, favorite: boolean) => Promise<void>;
   updateBookMetadata: (
     bookId: string,
     metadata: {
@@ -299,6 +302,8 @@ function applySyncProgress(
 
   if (job.status === "completed" || job.status === "failed") {
     get().loadBooks();
+    // New books in, so Samwell's search index catches up behind the scan.
+    if (job.status === "completed" && job.addedCount > 0) warmReadingIndex();
     /*
      * A folder that has gone is worth saying whether or not anyone asked.
      *
@@ -590,9 +595,13 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     }
 
     const reordered = [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
-    for (let i = 0; i < reordered.length; i++) {
-      await db.update(books).set({ queueOrder: i }).where(eq(books.id, reordered[i].id));
-    }
+    // One transaction, not a write awaited per book: a drag lands this on
+    // every drop, and a long queue was that many round trips on the JS thread.
+    db.transaction((tx) => {
+      reordered.forEach((book, i) => {
+        tx.update(books).set({ queueOrder: i }).where(eq(books.id, book.id)).run();
+      });
+    });
     await get().loadBooks();
   },
 
@@ -607,10 +616,13 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   toggleFavorite: async (bookId: string) => {
     const book = get().books.find((b) => b.id === bookId);
     if (!book) return;
-    const newValue = book.isFavorite === 1 ? 0 : 1;
+    await get().setFavorite(bookId, book.isFavorite !== 1);
+  },
+
+  setFavorite: async (bookId: string, favorite: boolean) => {
     await db
       .update(books)
-      .set({ isFavorite: newValue })
+      .set({ isFavorite: favorite ? 1 : 0 })
       .where(eq(books.id, bookId));
     await get().loadBooks();
   },

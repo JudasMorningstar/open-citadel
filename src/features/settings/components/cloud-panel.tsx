@@ -5,14 +5,12 @@ import { useCSSVariable } from "uniwind";
 
 import { ActionButton } from "@/components/action-button";
 import { useOnScreen } from "@/components/kept-alive";
-import { List, LogIn, RefreshCw, Settings, SlidersHorizontal } from "@/components/icons";
+import { List, LogIn, Settings, SlidersHorizontal } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
 import { Card } from "@/components/ui/card";
 import { GoldButton } from "@/components/ui/gold-button";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
-import { Spinner } from "@/components/ui/spinner";
-import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import {
     PURCHASES_ENABLED,
@@ -20,6 +18,7 @@ import {
 } from "@/constants/revenuecat";
 import { layout } from "@/constants/theme";
 import { CreditMeter } from "@/features/billing/components/credit-meter";
+import { PlanCheckCard } from "@/features/billing/components/plan-check-card";
 import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
@@ -44,19 +43,19 @@ import { CREDIT_PLANS, PLANS, planRank } from "samwell-shared";
  */
 export function CloudPanel({
   onRequestAccount,
+  onInsiderCode,
   onAccessActivated,
 }: {
   onRequestAccount: () => void;
+  /** Open the insider code sheet, which lives beside this panel. See `InsiderCodeHost`. */
+  onInsiderCode: () => void;
   onAccessActivated?: () => void;
 }) {
   // This panel is kept while the on-device one shows (`KeptAlive`), and
   // nothing about a balance needs asking while it is put away.
   const onScreen = useOnScreen();
   const focused = useIsFocused() && onScreen;
-  const [mutedForeground, primary] = useCSSVariable([
-    "--color-muted-foreground",
-    "--color-primary",
-  ]);
+  const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const cloudModelId = useSettingsStore((s) => s.cloudModelId);
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
@@ -129,6 +128,7 @@ export function CloudPanel({
     if (hasIdentity && onScreen) void refresh();
   }, [hasIdentity, onScreen, refresh]);
   const { packages } = offer;
+  const retry = React.useCallback(() => void refresh(), [refresh]);
 
   const onManage = React.useCallback(async () => {
     const result = await manage();
@@ -145,6 +145,12 @@ export function CloudPanel({
       if (manageError) showToast({ message: manageError, key: "billing" });
     }
   }, [manage]);
+
+  // One sheet at a time: the code's own rises once this one is on its way down.
+  const onAnotherCode = React.useCallback(() => {
+    setManageVisible(false);
+    onInsiderCode();
+  }, [onInsiderCode]);
 
   /**
    * A purchase is under way.
@@ -176,16 +182,7 @@ export function CloudPanel({
    * answered for yet. The same quiet card the subscription check uses below.
    */
   if (identity.kind === "unknown") {
-    return (
-      <Card className="p-4">
-        <View className="flex-row items-center gap-2">
-          <Spinner size="sm" />
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            Checking subscription
-          </ThemedText>
-        </View>
-      </Card>
-    );
+    return <PlanCheckCard />;
   }
 
   /*
@@ -242,6 +239,7 @@ export function CloudPanel({
           packages={packages}
           catalogue={offer.catalogue}
           modelCounts={offer.modelCounts}
+          voices={offer.voices}
           busy={sale.picker.busy}
           ready={offer.ready}
           prebuilt
@@ -249,31 +247,15 @@ export function CloudPanel({
           onRetry={offer.retry}
           onChoose={sale.picker.onChoose}
           onRestore={sale.picker.onRestore}
+          /* The other ways in, listed with the restore under the plans. The
+             account one goes to the account card rather than opening the
+             browser from here, so sign-in still happens in one place; the
+             code one asks for an account itself if it needs to. */
+          onAccount={hasIdentity ? undefined : onRequestAccount}
+          onInsiderCode={onInsiderCode}
           surface="background"
           bleed={layout.gutter}
         />
-        {/* The quiet third door, for somebody who wants neither to buy nor to
-            restore: it scrolls to the account card rather than opening the
-            browser from here, so sign-in still happens in one place. */}
-        {!hasIdentity ? (
-          <View className="items-center">
-            <Touchable
-              className="px-4 py-2"
-              onPress={onRequestAccount}
-              haptic="select"
-              accessibilityRole="button"
-              accessibilityLabel="Sign in to your account"
-            >
-              <ThemedText
-                type="labelSm"
-                color={asColor(mutedForeground)}
-                className="tracking-[1px]"
-              >
-                ALREADY HAVE AN ACCOUNT
-              </ThemedText>
-            </Touchable>
-          </View>
-        ) : null}
       </>
     );
   }
@@ -281,16 +263,7 @@ export function CloudPanel({
   // Do not draw fragments of the subscribed card while the server is still
   // deciding whether this account should see that card or the plan carousel.
   if (status === "unknown") {
-    return (
-      <Card className="p-4">
-        <View className="flex-row items-center gap-2">
-          <Spinner size="sm" />
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            Checking subscription
-          </ThemedText>
-        </View>
-      </Card>
-    );
+    return <PlanCheckCard />;
   }
 
   /*
@@ -309,21 +282,7 @@ export function CloudPanel({
   // The server never answered, so there is no plan to draw, and falling through
   // to the subscribed card would show a paying reader an empty one.
   if (status === "unreachable") {
-    return (
-      <Card className="gap-3 p-4">
-        <View className="flex-row items-center justify-between gap-3">
-          <ThemedText type="bodySm" color={asColor(mutedForeground)} className="flex-1">
-            Samwell Cloud did not answer. Check your connection and try again.
-          </ThemedText>
-          <ActionButton
-            icon={RefreshCw}
-            label="TRY AGAIN"
-            tint={asColor(mutedForeground)}
-            onPress={() => void refresh()}
-          />
-        </View>
-      </Card>
-    );
+    return <PlanCheckCard unreachable onRetry={retry} />;
   }
 
   if (PURCHASES_ENABLED && (status === "none" || status === "unavailable")) {
@@ -336,6 +295,7 @@ export function CloudPanel({
           packages={packages}
           catalogue={offer.catalogue}
           modelCounts={offer.modelCounts}
+          voices={offer.voices}
           /* `preparing` first, the same as the branch above: the checkout
              asks the server before it opens the store sheet, and without this
              the button went quiet for that round trip and invited a second
@@ -347,6 +307,9 @@ export function CloudPanel({
           onRetry={offer.retry}
           onChoose={sale.picker.onChoose}
           onRestore={sale.picker.onRestore}
+          /* Signed in, or a phone whose own plan has lapsed: the account
+             has nothing more to offer, a code still does. */
+          onInsiderCode={onInsiderCode}
           surface="background"
           bleed={layout.gutter}
         />
@@ -408,7 +371,7 @@ export function CloudPanel({
           lifecycle={lifecycle}
           loading={loading}
           error={error}
-          onRefresh={() => void refresh()}
+          onRefresh={() => void refresh({ fresh: true })}
         />
 
         {plan ? (
@@ -444,8 +407,6 @@ export function CloudPanel({
         activeId={cloudModelId}
         models={models}
         plan={plan}
-        mutedForeground={asColor(mutedForeground)}
-        primary={asColor(primary)}
       />
 
       <CloudTuneSheet
@@ -458,17 +419,20 @@ export function CloudPanel({
           visible={manageVisible}
           plan={plan}
           lifecycle={lifecycle}
+          balance={balance}
           upgradePlans={upgradePlans}
           downgradePlans={downgradePlans}
           packages={packages}
           catalogue={catalogue}
           modelCounts={modelCounts}
+          voices={offer.voices}
           testStore={REVENUECAT_TEST_STORE}
           busy={busy}
           onClose={() => setManageVisible(false)}
           onChoose={onChoose}
           onRestore={onRestore}
           onManage={onManage}
+          onInsiderCode={onAnotherCode}
         />
       ) : null}
     </>

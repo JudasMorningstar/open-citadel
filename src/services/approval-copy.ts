@@ -1,4 +1,5 @@
-import { approve, stringField, type ApprovalCopy } from '@/services/approval-copy/base';
+import { approve, field, stringField, type ApprovalCopy } from '@/services/approval-copy/base';
+import { logApprovalBody } from '@/services/approval-copy/log';
 import { onboardingApprovalCopy } from '@/services/onboarding-tools/approval';
 import type { PendingApproval } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
@@ -39,24 +40,15 @@ function logApprovalCopy(input: unknown): ApprovalCopy {
   const trackable = useCompassStore
     .getState()
     .trackables.find((t) => t.id === trackableId);
-  const title = trackable?.title ?? 'this';
-
-  const outcome = stringField(input, 'outcome');
-  const note = stringField(input, 'note');
-  const date = stringField(input, 'date');
-  const value =
-    input && typeof input === 'object' && typeof (input as { value?: unknown }).value === 'number'
-      ? String((input as { value: number }).value)
-      : undefined;
-
-  const when = date ? ` on ${date}` : ' today';
-  const body =
-    outcome === 'MISSED'
-      ? `Samwell wants to record that ${title} did not happen${when}.${note ? ` Note: "${note}"` : ''}`
-      : `Samwell wants to record ${title} as done${when}${value ? `, ${value}` : ''}.${
-          note ? ` Note: "${note}"` : ''
-        }`;
-
+  const value = field(input, 'value');
+  const body = logApprovalBody({
+    title: trackable?.title ?? 'this',
+    outcome: stringField(input, 'outcome'),
+    date: stringField(input, 'date'),
+    value: typeof value === 'number' ? value : undefined,
+    note: stringField(input, 'note'),
+    measurement: trackable?.measurement,
+  });
   return { title: 'Log this?', body, confirmLabel: 'LOG IT', destructive: false };
 }
 
@@ -148,8 +140,12 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
       return approve('Remove from queue?', `Samwell wants to remove ${bookWord} from your reading queue.`);
     case 'reorder_queue':
       return approve('Reorder queue?', `Samwell wants to move ${bookWord} in your reading queue.`);
-    case 'toggle_favorite':
+    case 'toggle_favorite': {
+      const favorite = input && typeof input === 'object' ? (input as { favorite?: unknown }).favorite : undefined;
+      if (favorite === true) return approve('Add to favorites?', `Samwell wants to add ${bookWord} to your favorites.`);
+      if (favorite === false) return approve('Remove from favorites?', `Samwell wants to take ${bookWord} out of your favorites.`);
       return approve('Update favorites?', `Samwell wants to update favorites for ${bookWord}.`);
+    }
     case 'mark_as_finished':
       return approve('Mark as finished?', `Samwell wants to mark ${bookWord} as finished.`);
     case 'create_collection': {
@@ -191,13 +187,18 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
         `Samwell wants to delete "${name}". The books in it stay in your library.`,
       );
     }
-    case 'add_note_to_highlight':
-      return approve('Add this note?', 'Samwell wants to write a note on a highlight.');
-    case 'update_note':
+    case 'add_note_to_highlight': {
+      // The words themselves, so what is approved is what gets written.
+      const text = stringField(input, 'text');
+      return approve('Add this note?', text ? `Samwell wants to write this note: "${text}"` : 'Samwell wants to write a note on a highlight.');
+    }
+    case 'update_note': {
+      const text = stringField(input, 'text');
       return approve(
         'Rewrite this note?',
-        "Samwell wants to replace a note's text with something new.",
+        text ? `Samwell wants the note to say: "${text}"` : "Samwell wants to replace a note's text with something new.",
       );
+    }
     case 'delete_note':
       return approve(
         'Delete this note?',

@@ -43,6 +43,14 @@ every state of work drawn, and a way out of every failure. The podcasts
 first-run and import (`src/features/podcasts/components/onboarding/`) is the
 reference build.
 
+**A failure is said in a toast, never in red text on the screen.** A code that
+was refused, a save that did not land, a feed that could not be found:
+`showToast` from `components/toast/toast-provider`, with a `key` so a second
+failure writes over the first. A red line under a field pushes the layout
+about and stays after it has stopped being true. What was typed is kept, so
+it can be mended. The insider code sheet
+(`src/features/billing/hooks/use-insider-code.ts`) is the reference.
+
 ## Components are presentational and small
 
 The `open-citadel-structure` skill has the working detail: the four layers
@@ -67,6 +75,18 @@ a second copy. Load it before writing or refactoring a screen.
   `components/scroll-fades`. The scrollbars are all hidden, so the fade is the
   only thing saying content continues; pass the right `surface` or it draws a
   band of the wrong shade instead of a fade.
+- **Headers never scroll.** A screen's or a sheet's title, the line under it,
+  a search field or a tab switch sits outside the scroll view, and only the
+  content under it moves. A title scrolled away leaves a list that no longer
+  says what it is. In a sheet that means the header is a sibling *above*
+  `Sheet.ScrollView` / `Sheet.FlatList`, and the sheet has a fixed height
+  (`fixedHeightRatio` or `snapRatios`): one sized to its content
+  (`maxHeightRatio`) stops at its cap but never hands the list inside it the
+  drag. Content that may or may not outgrow the sheet goes in `FitSheet`
+  (`components/fit-sheet`), which measures it before opening and picks: sized
+  to fit, or fixed with the content scrolling. Never guess from a count; a
+  fixed box round short content leaves a band of nothing under it.
+  `SourcesSheet` and `UpNextSheet` are the reference.
 - **No logic in JSX.** Derive above the `return`, or in a hook, or in a pure
   function in `utils/`.
 
@@ -85,6 +105,20 @@ exists elsewhere:
 Duplication of *shape* is fine; duplication of *decisions* is not. Two lists
 that happen to look similar can stay separate. Two places deciding what
 "Samwell is ready" means cannot.
+
+**One component for one kind of thing.** Before building a picker, a sheet, a
+switch, a list or a card, look for the one the app already has and use it:
+the table of shared pieces is in the `open-citadel-structure` skill, and
+`grep` finds the rest. Everything that can use the same component must. If
+the existing one does not quite fit, give it a prop; do not write a second
+one beside it. A new kind of the same thing is new *wiring* (what it loads,
+what a choice saves), never new *drawing*. The reading voices are the model:
+the phone's voices, the Enhanced ones and every cloud voice box are three
+thin pickers over one `VoiceListPicker`, one `VoiceListSheet` and one
+`useVoiceListPicker`, so a fix to the list (it used to stutter when dragged
+shut just after opening) lands in all of them at once. When you find two
+components drawing the same thing, that is a bug to fix in the same change,
+not a note for later.
 
 ## Performance is designed in, not profiled out
 

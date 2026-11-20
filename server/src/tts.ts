@@ -1,0 +1,261 @@
+/**
+ * `POST /tts/speak`: one piece of a book, read aloud by a cloud voice.
+ *
+ * The same metering shape as `/chat/http` in `index.ts`, shortened to what a
+ * sentence needs: who is asking, whether their plan reaches this voice, an
+ * event row, a one-credit hold so an empty balance is refused before the maker
+ * is paid, then the audio streamed straight through as it arrives, so the
+ * reader hears the first words while the rest is still being made. The charge
+ * is settled after the stream ends, off the audio path, at OpenRouter's own
+ * figure for the generation (`tts-billing.ts` keeps the fractions).
+ *
+ * Built from injected parts so the tests can run the whole route against a
+ * throwaway database and a fake maker. `ttsRoutes` at the bottom is the
+ * production wiring.
+ */
+import { Hono, type Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { planIncludes, speechFormatFor, ttsCostUsd, type CloudVoiceModel, type PlanId } from 'samwell-shared';
+import { z } from 'zod';
+
+import type { BillingService } from './billing.js';
+import type { SpeechCharging } from './tts-billing.js';
+import type { SpeechGuards } from './tts-guards.js';
+import { lookupGeneration, parseAudioFormat, requestSpeech } from './tts-upstream.js';
+import type { UsageEventUpdate } from './db.js';
+
+export interface TtsDeps {
+  identify(c: Context): Promise<{ id: string }>;
+  billing: Pick<BillingService, 'readEntitlement' | 'reserveCredits' | 'releaseReservation'>;
+  charging: SpeechCharging;
+  findVoiceModel(id: string): Promise<CloudVoiceModel | null>;
+  recordUsageEvent(args: { id: string; accountId: string; modelId: string; countsTowardLimit: boolean; kind: string }): Promise<void>;
+  updateUsageEvent(id: string, update: UsageEventUpdate): Promise<void>;
+  guards: SpeechGuards;
+  apiKey(): string | undefined;
+  fetchImpl?: typeof fetch;
+  /** Waits between cost lookups; the tests make it instant. */
+  wait?: (ms: number) => Promise<void>;
+  /** Called with each settle's promise, so the tests can await what production does not. */
+  onSettled?: (settling: Promise<void>) => void;
+  /**
+   * PCM to MP3 as it streams, for a voice that makes only PCM and an app that
+   * asked for MP3 (`tts-encode.ts`). Null where it cannot be done here, and
+   * the PCM goes out as it came, which every build can play.
+   */
+  encodeMp3?:
+    | ((
+        source: ReadableStream<Uint8Array>,
+        shape: { sampleRate: number; channels: number },
+        onSourceBytes: (bytes: number) => void,
+      ) => ReadableStream<Uint8Array>)
+    | null;
+}
+
+const SpeakSchema = z.object({
+  modelId: z.string().min(1).max(200),
+  voice: z.string().min(1).max(100),
+  text: z.string().min(1),
+  speed: z.number().min(0.5).max(2).optional(),
+  /*
+   * What the app can play. PCM is the default and what an older build asks
+   * for: its JS turns it into samples itself. A build whose native player can
+   * decode MP3 asks for that instead, which is about a tenth of the bytes,
+   * and gets it from a maker that takes it. Gemini makes PCM alone, which is
+   * encoded to MP3 here as it streams (`encodeMp3`); where that cannot be
+   * done, the reader gets PCM whatever was asked, and the app plays either.
+   */
+  format: z.enum(['pcm', 'mp3']).optional(),
+});
+
+export function createTtsRoutes(deps: TtsDeps): Hono {
+  const routes = new Hono();
+
+  routes.post('/speak', async (c) => {
+    const apiKey = deps.apiKey();
+    if (!apiKey) {
+      throw new HTTPException(500, { message: 'OPENROUTER_API_KEY is not configured on the server.' });
+    }
+    const { id: accountId } = await deps.identify(c);
+
+    const parsed = SpeakSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_request', message: parsed.error.message }, 400);
+    const { modelId, voice, text, speed, format: wanted = 'pcm' } = parsed.data;
+
+    const model = await deps.findVoiceModel(modelId);
+    if (!model) return c.json({ error: 'unknown_voice_model', modelId }, 404);
+    if (!model.voices.includes(voice)) return c.json({ error: 'unknown_voice', voice }, 400);
+    if (text.length > model.maxCharacters) {
+      return c.json({ error: 'text_too_long', maxCharacters: model.maxCharacters }, 413);
+    }
+
+    const entitlement = await deps.billing.readEntitlement(accountId);
+    const plan: PlanId | null = entitlement.plan;
+    if (!plan) return c.json({ error: 'no_subscription', message: 'Cloud voices come with every plan.' }, 402);
+    if (!planIncludes(plan, model.minPlan)) {
+      return c.json({ error: 'plan_required', plan: model.minPlan }, 403);
+    }
+    const listedCost = ttsCostUsd(text.length, model);
+    // An unpriced voice cannot be charged, and charging nothing is the one
+    // way to lose money quietly.
+    if (listedCost == null) return c.json({ error: 'model_unpriced', modelId }, 503);
+
+    const admitted = deps.guards.admit(accountId, text.length);
+    if (!admitted.allowed) return c.json({ error: admitted.reason }, 429);
+
+    const usageEventId = `tts-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const refuse = async (body: Record<string, unknown>, status: 402 | 502 | 503) => {
+      admitted.release(true);
+      await deps.updateUsageEvent(usageEventId, { status: 'errored', error: `Refused: ${String(body.error)}` });
+      return c.json(body, status);
+    };
+
+    await deps.recordUsageEvent({ id: usageEventId, accountId, modelId, countsTowardLimit: true, kind: 'tts' });
+    /*
+     * One credit, whatever the piece. Enough to refuse a reader with nothing
+     * left before the maker is paid; the real charge is usually a fraction of
+     * it and is settled from the remainder, never from this.
+     */
+    const reserve = await deps.billing.reserveCredits({ accountId, usageEventId, credits: 1 });
+    if (!reserve.allowed) {
+      return refuse(
+        reserve.reason === 'insufficient_credits'
+          ? { error: 'insufficient_credits', available: reserve.available }
+          : { error: 'no_subscription', message: 'Cloud voices come with every plan.' },
+        402,
+      );
+    }
+
+    let upstream: Response;
+    // Until the maker's answer starts. The number the phone waits on, and the
+    // one that tells a slow maker from a slow anything else.
+    const askedAt = Date.now();
+    try {
+      upstream = await requestSpeech(
+        // Speed goes to a maker that takes it, and only when it is not 1.
+        { modelId, voice, text, format: speechFormatFor(model, wanted), speed: model.speedSupported && speed != null && speed !== 1 ? speed : undefined },
+        { apiKey, fetchImpl: deps.fetchImpl, signal: c.req.raw.signal },
+      );
+    } catch (error) {
+      // Said with how long it took: a timeout and a refusal are different
+      // problems, and only the time tells them apart from here.
+      console.warn(`[TTS] ${modelId} no answer after ${Date.now() - askedAt}ms: ${String(error).slice(0, 200)}`);
+      await deps.billing.releaseReservation({ usageEventId, error: `Maker unreachable: ${String(error)}` });
+      admitted.release(true);
+      return c.json({ error: 'maker_failed' }, 502);
+    }
+
+    if (!upstream.ok || !upstream.body) {
+      const detail = await upstream.text().catch(() => '');
+      console.warn(`[TTS] ${modelId} answered ${upstream.status}: ${detail.slice(0, 300)}`);
+      await deps.billing.releaseReservation({ usageEventId, error: `Maker answered ${upstream.status}` });
+      admitted.release(true);
+      // Busy is worth telling apart: it is the one a short wait fixes.
+      return c.json({ error: upstream.status === 429 ? 'maker_busy' : 'maker_failed', status: upstream.status }, upstream.status === 429 ? 503 : 502);
+    }
+
+    const firstByteMs = Date.now() - askedAt;
+    const made = parseAudioFormat(upstream.headers.get('content-type'));
+    const generationId = upstream.headers.get('x-generation-id');
+    let bytes = 0;
+    // The maker made PCM and the app asked for MP3: encoded on the way out.
+    // The piece is charged on what the maker sent either way.
+    const encode = wanted === 'mp3' && made.kind === 'pcm' ? (deps.encodeMp3 ?? null) : null;
+    const format = encode ? { ...made, kind: 'mp3' as const } : made;
+    const reader = (encode ? encode(upstream.body, made, (sent) => (bytes += sent)) : upstream.body).getReader();
+    let finished = false;
+
+    const finish = (outcome: 'complete' | 'cancelled' | 'failed') => {
+      if (finished) return;
+      finished = true;
+      admitted.release(outcome === 'failed' && bytes === 0);
+      const settling = settlePiece(outcome).catch((error) => {
+        console.error(`[TTS] Settling ${usageEventId} failed:`, error);
+      });
+      deps.onSettled?.(settling);
+    };
+
+    /*
+     * What the piece is charged. OpenRouter's own figure when it can be had,
+     * because a maker can route to an endpoint dearer than the listed one
+     * (Kokoro on Together is six and a half times DeepInfra). The listed price
+     * when it cannot. Nothing at all only when the maker never sent a byte
+     * and OpenRouter has no record of charging us.
+     *
+     * A reported cost of zero for a piece sent whole counts as not reported.
+     * A record read before its cost is written answers zero, and taken at
+     * its word that would read a whole book aloud for nothing without one
+     * line saying so. For a piece cut short, zero is believed: the maker may
+     * well not have charged for it.
+     */
+    async function settlePiece(outcome: 'complete' | 'cancelled' | 'failed'): Promise<void> {
+      const record = generationId
+        ? await lookupGeneration(generationId, { apiKey: apiKey as string, fetchImpl: deps.fetchImpl, wait: deps.wait })
+        : null;
+      const reported = record?.costUsd ?? null;
+      const actual = reported != null && (reported > 0 || outcome !== 'complete') ? reported : null;
+      if (actual == null && bytes === 0) {
+        await deps.billing.releaseReservation({ usageEventId, error: `Piece ${outcome} before any audio` });
+        return;
+      }
+      const costUsd = actual ?? (listedCost as number);
+      const { debited } = await deps.charging.settleSpeech({
+        usageEventId,
+        accountId,
+        plan: plan as PlanId,
+        costUsd,
+        description: `Read aloud, ${model?.label ?? modelId}`,
+      });
+      // Which price was charged is the one thing about a piece that cannot be
+      // seen from outside. Never the text: it is a page of somebody's book.
+      // The generation id is there to look a slow piece up at OpenRouter.
+      const earlierTries = (record?.attempts ?? [])
+        .slice(0, -1)
+        .map((attempt) => `${attempt.provider} ${attempt.status} in ${attempt.latencyMs ?? '?'}ms`);
+      console.log(
+        `[TTS] ${modelId} ${text.length} characters: $${costUsd.toFixed(6)} ` +
+          `(${actual != null ? 'OpenRouter' : reported === 0 ? 'listed, OpenRouter said 0' : 'listed'}), ` +
+          `${debited} Neurons debited, first byte ${firstByteMs}ms ` +
+          `(maker ${record?.latencyMs ?? '?'}ms) via ${record?.provider ?? 'unknown'}` +
+          (earlierTries.length > 0 ? ` after ${earlierTries.join(', ')}` : '') +
+          ` ${generationId ?? 'no-id'}`,
+      );
+    }
+
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            finish('complete');
+            return;
+          }
+          if (!encode) bytes += value.byteLength;
+          controller.enqueue(value);
+        } catch (error) {
+          controller.error(error);
+          finish('failed');
+        }
+      },
+      cancel(reason) {
+        void reader.cancel(reason).catch(() => undefined);
+        finish('cancelled');
+      },
+    });
+
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': encode ? 'audio/mpeg' : (upstream.headers.get('content-type') ?? 'application/octet-stream'),
+        'X-Audio-Format': format.kind,
+        'X-Audio-Sample-Rate': String(format.sampleRate),
+        'X-Audio-Channels': String(format.channels),
+        'Cache-Control': 'no-store',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  });
+
+  return routes;
+}

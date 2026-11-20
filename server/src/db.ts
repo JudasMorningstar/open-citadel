@@ -14,6 +14,8 @@ import {
     type TokenWorkload,
 } from 'samwell-shared';
 
+import { createTranscribeJobs } from './transcribe-jobs.js';
+
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
 
 export const db = createClient({ url: dbUrl });
@@ -131,6 +133,9 @@ export async function initDb(): Promise<void> {
   // table by its new column name. See `ensureBillingSchema`.
   await ensureBillingSchema(db);
   await seedForecastDefaults();
+  // Podcast transcription jobs, created here so every table an account owns
+  // exists before `deleteAccountData` can be asked to clear it.
+  await createTranscribeJobs(db).ensureSchema();
 
   // Nullable with no default: null means "not refreshed from OpenRouter yet",
   // which `resolveContextTokens` reads as the conservative floor rather than
@@ -348,8 +353,8 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
       `CREATE INDEX IF NOT EXISTS credit_ledger_account_time_idx
         ON credit_ledger (account_id, created_at_ms)`,
       /* Founder-issued codes that grant a plan without a store purchase.
-         Unused until the insider routes land; created here so the schema
-         arrives complete rather than in a second migration. */
+         See `billing-insider.ts`. `expires_at_ms` is the end of the term a
+         code granted, set when it is redeemed. */
       `CREATE TABLE IF NOT EXISTS insider_invites (
         code            TEXT PRIMARY KEY,
         plan            TEXT NOT NULL,
@@ -360,6 +365,9 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
         redeemed_at_ms  INTEGER,
         expires_at_ms   INTEGER
       )`,
+      // An account's plan is found from the code it redeemed last.
+      `CREATE INDEX IF NOT EXISTS insider_invites_redeemed_by_idx
+        ON insider_invites (redeemed_by)`,
       /*
        * A reader who bought a plan without making an account.
        *
@@ -395,6 +403,16 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
        * databases created before it, so it is dropped and rebuilt under the
        * new one rather than left as a duplicate with a lying name.
        */
+      /*
+       * Read-aloud's running remainder: what an account has spent on cloud
+       * voices that has not yet added up to a whole credit, in nano-dollars
+       * so the arithmetic is exact. See `tts-billing.ts`.
+       */
+      `CREATE TABLE IF NOT EXISTS tts_spend (
+        account_id      TEXT PRIMARY KEY,
+        pending_nanousd INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms   INTEGER NOT NULL
+      )`,
       'DROP INDEX IF EXISTS usage_events_device_time_idx',
       `CREATE INDEX IF NOT EXISTS usage_events_account_time_idx
         ON usage_events (account_id, created_at_ms)`,
@@ -948,7 +966,7 @@ export async function getOnboardingModelId(): Promise<string> {
  *
  * App Review guideline 5.1.1(v) asks that an account can be deleted from
  * inside the app, and "deleted" is meant literally: the rows keyed to it, not
- * a flag saying to ignore them. Five tables hold anything, and they are dealt
+ * a flag saying to ignore them. Six tables hold anything, and they are dealt
  * with in one batch so a half-deleted account is not a state that exists.
  *
  * The ledger goes with the rest. It is the record a balance is rebuilt from,
@@ -963,6 +981,8 @@ export async function deleteAccountData(accountId: string): Promise<void> {
       { sql: 'DELETE FROM account_credits WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM credit_ledger WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM onboarding_grants WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM transcription_jobs WHERE account_id = ?', args: [accountId] },
       /*
        * The one row that is edited rather than dropped. A redeemed insider
        * code must stay spent - deleting an account cannot be a way to hand

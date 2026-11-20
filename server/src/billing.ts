@@ -47,8 +47,6 @@
  * and statements that do not RETURN are checked by `rowsAffected`. Both are
  * load-bearing; changing either one silently breaks the gate.
  */
-import { randomBytes } from 'node:crypto';
-
 import type { Client, InStatement } from '@libsql/client';
 
 import {
@@ -59,9 +57,16 @@ import {
     planRank,
     type CreditBalance,
     type CreditSource,
+    type InsiderDuration,
     type PlanId,
 } from 'samwell-shared';
 
+import {
+  createInsiderTerms,
+  type InsiderInvite,
+  type InsiderInviteRecord,
+  type InsiderRedeemResult,
+} from './billing-insider.js';
 import { db } from './db.js';
 
 /**
@@ -72,6 +77,15 @@ import { db } from './db.js';
  */
 export const STALE_RESERVATION_MS = 15 * 60_000;
 
+/**
+ * The same, for a podcast transcript. Its hold is meant to outlive a turn's:
+ * the job runs for minutes and the transcript then waits up to a day for the
+ * phone to collect it, which is when it settles (`transcribe-worker.ts`). The
+ * job sweep releases an uncollected one at 24 hours; this is the backstop for
+ * a hold whose job row is gone.
+ */
+export const TRANSCRIPT_RESERVATION_MS = 26 * 3_600_000;
+
 /** How long `readEntitlement` trusts its own answer before looking again. */
 export const ENTITLEMENT_CACHE_TTL_MS = 60_000;
 
@@ -80,11 +94,6 @@ const ACCOUNT_PREFIX = 'account:';
 const GUEST_PREFIX = 'guest:';
 /** The id the RevenueCat SDK gives an install before anybody logs in. */
 const ANONYMOUS_PREFIX = '$RCAnonymousID:';
-
-/** How long an insider code may grant for, per the plan: up to a year. */
-export const INSIDER_MAX_DURATION_DAYS = 365;
-/** The rhythm of the insider regrant, matching a subscription's period. */
-export const INSIDER_PERIOD_MS = 30 * 86_400_000;
 
 export interface BillingOptions {
   /** Injectable so tests can run against a throwaway database. */
@@ -142,7 +151,12 @@ export type EntitlementSyncResult =
   | { status: 'unavailable' };
 
 export interface BillingService {
-  readEntitlement(accountId: string): Promise<CreditBalance>;
+  /**
+   * `fresh` asks RevenueCat before answering, whatever the row or the cache
+   * says. For a read the app makes because the store has just told it
+   * something; see `GET /billing/me`.
+   */
+  readEntitlement(accountId: string, options?: { fresh?: boolean }): Promise<CreditBalance>;
   /** Bypasses the cache and replaces the effective plan from RevenueCat's complete customer state. */
   syncEntitlement(
     accountId: string,
@@ -201,22 +215,27 @@ export interface BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    /**
+     * Leave the ledger alone when nothing was debited.
+     *
+     * For read-aloud, which settles once a sentence and debits whole credits
+     * only when a running remainder crosses one (`tts-billing.ts`). A row of
+     * zero for every sentence would bury a chapter's real debits under
+     * hundreds of rows that say nothing moved. Chat keeps its row either way.
+     */
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult>;
   releaseReservation(args: { usageEventId: string; error?: string }): Promise<boolean>;
   sweepStaleReservations(): Promise<number>;
   reconcileBalance(accountId: string): Promise<ReconcileResult>;
   issueInsiderInvite(args: {
     plan: PlanId;
-    durationDays: number;
+    duration: InsiderDuration;
     note?: string;
-  }): Promise<{ code: string; plan: PlanId; durationDays: number }>;
-  redeemInsiderInvite(args: {
-    accountId: string;
-    code: string;
-  }): Promise<
-    | { redeemed: true; balance: CreditBalance }
-    | { redeemed: false; reason: 'unknown_code' | 'already_redeemed' | 'already_subscribed' }
-  >;
+  }): Promise<InsiderInvite>;
+  /** Every code, newest first, with who redeemed it. */
+  listInsiderInvites(limit: number): Promise<InsiderInviteRecord[]>;
+  redeemInsiderInvite(args: { accountId: string; code: string }): Promise<InsiderRedeemResult>;
   /** Regrants the accounts on insider terms whose period has ended. */
   sweepInsiderRegrants(): Promise<number>;
   /** Recent ledger rows, newest first, for the history sheet. */
@@ -314,6 +333,8 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   function toCreditBalance(
     row: NonNullable<Awaited<ReturnType<typeof readAccountRow>>>,
+    /** Where an insider plan stops for good. Only an insider row has one. */
+    termEndMs: number | null = null,
   ): CreditBalance {
     const plan = row.plan && row.plan in CREDIT_PLANS ? row.plan : null;
     return {
@@ -331,6 +352,10 @@ export function createBillingService(options: BillingOptions): BillingService {
       available: plan ? Math.max(0, row.balance - row.reserved) : 0,
       grant: plan ? CREDIT_PLANS[plan].monthlyCredits : 0,
       periodEndsAt: row.periodEndMs == null ? null : new Date(row.periodEndMs).toISOString(),
+      termEndsAt:
+        plan && row.source === 'insider' && termEndMs != null
+          ? new Date(termEndMs).toISOString()
+          : null,
     };
   }
 
@@ -377,12 +402,26 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   // -- Entitlement -------------------------------------------------------------
 
-  async function readEntitlement(accountId: string): Promise<CreditBalance> {
+  async function readEntitlement(
+    accountId: string,
+    readOptions: { fresh?: boolean } = {},
+  ): Promise<CreditBalance> {
     const atMs = now();
-    const cached = cache.get(accountId);
+    const fresh = readOptions.fresh === true;
+    const cached = fresh ? undefined : cache.get(accountId);
     if (cached && cached.expiresAtMs > atMs) return cached.balance;
 
     let row = await readAccountRow(accountId);
+    /*
+     * An insider period that has ended is carried forward here, or the term
+     * ended, before anything below looks at the row: nothing renews an
+     * insider but us, and the hourly sweep alone would leave the answer up to
+     * an hour behind in either direction.
+     */
+    if (row?.source === 'insider' && isStale(row, atMs)) {
+      await insider.advanceTerm(accountId);
+      row = await readAccountRow(accountId);
+    }
     /*
      * Stale means the period has ended and no webhook has renewed the row
      * yet. The REST call is the safety net for exactly that: RevenueCat knows
@@ -393,15 +432,33 @@ export function createBillingService(options: BillingOptions): BillingService {
      * transient blip, and a genuinely lapsed subscription is corrected by its
     * own EXPIRATION webhook. A successful full-customer response with no
     * active entitlement clears the plan; unavailable responses preserve it.
+     *
+     * A row with no plan is asked about too, exactly as no row at all is. It
+     * is a reader who subscribed once and stopped, and if they subscribe
+     * again this read is the only way to learn of it wherever the webhook is
+     * late or never arrives (RevenueCat calls one server, so a preview deploy
+     * hears nothing). Left out, they paid and stayed on the plan carousel.
+     *
+     * A fresh read asks whatever the row says, and asks once: a row that
+     * holds a plan is otherwise trusted until its period ends, so a reader
+     * who has just bought a higher plan would be answered with the lower one
+     * until the webhook lands. It never clears a plan still inside its
+     * period, which an ordinary read would not have questioned either.
      */
-    if (!row || isStale(row, atMs)) {
-      await syncEntitlement(accountId);
+    const lapsed = !row || row.plan == null || isStale(row, atMs);
+    if (lapsed || fresh) {
+      await syncEntitlement(accountId, { clearIfInactive: lapsed });
       row = await readAccountRow(accountId);
     }
 
     // A copy, not the shared constant: a caller mutating the answer must not
     // be able to corrupt the shared object for everyone after them.
-    const balance = row ? toCreditBalance(row) : { ...NO_PLAN_BALANCE };
+    const balance = row
+      ? toCreditBalance(
+          row,
+          row.source === 'insider' ? await insider.readTermEndMs(accountId) : null,
+        )
+      : { ...NO_PLAN_BALANCE };
     if (balance.plan) {
       cache.set(accountId, { expiresAtMs: atMs + cacheTtlMs, balance });
     }
@@ -544,13 +601,7 @@ export function createBillingService(options: BillingOptions): BillingService {
           sql: `UPDATE account_credits
                 SET plan = ?, source = ?, period_end_ms = ?, updated_at_ms = ?
                 WHERE account_id = ?`,
-          args: [
-            best.plan,
-            current.source === 'insider' ? 'insider' : 'subscription',
-            best.expiresAtMs,
-            atMs,
-            accountId,
-          ],
+          args: [best.plan, 'subscription', best.expiresAtMs, atMs, accountId],
         });
         invalidate(accountId);
         return { status: 'active', plan: best.plan };
@@ -561,7 +612,14 @@ export function createBillingService(options: BillingOptions): BillingService {
         plan: best.plan,
         periodEndMs: best.expiresAtMs,
         idempotencyKey: `${best.temporary ? 'temporary:' : ''}period:${best.expiresAtMs ?? 'lifetime'}`,
-        source: current?.source === 'insider' ? 'insider' : 'subscription',
+        /*
+         * Always a subscription, whatever the row said. Insider plans are
+         * never told to RevenueCat (see `billing-insider.ts`), so an
+         * entitlement found there is a purchase, and a purchase outranks a
+         * code: left as `insider`, the next regrant would put a reader who
+         * had just paid for a higher plan back on the code's one.
+         */
+        source: 'subscription',
         description: 'Reconciled from RevenueCat',
       });
       return { status: 'active', plan: best.plan };
@@ -1103,6 +1161,23 @@ export function createBillingService(options: BillingOptions): BillingService {
         });
       }
     }
+    /*
+     * Read-aloud's running remainder, the fraction of a credit spent but not
+     * yet debited (`tts-billing.ts`). It follows the money: left on the guest
+     * it would never be charged, and dropped it would be a few sentences on
+     * the house each time somebody links.
+     */
+    statements.push(
+      {
+        sql: `INSERT INTO tts_spend (account_id, pending_nanousd, updated_at_ms)
+              SELECT ?, pending_nanousd, ? FROM tts_spend WHERE account_id = ?
+              ON CONFLICT(account_id) DO UPDATE SET
+                pending_nanousd = tts_spend.pending_nanousd + excluded.pending_nanousd,
+                updated_at_ms = excluded.updated_at_ms`,
+        args: [args.accountId, atMs, args.guestId],
+      },
+      { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [args.guestId] },
+    );
     statements.push({
       sql: `UPDATE guest_identities
             SET linked_account_id = ?, linked_at_ms = ?
@@ -1118,196 +1193,16 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   // -- Insiders ----------------------------------------------------------------
 
-  /** A code a human reads out loud and types. Grouped, uppercase, unambiguous. */
-  function newInviteCode(): string {
-    return randomBytes(10)
-      .toString('hex')
-      .toUpperCase()
-      .replace(/(.{5})/g, '$1-')
-      .slice(0, -1);
-  }
-
-  async function issueInsiderInvite(args: {
-    plan: PlanId;
-    durationDays: number;
-    note?: string;
-  }): Promise<{ code: string; plan: PlanId; durationDays: number }> {
-    const durationDays = Math.max(1, Math.min(INSIDER_MAX_DURATION_DAYS, Math.floor(args.durationDays)));
-    const code = newInviteCode();
-    await client.execute({
-      sql: `INSERT INTO insider_invites (code, plan, duration_days, note, created_at_ms)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [code, args.plan, durationDays, args.note ?? null, now()],
-    });
-    return { code, plan: args.plan, durationDays };
-  }
-
-  /**
-   * Hold the entitlement in RevenueCat too, so `readEntitlement` keeps
-   * exactly one shape to reason about and the REST reconcile can see an
-   * insider grant it otherwise knows nothing of.
-   *
-   * Best effort: the server-side row is the truth for us either way, and a
-   * failure here is logged rather than allowed to fail a redemption that has
-   * already succeeded on our side.
-   */
-  async function grantRevenueCatEntitlement(
-    accountId: string,
-    plan: PlanId,
-    expiresAtMs: number,
-  ): Promise<void> {
-    const apiKey = options.revenueCatApiKey ?? process.env.REVENUECAT_SECRET_API_KEY;
-    if (!apiKey) return;
-    const sub = accountId.startsWith(ACCOUNT_PREFIX)
-      ? accountId.slice(ACCOUNT_PREFIX.length)
-      : accountId;
-    try {
-      const response = await doFetch(
-        `${REVENUECAT_API}/${encodeURIComponent(sub)}/entitlements/${CREDIT_PLANS[plan].entitlement}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({ expires_at: new Date(expiresAtMs).toISOString() }),
-          signal: AbortSignal.timeout(5_000),
-        },
-      );
-      if (!response.ok) {
-        console.error(
-          `[Billing] RevenueCat entitlement grant answered ${response.status} for ${accountId}.`,
-        );
-      }
-    } catch (error) {
-      console.error(`[Billing] RevenueCat entitlement grant failed for ${accountId}:`, error);
-    }
-  }
-
-  async function redeemInsiderInvite(args: {
-    accountId: string;
-    code: string;
-  }): Promise<
-    | { redeemed: true; balance: CreditBalance }
-    | { redeemed: false; reason: 'unknown_code' | 'already_redeemed' | 'already_subscribed' }
-  > {
-    const atMs = now();
-    const code = args.code.trim().toUpperCase();
-
-    const invite = await client.execute({
-      sql: 'SELECT plan, duration_days, redeemed_by FROM insider_invites WHERE code = ?',
-      args: [code],
-    });
-    const inviteRow = invite.rows[0];
-    if (!inviteRow) return { redeemed: false, reason: 'unknown_code' };
-    if (inviteRow.redeemed_by != null) return { redeemed: false, reason: 'already_redeemed' };
-
-    const plan = String(inviteRow.plan) as PlanId;
-    if (!(plan in CREDIT_PLANS)) return { redeemed: false, reason: 'unknown_code' };
-
-    /*
-     * A live paid subscription outranks a code. Redeeming over one would
-     * overwrite the cache row with the insider plan while the store
-     * subscription carried on billing, and the two sides would disagree until
-     * the next renewal. The code is left unredeemed, so it can be handed to
-     * somebody who needs it.
-     */
-    const current = await readAccountRow(args.accountId);
-    const subscribed =
-      current != null &&
-      current.source === 'subscription' &&
-      (current.periodEndMs == null || current.periodEndMs > atMs);
-    if (subscribed) return { redeemed: false, reason: 'already_subscribed' };
-
-    const termEndMs = atMs + Number(inviteRow.duration_days) * 86_400_000;
-    const periodEndMs = Math.min(atMs + INSIDER_PERIOD_MS, termEndMs);
-
-    /*
-     * The claim is the single-winner gate for the code: two devices redeeming
-     * the same code concurrently cannot both win the conditional UPDATE, and
-     * the loser reports it as already taken.
-     */
-    const claim = await client.execute({
-      sql: `UPDATE insider_invites
-            SET redeemed_by = ?, redeemed_at_ms = ?, expires_at_ms = ?
-            WHERE code = ? AND redeemed_by IS NULL`,
-      args: [args.accountId, atMs, termEndMs, code],
-    });
-    if (claim.rowsAffected === 0) return { redeemed: false, reason: 'already_redeemed' };
-
-    await grantMonthly({
-      accountId: args.accountId,
-      plan,
-      periodEndMs,
-      periodStartMs: atMs,
-      idempotencyKey: `insider:${code}:period:${periodEndMs}`,
-      source: 'insider',
-      description: `Insider code ${code}`,
-    });
-    await grantRevenueCatEntitlement(args.accountId, plan, termEndMs);
-    return { redeemed: true, balance: await readEntitlement(args.accountId) };
-  }
-
-  /**
-   * Carry insider terms forward, one period at a time, until the term ends.
-   *
-   * Insiders have no webhook to renew them - there is no store transaction -
-   * so a timer plays the part one plays for subscriptions. The first period
-   * is granted at redemption and each sweep extends by one period, bounded by
-   * the term's end; a term that has run out ends the plan the way an
-   * expiration would, balance left for the record.
-   */
-  async function sweepInsiderRegrants(): Promise<number> {
-    const atMs = now();
-    const due = await client.execute({
-      sql: `SELECT i.code, i.plan, i.expires_at_ms, a.account_id, a.period_end_ms
-            FROM account_credits a
-            JOIN insider_invites i ON i.redeemed_by = a.account_id
-            WHERE a.source = 'insider'
-              AND a.plan IS NOT NULL
-              AND a.period_end_ms IS NOT NULL
-              AND a.period_end_ms <= ?`,
-      args: [atMs],
-    });
-
-    let regranted = 0;
-    for (const row of due.rows) {
-      const accountId = String(row.account_id);
-      const code = String(row.code);
-      const plan = String(row.plan) as PlanId;
-      if (!(plan in CREDIT_PLANS)) continue;
-
-      const termEndMs = Number(row.expires_at_ms);
-      const periodEndMs = Number(row.period_end_ms);
-      if (periodEndMs >= termEndMs) {
-        await clearPlan(accountId);
-        continue;
-      }
-      const nextPeriodEndMs = Math.min(periodEndMs + INSIDER_PERIOD_MS, termEndMs);
-      if (nextPeriodEndMs <= atMs) {
-        /*
-         * The remaining term is already in the past: the sweep ran late
-         * enough that no unexpired period is left to grant. The term ends
-         * here rather than granting credits for time that is over - the
-         * balance stays for the record, and a sweep that runs on time never
-         * reaches this branch.
-         */
-        await clearPlan(accountId);
-        continue;
-      }
-      const result = await grantMonthly({
-        accountId,
-        plan,
-        periodEndMs: nextPeriodEndMs,
-        idempotencyKey: `insider:${code}:period:${nextPeriodEndMs}`,
-        source: 'insider',
-        description: `Insider regrant, code ${code}`,
-      });
-      if (result.granted) regranted += 1;
-    }
-    return regranted;
-  }
+  // Built here, after everything it is handed exists. `readEntitlement` above
+  // reaches it only when called, by which time it has been assigned.
+  const insider = createInsiderTerms({
+    client,
+    now,
+    readAccount: readAccountRow,
+    grantMonthly,
+    clearPlan,
+    readEntitlement,
+  });
 
   // -- The turn lifecycle ------------------------------------------------------
 
@@ -1389,6 +1284,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult> {
     const debit = Math.max(0, Math.floor(args.actualCredits));
     const usage = args.usage ?? {};
@@ -1459,6 +1355,12 @@ export function createBillingService(options: BillingOptions): BillingService {
     }
 
     const balance = Number(balanceRow.balance);
+    if (debit === 0 && args.omitZeroLedgerRow) {
+      // The balance did not move, so the ledger still sums to it without a
+      // row; the event row keeps the record of what was spent.
+      invalidate(owner);
+      return { settled: true, balance };
+    }
     await insertLedgerRow({
       id: `usage:${args.usageEventId}`,
       accountId: owner,
@@ -1511,8 +1413,8 @@ export function createBillingService(options: BillingOptions): BillingService {
             WHERE status = 'started'
               AND credits_reserved IS NOT NULL
               AND credits_reserved > 0
-              AND created_at_ms <= ?`,
-      args: [atMs - STALE_RESERVATION_MS],
+              AND created_at_ms <= CASE WHEN kind = 'transcribe' THEN ? ELSE ? END`,
+      args: [atMs - TRANSCRIPT_RESERVATION_MS, atMs - STALE_RESERVATION_MS],
     });
 
     let swept = 0;
@@ -1636,9 +1538,10 @@ export function createBillingService(options: BillingOptions): BillingService {
     releaseReservation,
     sweepStaleReservations,
     reconcileBalance,
-    issueInsiderInvite,
-    redeemInsiderInvite,
-    sweepInsiderRegrants,
+    issueInsiderInvite: insider.issueInvite,
+    listInsiderInvites: insider.listInvites,
+    redeemInsiderInvite: insider.redeemInvite,
+    sweepInsiderRegrants: insider.sweepRegrants,
     readLedger,
   };
 }

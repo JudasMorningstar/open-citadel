@@ -6,9 +6,15 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 ENV PORT=8787
 ENV DATABASE_URL=file:/data/samwell-cloud.sqlite
+# The cloud voices' samples live beside the database, on the same volume, so
+# a deploy does not throw them away. See server/src/voice-samples.ts.
+ENV VOICE_SAMPLES_DIR=/data/voice-samples
 
 RUN corepack enable
 RUN mkdir -p /data
+# Encodes a voice that makes only PCM (Gemini) to MP3 as it streams, a tenth of
+# the bytes for the phone. See server/src/tts-encode.ts.
+RUN apk add --no-cache ffmpeg
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY patches ./patches

@@ -4,7 +4,24 @@ import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_FEEDS_PROP,
+  downloadFreeBooksTool,
   explainAppTool,
+  findFreeBooksTool,
+  findPodcastsTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
+  addNoteToHighlightTool,
+  clearQueueTool,
+  deleteBookTool,
+  deleteCollectionTool,
+  deleteNoteTool,
+  renameBookTool,
+  startReadingTool,
+  updateNoteTool,
+  updateThoughtTool,
+  getBookDetailsTool,
+  searchLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -39,6 +56,11 @@ import {
   proposeAdjustmentsTool,
   proposeGoalTool,
   toggleFavoriteTool,
+  listMyPodcastsTool,
+  searchPodcastEpisodesTool,
+  getPodcastEpisodeTool,
+  listMyBlogsTool,
+  searchBlogPostsTool,
   TOOL_LOOP_CEILING,
 } from 'samwell-shared';
 
@@ -48,19 +70,33 @@ import {
   runExplainApp,
   toolStatus,
   type BookCandidate,
-  type ChapterListing,
-  type CollectionSummary,
-  type ReadingSearchResult,
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { reportHandled } from '@/lib/observe';
+import type { ChapterListing, ReadingSearchResult } from '@/services/reading-tools';
+import { ArrowRight } from '@/components/icons';
+import { showToast } from '@/components/toast/toast-provider';
 import { cloudHeaders } from '@/services/cloud-identity';
+import { reportUpdateRequired } from '@/stores/app-gate';
 import { createSmoothReveal } from '@/services/smooth-reveal';
 import { createReplySequence, replySegments } from '@/services/reply-sequence';
 import { createStreamTiming } from '@/services/stream-timing';
+import { createRequestResume } from '@/services/cloud-turn-resume';
+import { reportCloudReached, reportCloudUnreached } from '@/lib/network';
+import { createCircleWatch } from '@/utils/tool-circling';
+import {
+  runDownloadFreeBooks,
+  runFindFreeBooks,
+  runFindPodcasts,
+  runFollowBlogs,
+  runFollowPodcasts,
+  runListBlogs,
+} from '@/services/onboarding-tools';
 import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
+import { buildMemoryBlock } from '@/services/samwell-memory';
 import {
   formatCompassStatus,
   formatToday,
@@ -75,10 +111,112 @@ import {
   runProposeGoal,
 } from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import {
+  runGetPodcastEpisode,
+  runListMyBlogs,
+  runListMyPodcasts,
+  runSearchBlogPosts,
+  runSearchPodcastEpisodes,
+} from '@/services/listening-tools';
+import { formatLibrarySearch, type CollectionListing, type LibraryBook } from '@/services/library-format';
+import { earlierToolUseNote } from '@/utils/earlier-tool-use';
+import { NO_ACTIVITY, sameActivity, turnActivity, type TurnActivity } from '@/utils/turn-activity';
 import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
 
 /** The three things Samwell can be doing on a cloud turn. */
+/** One key for every cloud turn that did not go through, so a second failure writes over the first. */
+const TURN_FAILED_TOAST = 'cloud-turn-failed';
+const TURN_FAILED_MESSAGE = 'Samwell could not answer just now. Try again.';
+const UNREACHABLE_MESSAGE = 'Samwell Cloud could not be reached. Check your connection and try again.';
+
+/**
+ * The phone could not reach Samwell Cloud at all: offline, no DNS, the server
+ * down. Its message keeps the detail for the log; the reader is told only
+ * that the connection is the problem.
+ */
+export class CloudUnreachable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CloudUnreachable';
+  }
+}
+
+/**
+ * Whether a turn failed because the server could not be reached. The first
+ * turn of a run finds out in the health check (`CloudUnreachable`); a later
+ * one from the stream itself, whose transport says only "XHR request failed"
+ * when the request never got an answer.
+ */
+export function isCloudUnreachable(error: unknown): boolean {
+  if (error instanceof CloudUnreachable) return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /XHR request failed|Network request failed/i.test(message);
+}
+
+/** What a stream that closed before its end is reported as. See `isEarlyClose`. */
+const DROPPED_MESSAGE = 'XHR request failed: the stream closed before the run finished';
+
+/**
+ * A request that failed in a way worth sending again: it got no answer, its
+ * stream was cut, or a gateway in front of the server could not reach it.
+ * Never a refusal (402, 429) or the server's own failure: sending those again
+ * gets the same answer.
+ */
+function isWorthResuming(error: unknown): boolean {
+  if (isCloudUnreachable(error)) return true;
+  if (error instanceof Error && error.name === 'StreamTruncatedError') return true;
+  const status = readStatus(error);
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * The connection closed, cleanly, before the server said the run was over.
+ *
+ * TanStack's transport covers for that with a finish of its own, marked
+ * `connect-wrapper` and saying "stop", so a stream cut off mid-answer read as
+ * an answer that had finished: the orb went out, the send button came back
+ * and nothing was said. It is a dropped connection and is treated as one.
+ */
+function isEarlyClose(chunk: StreamChunk): boolean {
+  return chunk.type === 'RUN_FINISHED' && (chunk as { model?: unknown }).model === 'connect-wrapper';
+}
+
+/** One key for the notice that a long turn paused, so a second writes over the first. */
+const TURN_PAUSED_TOAST = 'cloud-turn-paused';
+
+/** Why a turn stopped before Samwell had finished. */
+export type TurnPause = 'circling' | 'ceiling' | 'quiet';
+
+const PAUSE_MESSAGES: Record<TurnPause, string> = {
+  circling: 'Samwell was going over the same ground, so he paused.',
+  ceiling: 'Samwell paused after a long run of work.',
+  quiet: 'Samwell went quiet, so he paused.',
+};
+
+/**
+ * Says that a turn stopped before he had finished, and offers to carry on.
+ *
+ * It used to end in silence: the orb went out, the send button came back and
+ * nothing was said, which on a long job looks exactly like a crash. Carrying
+ * on is a new message, so the turn's counts start again and the server
+ * checks the credit ceiling afresh, which is the honest place for a long job
+ * to ask for more.
+ */
+export function sayTurnPaused(reason: TurnPause, keepGoing: () => void): void {
+  showToast({
+    key: TURN_PAUSED_TOAST,
+    message: PAUSE_MESSAGES[reason],
+    actionIcon: ArrowRight,
+    actionLabel: 'Keep going',
+    onActionPress: keepGoing,
+    persistent: true,
+  });
+}
+
+/** What carrying on sends, as the reader's own message. */
+export const KEEP_GOING_MESSAGE = 'Keep going.';
+
 /**
  * Samwell Cloud refused the turn, and why.
  *
@@ -134,15 +272,54 @@ export function asCloudRefusal(error: unknown): CloudRefused | null {
   return null;
 }
 
-export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
+/**
+ * Says in a toast that a cloud turn failed, for every chat that sends one.
+ *
+ * A refusal gets its own sentence, since the reader can act on it. Anything
+ * else gets one plain line: the transport's or OpenRouter's own text is long
+ * and technical, so it goes to the log. It used to be said three ways: a
+ * bubble written into the reading chat's transcript with the raw message in
+ * it, red text under onboarding's composer, and nothing at all in Compass.
+ */
+export function sayCloudTurnFailed(error: unknown): void {
+  // A copy the server no longer serves says so on the update screen, which
+  // covers everything; a toast about this one turn would only sit under it.
+  if (readStatus(error) === 426) {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    reportUpdateRequired(/"update"\s*:\s*"restart"/.test(message) ? 'restart' : 'store');
+    return;
+  }
+  const refusal = asCloudRefusal(error);
+  const unreachable = !refusal && isCloudUnreachable(error);
+  // Being offline is a state the app is in, not a fault in it, so it is
+  // noted rather than raised: `console.error` draws a development build's
+  // error overlay over the toast that already says what happened.
+  if (unreachable) {
+    if (__DEV__) console.log('[Samwell Cloud] Unreachable:', error instanceof Error ? error.message : error);
+  } else if (!refusal) {
+    console.error('[Samwell Cloud] Turn failed:', error);
+    // Offline and a refusal are states, not faults; this is a fault.
+    reportHandled('samwell.cloud_turn', error);
+  }
+  showToast({
+    key: TURN_FAILED_TOAST,
+    message: refusal?.message ?? (unreachable ? UNREACHABLE_MESSAGE : TURN_FAILED_MESSAGE),
+  });
+}
+
+/** Says in a toast why a cloud turn was not sent at all (no server, nobody signed in). */
+export function sayCloudTurnBlocked(message: string): void {
+  showToast({ key: TURN_FAILED_TOAST, message });
+}
+
+export type SamwellTurnMode = 'samwell' | 'onboarding';
 
 /**
  * Where the turn is posted.
  *
  * Onboarding is a separate route because it is billed separately: it is the
  * free introduction, granted once per account, and it never writes to the
- * usage table. Reading and Compass share the metered route and are told apart
- * by the `mode` forwarded prop.
+ * usage table. Everything else goes down the metered route.
  */
 function endpointFor(mode: SamwellTurnMode, baseUrl: string, metered: boolean): string {
   return mode === 'onboarding' && !metered
@@ -155,6 +332,8 @@ type StoredChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   createdAt: string;
+  /** What he did before this reply, said back to him by `earlierToolUseMessages`. */
+  activity?: TurnActivity | null;
 };
 
 type ApprovalRequest = {
@@ -178,12 +357,14 @@ export interface CloudChatTurnOptions {
   /**
    * Which Samwell is answering.
    *
-   * `reading` is the library companion; `compass` is the same person turned
-   * toward the user's goal, carrying the Compass tools instead of the library
-   * ones; `onboarding` is him meeting somebody for the first time. Everything
-   * else about the turn — the transport, the streaming, the approvals, the
-   * reasoning — is deliberately identical, because the surfaces were only ever
-   * supposed to differ by what he is focused on.
+   * `samwell` is the one conversation: what they read and the goals they are
+   * working on, with the library tools and the goal tools together.
+   * `onboarding` is him meeting somebody for the first time. Everything else
+   * about the turn — the transport, the streaming, the approvals, the
+   * reasoning — is deliberately identical.
+   *
+   * The server still answers `reading` and `compass`, for the builds from
+   * before the two became one. Nothing here sends them.
    *
    * `onboarding` differs in one more way, and it is not about him: it goes to
    * a different route on the server, one the house pays for rather than the
@@ -248,12 +429,26 @@ export interface CloudChatTurnOptions {
   /** Onboarding only: a tool really changed their library. See `onboardingActionNote`. */
   onOnboardingAction?: (note: string) => void;
   /**
+   * What he has done this turn so far: each tool call as a step, and the web
+   * pages any search found. Called when it changes, read straight from the
+   * TanStack messages (`turnActivity`), so a step on the device and a search
+   * on the server are drawn the same way.
+   */
+  onActivity?: (activity: TurnActivity) => void;
+  /**
    * A finished stretch of his reply, to keep as its own message. Given, each
    * stretch between two tool calls is a message of its own and the turn
    * returns only the last; without it the turn is one growing bubble. See
    * `createReplySequence`.
    */
   onReplyPart?: (text: string) => void;
+  /**
+   * The turn stopped before he had finished: he was circling, reached the
+   * backstop ceiling, or went quiet. The caller says so and offers to carry
+   * on (`sayTurnPaused`). Not called for stop, which the reader chose, or for
+   * a failure, which is said as one.
+   */
+  onPaused?: (reason: TurnPause) => void;
   /**
    * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
    * returns whatever text had streamed so far and no error is raised.
@@ -290,36 +485,52 @@ function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
   let snapshot = '';
   try {
     /*
-     * Compass gets the reading half only. Its own tools report the goal, the
+     * The reading half only. His Compass tools report the goal, the
      * trackables and the consistency properly — with ids, schedules, pauses
      * and the real ratio — and a second, cruder description of the same
      * numbers in the system prompt is how Samwell ends up quoting a figure
-     * that disagrees with the Insights screen. Reading chat keeps the goal
-     * lines, since it has no Compass tools to ask with and orientation is all
-     * it needs them for.
+     * that disagrees with the Insights screen.
+     *
+     * Reading chat used to keep the goal lines, since it had no Compass tools
+     * to ask with and orientation was all it needed them for. It has the tools
+     * now, as one Samwell, and asks (the prompt tells him to look before he
+     * speaks about a goal). Whether the lines should come back for the sake
+     * of reading chats is a question for the evals, not for a guess.
      */
-    snapshot = buildJourneySnapshot({ includeCompass: mode === 'reading' });
+    snapshot = buildJourneySnapshot({ includeCompass: false });
   } catch {
     // A journey that cannot be built is not a reason to lose the turn.
     return [];
   }
-  if (!snapshot) return [];
+  let memory = '';
+  try {
+    memory = buildMemoryBlock();
+  } catch {
+    // Nor is a memory that cannot be read.
+  }
+  const journey = snapshot
+    ? `Their journey so far (use it for continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
+    : '';
+  const content = [memory, journey].filter(Boolean).join('\n\n');
+  if (!content) return [];
 
-  return [
-    {
-      id: 'samwell-journey',
-      role: 'system',
-      createdAt: new Date(),
-      parts: [
-        {
-          type: 'text',
-          content:
-            'The user\'s journey so far (use it for continuity and to ground what you ' +
-            `suggest; never assume beyond it):\n${snapshot}`,
-        },
-      ],
-    },
-  ];
+  return [{ id: 'samwell-journey', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content }] }];
+}
+
+/**
+ * The lookups behind his earlier replies, which `toUIMessage` leaves out.
+ *
+ * A system message, as the journey is, so the server lifts it into the system
+ * prompts and it never sits in the conversation as words he said. Without it
+ * he read his own earlier replies as unchecked and apologised for them. See
+ * `earlier-tool-use.ts`. Not in onboarding, which is a fixed script whose
+ * prompt the house caches.
+ */
+function earlierToolUseMessages(mode: SamwellTurnMode, history: StoredChatMessage[]): UIMessage[] {
+  if (mode === 'onboarding') return [];
+  const note = earlierToolUseNote(history);
+  if (!note) return [];
+  return [{ id: 'samwell-earlier-tools', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content: note }] }];
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
@@ -343,11 +554,20 @@ function textFromMessage(message: UIMessage | undefined): string {
     .join('');
 }
 
-/** Whether a message is still waiting on a tool it called. */
-function hasPendingToolCall(message: UIMessage): boolean {
-  return message.parts.some(
-    (part) => part.type === 'tool-call' && (part as { output?: unknown }).output === undefined,
-  );
+/**
+ * Whether a message is still waiting on a tool it called.
+ *
+ * A call the reader said no to never gets an output: nothing ran, so nothing
+ * came back. Counting it as still open held every turn with a refusal in it
+ * on the stop button after the answer had finished, until the quiet timeout
+ * gave up two minutes later. A failed call is over the same way.
+ */
+export function hasPendingToolCall(message: UIMessage): boolean {
+  return message.parts.some((part) => {
+    if (part.type !== 'tool-call') return false;
+    if (part.output !== undefined || part.state === 'error') return false;
+    return part.approval?.approved !== false;
+  });
 }
 
 /**
@@ -471,14 +691,7 @@ function statusForTool(toolName: string): string {
 }
 
 /**
- * Compass's tools.
- *
- * Thin on purpose: the work is in `compass-tools.ts`, which reads the same
- * engines the Compass screens read, so a number Samwell quotes and a number on
- * the Insights sheet cannot disagree.
- */
-/**
- * The journey-notes tool, defined once and handed to both factories.
+ * The journey-notes tool.
  *
  * Cloud only, by construction: it exists nowhere in the on-device tool
  * catalogue, so there is no window size at which an offline model can reach
@@ -491,16 +704,75 @@ function journeyTool(ctx: ToolCallContext) {
   });
 }
 
-function createCompassClientTools(ctx: ToolCallContext) {
-  return clientTools(
+/**
+ * Finding a book and reading what is known about it, defined once and handed
+ * like the journey tool: what "this book is in the
+ * library" means cannot be decided twice.
+ */
+function libraryLookupTools(ctx: ToolCallContext) {
+  return [
+    searchLibraryTool.client(async (input) => {
+      const { result } = await executeToolCall('search_library', input, ctx);
+      const found = result as { books: LibraryBook[]; total: number };
+      return {
+        books: found.books,
+        total: found.total,
+        formatted: formatLibrarySearch(found, input.query, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    getBookDetailsTool.client(async (input) => {
+      const { result } = await executeToolCall('get_book_details', input, ctx);
+      return { formatted: formatToolResultForLLM('get_book_details', result, TOOL_RESULT_TOKEN_BUDGET.cloud) };
+    }),
+  ] as const;
+}
+
+/**
+ * The podcasts and blogs, like the library lookups: what "the shows they
+ * follow" means is decided in one place.
+ */
+function listeningTools() {
+  return [
+    listMyPodcastsTool.client(async (input) => runListMyPodcasts(input)),
+    searchPodcastEpisodesTool.client(async (input) => runSearchPodcastEpisodes(input)),
+    getPodcastEpisodeTool.client(async (input) => runGetPodcastEpisode(input)),
+    listMyBlogsTool.client(async (input) => runListMyBlogs(input)),
+    searchBlogPostsTool.client(async (input) => runSearchBlogPosts(input)),
+  ] as const;
+}
+
+/**
+ * Finding and following what is out there: onboarding's own tools, so a show
+ * followed from a chat and one followed on the first day cannot differ.
+ */
+function discoveryTools() {
+  return [
+    findPodcastsTool.client(async (input) => runFindPodcasts(input)),
+    followPodcastsTool.client(async (input) => runFollowPodcasts(input)),
+    listBlogsTool.client(async () => runListBlogs()),
+    followBlogsTool.client(async (input) => runFollowBlogs(input)),
+    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
+    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+  ] as const;
+}
+
+/**
+ * The goal tools: the device's own record of goals, read and written by the
+ * same engines the Compass sheets use.
+ *
+ * Thin on purpose: the work is in `compass-tools.ts`, so a number Samwell
+ * quotes and a number on the Insights sheet cannot disagree.
+ */
+function goalTools() {
+  return [
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
     getTodayTool.client(async () => ({ formatted: formatToday() })),
     getTrackableHistoryTool.client(async (input) => ({
       formatted: formatTrackableHistory(input.trackable_id, input.days),
     })),
     logTrackableTool.client(async (input) => runLogTrackable(input)),
-    // The goal's life. Bound here and only here: this factory builds the
-    // Compass tool set, so reading chat never sees them.
+    // The goal's life. Never in the reading set, so a build that still sends
+    // `reading` never sees them.
     finishGoalTool.client(async (input) => runFinishGoal(input)),
     stopGoalTool.client(async (input) => runStopGoal(input)),
     setPrimaryGoalTool.client(async (input) => runSetPrimaryGoal(input)),
@@ -508,37 +780,11 @@ function createCompassClientTools(ctx: ToolCallContext) {
     resumeTrackableTool.client(async (input) => runResumeTrackable(input)),
     proposeGoalTool.client(async (input) => runProposeGoal(input)),
     proposeAdjustmentsTool.client(async (input) => runProposeAdjustments(input)),
-    // The same three executors reading chat uses. Two copies of "what does
-    // searching the library mean" is exactly the drift CLAUDE.md warns about.
-    searchHighlightsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_highlights', input, ctx);
-      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
-      return {
-        results,
-        formatted: formatToolResultForLLM('search_highlights', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    searchThoughtsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_thoughts', input, ctx);
-      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
-      return {
-        results,
-        formatted: formatToolResultForLLM('search_thoughts', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    searchReadingTool.client(async (input) => {
-      const { result } = await executeToolCall('search_reading', input, ctx);
-      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
-      return {
-        results: reading.snippets,
-        formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    journeyTool(ctx),
-  );
+  ] as const;
 }
 
-function createSamwellClientTools(ctx: ToolCallContext) {
+/** What he does with their reading and their library, and the app explaining itself. */
+function readingClientTools(ctx: ToolCallContext) {
   return clientTools(
     // The app explaining itself. Bound here because the server offers it on
     // the reading route, and an offered tool with no executor is a turn that
@@ -562,7 +808,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     searchReadingTool.client(async (input) => {
       const { result } = await executeToolCall('search_reading', input, ctx);
-      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
+      const reading = (result ?? { snippets: [], chapters: [], preparing: 0 }) as ReadingSearchResult;
       return {
         results: reading.snippets,
         formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
@@ -634,10 +880,11 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     suggestHighlightTool.client(async (input) => {
       const { result } = await executeToolCall('suggest_highlight', input, ctx);
-      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; error?: string };
+      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; passage?: string; error?: string };
       return {
         ok: suggestResult.ok === true,
         suggestionId: suggestResult.suggestionId ?? null,
+        ...(suggestResult.passage ? { passage: suggestResult.passage } : {}),
         ...(suggestResult.error ? { error: suggestResult.error } : {}),
       };
     }),
@@ -700,15 +947,79 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     listCollectionsTool.client(async (input) => {
       const { result } = await executeToolCall('list_collections', input, ctx);
-      const collectionList = Array.isArray(result) ? (result as CollectionSummary[]) : [];
+      const listing = Array.isArray(result) ? (result as CollectionListing[]) : [];
       return {
-        collections: collectionList,
-        formatted: formatToolResultForLLM('list_collections', collectionList, TOOL_RESULT_TOKEN_BUDGET.cloud),
+        collections: listing.map((collection) => ({
+          id: collection.id,
+          name: collection.name,
+          bookCount: collection.books.length,
+          books: collection.books.map(({ id, title, author }) => ({ id, title, author })),
+        })),
+        formatted: formatToolResultForLLM('list_collections', result, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
+    ...libraryLookupTools(ctx),
+    /*
+     * Offered by the server since the toolbox landed and never bound here, so
+     * a turn that called one waited for a result that never came. Each is
+     * approval-gated in its definition, so binding them adds no step the
+     * reader does not confirm. The server now offers only what this list
+     * declares (`offered-tools.ts`), which is what kept builds without these
+     * from hanging.
+     */
+    deleteCollectionTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_collection', input, ctx);
+      return result as { ok: boolean; name?: string; bookCount?: number; error?: string };
+    }),
+    renameBookTool.client(async (input) => {
+      const { result } = await executeToolCall('rename_book', input, ctx);
+      return result as { ok: boolean; from?: string; to?: string; error?: string };
+    }),
+    deleteBookTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_book', input, ctx);
+      return result as BookBatchResult;
+    }),
+    clearQueueTool.client(async (input) => {
+      const { result } = await executeToolCall('clear_queue', input, ctx);
+      return result as BookBatchResult;
+    }),
+    startReadingTool.client(async (input) => {
+      const { result } = await executeToolCall('start_reading', input, ctx);
+      return result as BookBatchResult;
+    }),
+    addNoteToHighlightTool.client(async (input) => {
+      const { result } = await executeToolCall('add_note_to_highlight', input, ctx);
+      return result as NoteToolResult;
+    }),
+    updateNoteTool.client(async (input) => {
+      const { result } = await executeToolCall('update_note', input, ctx);
+      return result as NoteToolResult;
+    }),
+    deleteNoteTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_note', input, ctx);
+      return result as NoteToolResult;
+    }),
+    updateThoughtTool.client(async (input) => {
+      const { result } = await executeToolCall('update_thought', input, ctx);
+      return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
+    }),
+    ...listeningTools(),
+    ...discoveryTools(),
     journeyTool(ctx),
   );
 }
+
+/**
+ * The one Samwell: the reading set and the goal tools together. The reading
+ * set already carries every tool the two share (search, library, listening,
+ * discovery, journey), so the goal tools are added once each.
+ */
+function createSamwellClientTools(ctx: ToolCallContext) {
+  return clientTools(...readingClientTools(ctx), ...goalTools());
+}
+
+type BookBatchResult = { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+type NoteToolResult = { ok: boolean; noteId?: string; error?: string };
 
 function collectApproval(chunk: StreamChunk): ApprovalRequest | null {
   if (chunk.type !== 'CUSTOM' || chunk.name !== 'approval-requested') return null;
@@ -765,7 +1076,7 @@ export async function preflightCloudServer(baseUrl: string): Promise<void> {
   } catch (err) {
     if (err instanceof Error && err.message.includes('health check returned')) throw err;
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(
+    throw new CloudUnreachable(
       `Cannot reach Samwell Cloud at ${baseUrl} from the app (${detail}). ` +
         'If this exact URL loads in the phone browser, the app cannot use plain HTTP. Serve the backend over HTTPS (e.g. cloudflared tunnel) or use adb reverse.',
     );
@@ -779,7 +1090,7 @@ export async function sendCloudChatTurn({
   modelId,
   sessionId,
   bookId,
-  mode = 'reading',
+  mode = 'samwell',
   metered = false,
   inactivityMs,
   history,
@@ -791,14 +1102,32 @@ export async function sendCloudChatTurn({
   onCredits,
   onOnboardingAction,
   onReplyPart,
+  onActivity,
+  onPaused,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
+  // The last activity handed over, so an unchanged one is not handed over again.
+  let activity: TurnActivity = NO_ACTIVITY;
+  const reportActivity = (messages: UIMessage[]) => {
+    if (!onActivity) return;
+    const next = turnActivity(messages);
+    if (sameActivity(activity, next)) return;
+    activity = next;
+    onActivity(next);
+  };
   /*
    * The reasoning trace, accumulated here rather than in the store, so a
    * re-render of the chat screen cannot lose a delta that arrived between two
    * of them.
    */
   let thinking = '';
+  /*
+   * Which reasoning message the trace is in. Each request after a tool thinks
+   * in a new one, and running them straight on joined a cut-off sentence to
+   * the next round's first ("gentle, insightfulFun request"); a new one starts
+   * a new paragraph.
+   */
+  let reasoningMessageId: string | null = null;
   /*
    * Thinking-time measurement. `thinkingStartedAt` is set on the first
    * reasoning delta; `reportThinkingDone` fires `onThinkingDone` once, at the
@@ -815,6 +1144,15 @@ export async function sendCloudChatTurn({
   // Set from the RUN_FINISHED event so a turn that ended only because it ran
   // out of room can say so, instead of the generic "got stuck".
   let finishReason: string | null = null;
+  /*
+   * A failure the server could only send inside the stream (`RUN_ERROR`):
+   * by then it has answered 200, so `sendMessage` resolves rather than
+   * rejecting. Without this the turn waited out the inactivity window, two
+   * minutes of a working orb, and ended with nothing.
+   */
+  // Typed through a cast so the checks below are not narrowed to `null`: it
+  // is set from a callback, which control-flow analysis does not see.
+  let streamError = null as Error | null;
 
   /*
    * Tool phase: the stretch from the first tool chunk until the model picks
@@ -836,6 +1174,20 @@ export async function sendCloudChatTurn({
    * said, which is a far better thing to leave a reader holding than an error.
    */
   let continuationsThisTurn = 0;
+  // He asked for the same thing again having been given it. See `tool-circling.ts`.
+  const circles = createCircleWatch();
+  let circling = false;
+  // A request that dropped goes again from where it started. See `cloud-turn-resume.ts`.
+  const resume = createRequestResume();
+  /*
+   * Between a dropped request and the first chunk of its second try. The
+   * messages were put back to before the drop, and drawing that would show a
+   * finished part again in the streaming bubble; what was on screen stays
+   * until the new words arrive.
+   */
+  let resuming = false;
+  // Said once per request, not per chunk: the stream is proof the server answers.
+  let reachedThisRequest = false;
   let lastToolName: string | null = null;
   /*
    * What he had already said when the tool was called, and what he has said
@@ -923,6 +1275,7 @@ export async function sendCloudChatTurn({
   const approvals: ApprovalRequest[] = [];
   const initialMessages = [
     ...journeyMessages(mode),
+    ...earlierToolUseMessages(mode, history),
     ...history.map(toUIMessage).filter((message): message is UIMessage => message !== null),
   ];
 
@@ -933,9 +1286,15 @@ export async function sendCloudChatTurn({
    * "got stuck" while the model was still working. Chunks push the deadline
    * out; a pending approval counts as progress too, since there the turn is
    * waiting on a person, who may take as long as they like.
+   *
+   * There is no wall clock at all any more. Ten minutes in total was the
+   * other half of this, and it cut off long jobs that were making progress
+   * the whole time: seven scripts from seven books, on a model that thinks
+   * for a minute a step, does not fit in ten. What bounds a turn now is the
+   * quiet below, circling (`tool-circling.ts`), the backstop ceiling, and on
+   * the server the share of the balance one message may spend.
    */
   const SETTLE_INACTIVITY_MS = inactivityMs ?? 120_000;
-  const SETTLE_ABSOLUTE_MS = 600_000;
   let lastProgressAt = Date.now();
 
   const flushThinking = createThrottle(onThinkingContent, 120);
@@ -1005,11 +1364,29 @@ export async function sendCloudChatTurn({
             // In order with what he said, not ahead of the line before it.
             onAction: (note) => sequence.then(() => onOnboardingAction?.(note)),
           })
-        : mode === 'compass'
-          ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
-          : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+        : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+    // Each request, as it goes out: the first, and every continuation.
+    onResponse: () => {
+      reachedThisRequest = false;
+      resume.markStart(client.getMessages());
+    },
+    onError: (error) => {
+      streamError = error;
+    },
     onChunk: (chunk) => {
       lastProgressAt = Date.now();
+      if (chunk.type === 'RUN_FINISHED' || chunk.type === 'RUN_ERROR') resume.markSettled();
+      if (isEarlyClose(chunk)) {
+        streamError ??= new Error(DROPPED_MESSAGE);
+        return;
+      }
+      if (chunk.type !== 'RUN_ERROR') {
+        resuming = false;
+        if (!reachedThisRequest) {
+          reachedThisRequest = true;
+          reportCloudReached();
+        }
+      }
 
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);
@@ -1022,9 +1399,24 @@ export async function sendCloudChatTurn({
       if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
-          // The model is thinking again: the tool phase is over.
-          endToolPhase();
+          /*
+           * The model is thinking again. With nothing said yet the tool phase
+           * is over: the reasoning panel takes the footer and says so. With
+           * words already on screen it is not, because the footer then shows
+           * nothing unless a tool is running (`turnIndicator`): GLM said "let
+           * me dig through everything", looked six things up, and the row went
+           * blank for the seconds it thought before answering. It holds on
+           * "Working through that…" until new words arrive or the run ends.
+           */
+          if (!saidWhenToolCalled) endToolPhase();
           thinkingStartedAt ??= Date.now();
+          const messageId = (chunk as { messageId?: unknown }).messageId;
+          if (typeof messageId === 'string' && messageId !== reasoningMessageId) {
+            if (reasoningMessageId !== null && thinking && !thinking.endsWith('\n\n')) {
+              thinking = `${thinking.trimEnd()}\n\n`;
+            }
+            reasoningMessageId = messageId;
+          }
           thinking += delta;
           flushThinking(thinking);
         }
@@ -1049,7 +1441,13 @@ export async function sendCloudChatTurn({
          * `RUN_FINISHED` carrying `tool_calls` is exactly one continuation,
          * which is also the unit the server counts.
          */
-        if (finishReason === 'tool_calls') continuationsThisTurn += 1;
+        if (finishReason === 'tool_calls') {
+          continuationsThisTurn += 1;
+          for (const part of lastAssistantToolCalls(client.getMessages())) {
+            if (circles.record(part.id, part.name, part.arguments)) circling = true;
+          }
+        }
+        resume.markFinished();
       }
 
       const toolName = readToolName(chunk);
@@ -1074,6 +1472,9 @@ export async function sendCloudChatTurn({
       }
     },
     onMessagesChange: (messages) => {
+      if (resuming) return;
+      // Before the text check: a step starts before he says a word about it.
+      reportActivity(messages);
       const text = assistantTextSinceUser(messages);
       if (!text) return;
       saidSoFar = text;
@@ -1149,9 +1550,30 @@ export async function sendCloudChatTurn({
     // so the tool never runs and the turn stalls. Keep the client alive until
     // the conversation has fully settled: drain approval requests as they
     // arrive and wait for a final assistant text answer with nothing loading.
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
+    let paused: TurnPause | null = null;
+    for (;;) {
       if (aborted) break;
+      if (streamError && !aborted && isWorthResuming(streamError) && resume.canResume()) {
+        // The connection dropped, not the server refusing: go again from
+        // where that request started, once the phone is back online.
+        // Only a request that never got an answer: a stream cut after it
+        // started (a proxy closing long streams) is not the server unreached,
+        // and three of those used to put the whole app offline.
+        if (isCloudUnreachable(streamError) && !reachedThisRequest) reportCloudUnreached();
+        const dropped = streamError;
+        streamError = null;
+        resuming = true;
+        showToolStatus('Reconnecting…', lastToolName);
+        if (await resume.resume(client, signal)) {
+          lastProgressAt = Date.now();
+          continue;
+        }
+        resuming = false;
+        streamError = aborted ? null : dropped;
+      }
+      // Failed inside the stream: nothing more is coming. Below, what he had
+      // already said is kept and the failure is said after it.
+      if (streamError) break;
       if (finished) {
         /*
          * He has said goodbye and closed the conversation. Whatever he said
@@ -1167,21 +1589,29 @@ export async function sendCloudChatTurn({
         }
         break;
       }
+      if (circling) {
+        // He asked for something he had already been given, a third time.
+        // Measured on real traffic, the worst turn went round 112 times;
+        // nobody wanted the hundredth answer.
+        console.warn('[Samwell Cloud] Turn repeated the same tool call; pausing it here.');
+        paused = 'circling';
+        break;
+      }
       if (continuationsThisTurn >= TOOL_LOOP_CEILING) {
-        // Past this the model has stopped making progress and started
-        // circling. Measured on real traffic, the worst turn went round 112
-        // times; nobody wanted the hundredth answer. Stopping a beat before
-        // the server's own refusal means the reader gets the answer so far
-        // rather than an error.
+        // The backstop, for a run that never repeats itself exactly but never
+        // ends either. Stopping a beat before the server's own refusal means
+        // the reader gets the answer so far rather than an error.
         console.warn(
-          `[Samwell Cloud] Turn reached ${TOOL_LOOP_CEILING} continuations; stopping it here.`,
+          `[Samwell Cloud] Turn reached ${TOOL_LOOP_CEILING} continuations; pausing it here.`,
         );
+        paused = 'ceiling';
         break;
       }
 
       if (approvals.length > 0) lastProgressAt = Date.now();
       if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
         console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');
+        paused = 'quiet';
         break;
       }
 
@@ -1237,10 +1667,10 @@ export async function sendCloudChatTurn({
     }
 
     reportThinkingDone();
-    // Whatever streamed, and nothing else. A turn that did not finish leaves
-    // the reader where they were, free to send again or stop it themselves —
-    // a canned "he got stuck" bubble dropped into the transcript reads worse
-    // than the quiet, and it is the reader's call, not the app's.
+    // Whatever streamed, and nothing else in the transcript: a canned "he got
+    // stuck" bubble reads worse than the reply as far as it got. What is said
+    // about a turn that stopped early is said in a toast (`onPaused`), with a
+    // way to carry on, because silence on a long job looks like a crash.
     // The goodbye, when he ended onboarding, is the last of what he said.
     // The goodbye arrives in a tool call rather than as text, so it is
     // revealed here like any other reply, after the rest.
@@ -1249,7 +1679,16 @@ export async function sendCloudChatTurn({
     // Paced like any reply, and quick once stopped: stop cancels the reveal.
     await sequence.idle();
     const partial = sequence.current().trim();
-    if (!partial) {
+    // Stop ends the request too, and stopping is not a failure.
+    if (streamError && !aborted) {
+      // Said after any words he got out: those are kept as his reply rather
+      // than thrown away, so this cannot be a throw like the others.
+      sayCloudTurnFailed(
+        new Error(`Inside the stream: ${streamError.message} (POST ${endpointFor(mode, baseUrl, metered)})`),
+      );
+    } else if (paused && !aborted) {
+      onPaused?.(paused);
+    } else if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
       );
@@ -1266,6 +1705,13 @@ export async function sendCloudChatTurn({
     await sequence.idle();
     client.dispose();
   }
+}
+
+/** The tool calls in his latest message, for `tool-circling.ts` to count. */
+function lastAssistantToolCalls(messages: UIMessage[]): { id: string; name: string; arguments: string }[] {
+  const message = messages.findLast((candidate) => candidate.role === 'assistant');
+  if (!message) return [];
+  return message.parts.flatMap((part) => (part.type === 'tool-call' ? [part] : []));
 }
 
 function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {

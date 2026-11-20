@@ -7,10 +7,11 @@ import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { ContinueProgress } from '@/features/podcasts/components/continue-progress';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
-import { episodeArtwork, playLabel } from '@/features/podcasts/utils/format';
+import { playLabel } from '@/features/podcasts/utils/format';
+import { episodeArtwork } from '@/services/podcasts/download-paths';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
-import { useEpisodePlayback } from '@/stores/podcast-player';
+import { useEpisodePlayback } from '@/stores/player';
 
 /** Fills the card's media box, edge to edge, with no frame of its own. */
 const FILL = { width: '100%', height: '100%', borderWidth: 0 } as const;
